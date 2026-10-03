@@ -2,13 +2,13 @@
 import { createEffect, createMemo, Show } from 'solid-js'
 import { useReplayPostureStore } from '../domains/chat/replayPostureStore'
 import AgentSheetPageHost from '../components/sidebar/AgentSheetPageHost.solid.tsx'
-import { IsolatedPluginSurface as IsolatedPluginSurfaceSolid } from '../plugin-runtime/ui/IsolatedPluginSurface.solid.tsx'
 import type { SheetContext, SheetRecord } from '../workspace-sheets/sheetTypes'
 import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
 import { getAgentSidebarRegistry } from '../plugin-runtime/runtimeServices.ts'
 import { normalizePageState, resolveOpenPage } from '../plugin-runtime/sidebar/sidebarBlockState.ts'
 import { openResourceInFileSheet } from './file/fileSheetNavigation.ts'
 import { createActiveInterfaceModeContribution, createRegistrySignal } from '../infrastructure/state/solidSheetSupport.solid.tsx'
+import { PluginContributionBody } from '../plugin-runtime/ui/PluginContributionBody.solid.tsx'
 import AgentRendererSuiteWorkbench from './agent-workbench/AgentRendererSuiteWorkbench.solid.tsx'
 
 // ---- #515 批7：整页宿主与隔离表面均已 Solid 实体化（批1-C/批3-E），React 岛退役，
@@ -82,17 +82,20 @@ export default function AgentSheetView(props: AgentSheetViewProps) {
         />
       }>
         {workbench => (
-          <IsolatedPluginSurfaceSolid
-            surfaceId={workbench().surfaceId}
-            className="main interface-mode-workbench-surface"
-            input={{
+          // #520 S4-P1-5：isolated workbench 挂载走 PluginContributionBody（分发 + 错误
+          // 边界统一；此前此处是裸 IsolatedPluginSurface，崩溃会直接炸整张 Sheet）。
+          <PluginContributionBody
+            contributionId={contribution().id}
+            contribution={workbench()}
+            surfaceClass="main interface-mode-workbench-surface"
+            surfaceInput={() => ({
               modeId: contribution().id,
               sheet: { id: props.sheet.id, kind: props.sheet.kind, title: props.sheet.title, agentId: props.sheet.agentId },
               activeSessionId: props.ctx.activeSession,
               sessionSource: props.ctx.activeSession ? props.ctx.sessionSource(props.ctx.activeSession) : undefined,
               isReplay: isReplay(),
-            }}
-            onEvent={(event: string, detail: unknown) => {
+            })}
+            onSurfaceEvent={(event: string, detail: unknown) => {
               if (event === 'workbench:continue-replay') useReplayPostureStore.getState().clear()
               else if (event === 'workbench:select-session' && typeof detail === 'string') props.ctx.selectSession(detail)
               else if (event === 'workbench:open-profile') props.ctx.openProfileEdit()

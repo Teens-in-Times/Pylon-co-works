@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 // #515：迁移自 Sidebar.agentSessions.test.tsx（React RTL → Solid 实体直连）。改写点登记：
 // ① SessionsPanel/挂载改 Solid 实体直连，rerender（RTL 无）改信号驱动 props 重渲；
-// ② useSidebarContributionProps（React hook，.ts 保留类型导出）改测实体导出的
-// createSidebarContributionProps（Solid 形态，逻辑同源内联）。断言集与 DOM 契约不缩减。
+// ② 贡献 props 接线改测共享工厂 createAgentSidebarSharedProps（#515 时曾内联进
+//    Sidebar.solid，#520 S4-P1-4 恢复共享工厂并迁至 sidebar/useSidebarContributionProps.ts
+//    ——Sidebar 与 AgentSheetPageHost 同源消费）。断言集与 DOM 契约不缩减。
 import { fireEvent, render, screen } from '@solidjs/testing-library'
 import { createSignal } from 'solid-js'
 import { describe, expect, it, vi } from 'vitest'
 import SessionsPanel from '../sidebar/SessionsPanel.solid.tsx'
-import { createSidebarContributionProps } from '../Sidebar.solid.tsx'
+import { createAgentSidebarSharedProps } from '../sidebar/useSidebarContributionProps.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore'
 import type { AgentSidebarContributionProps } from '../../plugin-runtime/sidebar/sidebarTypes.ts'
 import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
 
@@ -132,7 +133,7 @@ describe('会话交互保留', () => {
       sessionBySource: () => undefined,
     }
     const Probe = () => {
-      const props = createSidebarContributionProps(ctx as never)
+      const props = createAgentSidebarSharedProps(ctx as never)
       return <div data-testid="order">{props().sessions.map(item => item.name).join(',')}</div>
     }
     render(() => <Probe />)

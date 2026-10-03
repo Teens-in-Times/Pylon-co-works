@@ -11,17 +11,12 @@ import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetType
 import { workspaceTargetFromSession, workspaceTargetKey } from '../../domains/workspace/workspaceTarget.ts'
 import { getFileWorkbenchRegistry } from '../../plugin-runtime/runtimeServices.ts'
 import { listFileActivities, resolveFileProvider, resolveFileViewRenderer, resolveGitProvider } from '../../plugin-runtime/file-workbench/fileWorkbenchResolver.ts'
-import { IsolatedPluginSurface } from '../../plugin-runtime/ui/IsolatedPluginSurface.solid.tsx'
+import type { FileActivityProps, FileViewRendererProps } from '../../plugin-runtime/file-workbench/fileWorkbenchTypes.ts'
+import { PluginContributionBody } from '../../plugin-runtime/ui/PluginContributionBody.solid.tsx'
 import FileViewRenderBoundarySolid from './FileViewRenderBoundary.solid.tsx'
-import FileViewHostSolid from './FileViewHost.solid.tsx'
-import FileTreeSolid from './FileTree.solid.tsx'
-import WorkspaceSearchPanelSolid from './WorkspaceSearchPanel.solid.tsx'
-import GitPanelSolid from './GitPanel.solid.tsx'
-import ViewsPanelSolid from './ViewsPanel.solid.tsx'
 import { registerWorkspaceLiveCloseGuard } from '../../workspace-sheets/workspaceLiveCloseGuards.ts'
 import { FILE_NAVIGATION_METADATA_KEY, parsePendingFileNavigation } from './fileSheetNavigation.ts'
 import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
-import { WorkbenchIcon } from './fileIcons.solid.tsx'
 
 /**
  * FileSheetViewProps — 名字承自历史 React 契约（FileSheetView.tsx，已退役）；本实体即唯一真源。
@@ -29,36 +24,6 @@ import { WorkbenchIcon } from './fileIcons.solid.tsx'
 interface FileSheetViewProps {
   sheet: SheetRecord
   ctx: SheetContext
-}
-
-/**
- * SessionsActivity 的 Solid 直绘（原第一方贡献 builtinFileWorkbenchViews.SessionsActivity
- * 的域内克隆，DOM/类名逐项一致；插件面 Solid 化后由实体注册取代）。
- */
-function SessionsActivitySolid(props: { targetSessionId: string | null; sessions: readonly WorkspaceSession[]; onSelectTarget: (sessionId: string | null) => void }) {
-  return (
-    <div class="file-section-panel file-session-panel">
-      <div class="file-panel-heading">
-        <span>WORKSPACES</span>
-        <span class="file-panel-count">{props.sessions.length}</span>
-        <Show when={props.targetSessionId}>
-          <button type="button" class="file-source-clear" onClick={() => props.onSelectTarget(null)}>清除选择</button>
-        </Show>
-      </div>
-      <Show when={props.sessions.length > 0} fallback={<p class="file-section-hint">没有可用会话</p>}>
-        <ul class="file-source-list">
-          <For each={props.sessions}>{session => (
-            <li>
-              <button type="button" class={`file-source-item ${props.targetSessionId === session.id ? 'active' : ''}`} onClick={() => props.onSelectTarget(session.id)} title={session.source}>
-                <span class="file-source-icon" aria-hidden="true"><WorkbenchIcon name="MessageSquare" size={15} /></span>
-                <span class="file-source-copy"><strong>{session.name}</strong><small>{session.source}</small></span>
-              </button>
-            </li>
-          )}</For>
-        </ul>
-      </Show>
-    </div>
-  )
 }
 
 /**
@@ -73,12 +38,14 @@ function SessionsActivitySolid(props: { targetSessionId: string | null; sessions
  * 主区=恒定 tab 条 + FileViewHost 统一渲染（文件视图 / SCM diff / 空态）。
  * SCM 点击变更 → openDiffTab（diff-mode tab，同路径 file/diff 不互相覆盖）。
  *
- * #515 过渡期分派语义（插件面 builtinFileWorkbench 注册的第一方组件是 Solid 实体，
- * 其 renderKind 字面量 #520 起为 first-party-solid）：activity 内容按已登记的 builtin id
- * 直连域内 Solid 实体（与 React 版渲染的是同一批实体的直传薄壳），view renderer 的
- * first-party-solid 分支直连 FileViewHost 实体（当前唯一第一方 renderer）；isolated-surface
- * 走 Solid 版挂载面。未登记的第三方 first-party-solid 贡献以空态提示占位（其出现属
- * 产品未决项，不猜）。React 版的 Suspense lazy 缝随 lazy 注册退役，不设加载态。
+ * #520 S4-P0-1 现状声明（原「不猜」注释的收敛结论）：activity 内容**消费注册契约的
+ * `component` 字段**——经 PluginContributionBody（边界 + Suspense + Dynamic）直挂
+ * 注册表里的 Solid 组件；视图 renderer 分支同理（选中 renderer 的注册组件即渲染
+ * 目标，FileViewRenderBoundary 携带 fallback/rethrow policy 框住换源链）。也就是说
+ * first-party-solid 的 file 贡献**注册即渲染**：宿主不持 builtin id 白名单，第三方
+ * 注册同样生效——这是产品未决面的现状落地（契约已有该臂，宿主不再无视它）。
+ * React 版的 Suspense lazy 缝随 lazy 注册退役后由 body 的 Suspense 承接（builtin
+ * activity/view 组件经 glob 缝 lazy 加载，首帧可能短暂空白）。
  */
 export default function FileSheetView(props: FileSheetViewProps) {
   const sessions = createZustandSignal(useIdentityStore, s => s.sessions)
@@ -391,33 +358,53 @@ export default function FileSheetView(props: FileSheetViewProps) {
     }
   }
 
+  // first-party-solid activity 的 props 工厂（FileActivityProps 全量投影；注册组件
+  // 是同一批域内实体的直传薄壳，DOM/类名与原宿主直绘逐项一致）。
+  const activityProps = (): FileActivityProps => ({
+    target: target(),
+    targetSessionId: sheetState().targetSessionId,
+    sessions: sessions(),
+    context: sheetContext(),
+    activeFile: activeTab()?.path ?? null,
+    fileProvider: fileProvider(),
+    gitProvider: gitProvider(),
+    onSelectTarget: selectSource,
+    onOpenFile: openFileTab,
+    onOpenDiff: openDiffTab,
+  })
+
   const ActivityContent = () => (
     <Show when={selectedActivity()} keyed fallback={
       <div class="file-section-panel"><p class="file-section-hint">没有可用的 File Workbench activity</p></div>
     }>
-      {activity => {
-        if (activity.renderKind === 'isolated-surface') {
-          return <IsolatedPluginSurface surfaceId={activity.surfaceId} className="file-section-panel" input={isolatedActivityInput()} onEvent={onActivityEvent} />
-        }
-        switch (activity.id) {
-          case 'builtin.file.explorer':
-            return <FileTreeSolid target={target()} provider={fileProvider()} activeFile={activeTab()?.path ?? null} onOpen={openFileTab} />
-          case 'builtin.file.search':
-            return <WorkspaceSearchPanelSolid target={target()} provider={fileProvider()} onOpenResult={openFileTab} />
-          case 'builtin.file.scm':
-            return <GitPanelSolid target={target()} provider={gitProvider()} onOpenDiff={openDiffTab} />
-          case 'builtin.file.views':
-            return <ViewsPanelSolid source={target()?.source ?? null} context={sheetContext()} onOpenFile={openFileTab} />
-          case 'builtin.file.sessions':
-            return <SessionsActivitySolid targetSessionId={sheetState().targetSessionId} sessions={sessions()} onSelectTarget={selectSource} />
-          default:
-            return <div class="file-section-panel"><p class="file-section-hint">没有可用的 File Workbench activity</p></div>
-        }
-      }}
+      {activity => (
+        // #520 S4-P0-1：分发块收敛 + 消费注册契约的 component 字段（原 builtin id
+        // 硬编码 switch 退役——见本文件头注的现状声明）。
+        <PluginContributionBody
+          contributionId={activity.id}
+          contribution={activity}
+          surfaceClass="file-section-panel"
+          surfaceInput={isolatedActivityInput}
+          onSurfaceEvent={onActivityEvent}
+          componentProps={activityProps}
+        />
+      )}
     </Show>
   )
 
   const viewInstanceKey = createMemo(() => `${workspaceTargetKey(target()) ?? 'unbound'}:${activeTab() ? fileTabKey(activeTab()!) : 'empty'}`)
+
+  // first-party-solid renderer 的 props 工厂（FileViewRendererProps 全量投影）。
+  const viewRendererProps = (currentTab: FileTabRecord): FileViewRendererProps => ({
+    target: target(),
+    context: sheetContext(),
+    tab: currentTab,
+    fileProvider: fileProvider(),
+    gitProvider: gitProvider(),
+    onCloseTab: closeTab,
+    onDirtyChange: onDirtyChange,
+    onSavingChange: onSavingChange,
+  })
 
   const ViewContent = () => {
     return (
@@ -436,23 +423,23 @@ export default function FileSheetView(props: FileSheetViewProps) {
           {_key => {
             const renderer = viewRenderer()!
             const currentTab = activeTab()!
-            if (renderer.renderKind === 'isolated-surface') {
-              return <IsolatedPluginSurface surfaceId={renderer.surfaceId} className="file-view-isolated" input={{ target: target(), context: sheetContext(), tab: currentTab }} onEvent={(event, detail) => {
-                if (event === 'close-tab' && typeof detail === 'string') closeTab(detail)
-                else if (event === 'dirty-state' && typeof detail === 'boolean') onDirtyChange(fileTabKey(currentTab), detail)
-                else if (event === 'saving-state' && typeof detail === 'boolean') onSavingChange(fileTabKey(currentTab), detail)
-              }} />
-            }
+            // #520 S4-P0-1：视图 renderer 分支同样消费注册契约的 component 字段
+            // （选中的 renderer 即渲染目标）。withBoundary=false：错误必须直达外层
+            // FileViewRenderBoundary 的 fallback/rethrow policy——双层边界会把 renderer
+            // 错误截在内层、走不了宿主换 renderer 链。
             return (
-              <FileViewHostSolid
-                target={target()}
-                context={sheetContext()}
-                tab={currentTab}
-                fileProvider={fileProvider()}
-                gitProvider={gitProvider()}
-                onCloseTab={closeTab}
-                onDirtyChange={onDirtyChange}
-                onSavingChange={onSavingChange}
+              <PluginContributionBody
+                contributionId={renderer.id}
+                contribution={renderer}
+                withBoundary={false}
+                surfaceClass="file-view-isolated"
+                surfaceInput={() => ({ target: target(), context: sheetContext(), tab: currentTab })}
+                onSurfaceEvent={(event, detail) => {
+                  if (event === 'close-tab' && typeof detail === 'string') closeTab(detail)
+                  else if (event === 'dirty-state' && typeof detail === 'boolean') onDirtyChange(fileTabKey(currentTab), detail)
+                  else if (event === 'saving-state' && typeof detail === 'boolean') onSavingChange(fileTabKey(currentTab), detail)
+                }}
+                componentProps={() => viewRendererProps(currentTab)}
               />
             )
           }}

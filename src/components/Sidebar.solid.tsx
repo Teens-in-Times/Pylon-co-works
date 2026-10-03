@@ -1,20 +1,15 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, For, Show, Suspense, type Component } from 'solid-js'
-import { Dynamic } from 'solid-js/web'
-import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
+import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
 import { LucideIcon } from './LucideIcon.solid.tsx'
-import { refreshSessionsBackend, useIdentityStore } from '../domains/identity/identityStore'
+import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
+import { useIdentityStore } from '../domains/identity/identityStore'
 import { useWorkspaceStore } from '../domains/workspace/workspaceStore'
 import { createRegistrySignal } from '../infrastructure/state/solidSheetSupport.solid.tsx'
-import { IsolatedPluginSurface } from '../plugin-runtime/ui/IsolatedPluginSurface.solid.tsx'
-import { PluginContributionBoundary } from '../plugin-runtime/ui/PluginContributionBoundary.solid.tsx'
 
 import type { SheetContext } from '../workspace-sheets/sheetTypes'
+import type { LaunchIconKey } from '../workspace-sheets/launchIconKeys.ts'
 import { getAgentSidebarRegistry } from '../plugin-runtime/runtimeServices.ts'
-import type {
-  AgentSidebarContribution,
-  AgentSidebarContributionProps,
-} from '../plugin-runtime/sidebar/sidebarTypes.ts'
+import type { AgentSidebarContribution } from '../plugin-runtime/sidebar/sidebarTypes.ts'
 import type { AgentSidebarSurfaceInput } from '../plugin-runtime/sidebar/sidebarSurfaceProtocol.ts'
 import {
   isBlockCollapsed,
@@ -31,18 +26,12 @@ import {
   sidebarModulePrefsStore,
 } from '../domains/appearance/sidebarModulePrefs.ts'
 import { sidebarBlockCollapseStore } from '../domains/appearance/sidebarBlockCollapse.ts'
-import { appClients } from '../app/appClients.ts'
-import { save } from '@tauri-apps/plugin-dialog'
-import { useWorkspaceEntityStore } from '../infrastructure/persistence/workspaceEntityStore'
-import { useRuntimeStore } from '../domains/runtime/runtimeStore'
-import { reportRuntimeError } from '../app/runtimeError'
-import { removeSessionTransaction, sessionDurableOwnerKey } from '../application/transactions/removeSessionTransaction'
-import { runSessionNotificationHook } from '../application/transactions/sessionHookTransactions'
-import { getCanonicalEventFeed } from '../infrastructure/events/canonicalEventFeed.ts'
-import { clearMessageStorage } from '../domains/chat/messagePersistence'
-import { validateExportPath } from '../domains/overview/persistedHistory.ts'
-import type { LaunchIconKey } from '../workspace-sheets/launchIconKeys.ts'
-import type { AgentSidebarSharedProps } from './sidebar/useSidebarContributionProps.ts'
+import { PluginContributionBody } from '../plugin-runtime/ui/PluginContributionBody.solid.tsx'
+import { createSidebarDragReorder } from './sidebar/createSidebarDragReorder.ts'
+import {
+  createAgentSidebarSharedProps,
+  projectAgentSidebarSurfaceInput,
+} from './sidebar/useSidebarContributionProps.ts'
 
 // ---- 插件贡献体（#515 岛退役）：贡献组件是 **Solid 组件**，宿主直连渲染。 ----
 
@@ -77,131 +66,6 @@ type BlockActionHandler = (actionId: string) => void
 /** 自动补的「打开整页」动作 id——贡献自己的动作 id 不得与它冲突（注册期不校验，宿主这里避开即可）。 */
 const OPEN_PAGE_ACTION = '__open_page__'
 
-/** 长按多久进入拖拽。太短会被点击误触，太长会让人觉得拖不动。 */
-const LONG_PRESS_MS = 260
-/** 长按期间移动超过这个距离（px）即判定为点击/滚动，取消拖拽。 */
-const LONG_PRESS_SLOP_PX = 6
-/**
- * 拖拽结束后多久内忽略 click——否则抬起那一下会连带触发标题的展开/进页面。
- *
- * 拖拽时指针已被捕获，`click` 会被改派到模块头（见 `onHeadPointerDown`），标题本就不该收到它；
- * 这条是**兜底**：捕获不可用的环境（如 jsdom、旧 WebView2）里改派不发生，click 会照常落在按钮上。
- */
-const DRAG_CLICK_SUPPRESS_MS = 320
-
-const NO_GENERATING_SOURCES: readonly string[] = []
-
-/**
- * 贡献 props 的**唯一接线处**（`useSidebarContributionProps` 的 Solid 形态，#515 内联；
- * 与 AgentSheetPageHost.solid 的同族内联逐条对齐）。
- *
- * 同一份内容会以两种体量出现——左栏区块里的小样，与主区整页（`presentation: 'page'`）。
- * 两处必须拿到**同一批**会话/工作区数据与回调。须在响应式 owner 内调用（组件体 / createRoot）。
- */
-export function createSidebarContributionProps(ctx: SheetContext): () => AgentSidebarSharedProps {
-  const activeProfileId = createZustandSignal(useIdentityStore, s => s.activeProfileId)
-  const activeAgent = createZustandSignal(useIdentityStore, s => s.activeAgent)
-  const sessions = createZustandSignal(useIdentityStore, s => s.sessions)
-  const workspaces = createZustandSignal(useWorkspaceEntityStore, s => s.workspaces)
-  const liveGeneratingSources = createZustandSignal(useRuntimeStore, s => s.liveGeneratingSources ?? NO_GENERATING_SOURCES)
-
-  const ownSessions = createMemo(() => {
-    return sessions()
-      .filter(s => s.profileId === activeProfileId() && s.agentId === activeAgent() && !s.archivedAt)
-      // 置顶的排在各自工作区最前，其余按最近活跃（`sort` 稳定，同档内保持原序）。
-      .sort((a, b) => (Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)))
-        || ((b.lastActiveAt || 0) - (a.lastActiveAt || 0)))
-  })
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('删除会话？')) return
-    const sessionClient = appClients.session()
-    const sessionsNow = sessions()
-    const result = await removeSessionTransaction(id, {
-      findSession: sessionId => sessionsNow.find(s => s.id === sessionId),
-      deleteSessionLocal: s => sessionClient.deleteUserSessionLocal({ sessionId: s.id, ownerKey: sessionDurableOwnerKey(s) }),
-      refreshSessionsBackend,
-      // tombstone 成功后立即封住在途 canonical 写；revision 刷新可能仍在等待。
-      markSessionDeleting: sessionId => {
-        const target = sessionsNow.find(session => session.id === sessionId)
-        if (target) {
-          getCanonicalEventFeed().discard(sessionDurableOwnerKey(target))
-        }
-      },
-      markSessionDeleted: sessionId => {
-        const target = sessionsNow.find(s => s.id === sessionId)
-        if (target) {
-          getCanonicalEventFeed().discard(sessionDurableOwnerKey(target))
-        }
-      },
-      closeSession: s => sessionClient.closeSession({ agentId: s.agentId, source: s.source }),
-      // #398：agent 侧 session/delete（close 之后）；periId 缺失（从未连接 agent）跳过。
-      deleteSessionRemote: s => s.periId
-        ? sessionClient.deleteSessionAgentSide({ agentId: s.agentId, source: s.source, periId: s.periId })
-        : Promise.resolve(),
-      finalizeSessionDelete: s => sessionClient.finalizeUserSessionDelete({ sessionId: s.id, ownerKey: sessionDurableOwnerKey(s) }),
-      removeSession: sessionId => useIdentityStore.getState().removeSession(sessionId),
-      clearMessages: sessionId => clearMessageStorage(sessionId, localStorage),
-      reportError: (action, error) => reportRuntimeError(action, error),
-      // API 1.3 生命周期通知:closing→deleting→deleted→closed(观察语义)。
-      notifySessionHook: runSessionNotificationHook,
-    })
-    if (!result.ok) return
-    if (ctx.activeSession === id) ctx.selectSession(null)
-  }
-
-  const createSessionUnderCwd = (workspaceId: string) => {
-    if (!workspaces().some(workspace => workspace.id === workspaceId)) return
-    window.dispatchEvent(new CustomEvent('pylon:new-session', { detail: { workspaceId } }))
-    ctx.selectSession(null)
-  }
-
-  const handleArchive = (id: string) => {
-    const target = sessions().find(session => session.id === id)
-    if (!target || !window.confirm(`归档会话“${target.name}”？可在存档页回放。`)) return
-    useIdentityStore.getState().updateSession(id, { archivedAt: Date.now(), lastActiveAt: Date.now() })
-    if (ctx.activeSession === id) ctx.selectSession(null)
-  }
-
-  const handleExport = async (id: string) => {
-    const target = sessions().find(session => session.id === id)
-    if (!target?.periId) return
-    try {
-      const outputPath = await save({ defaultPath: `session-${target.periId}.md`, filters: [{ name: 'Markdown', extensions: ['md'] }] })
-      if (!outputPath) return
-      const validation = validateExportPath(outputPath)
-      if (validation) { reportRuntimeError('导出会话', validation); return }
-      await appClients.session().exportSession({ agentId: target.agentId, periId: target.periId, format: 'markdown', outputPath })
-    } catch (error) { reportRuntimeError('导出会话', error) }
-  }
-
-  return () => ({
-    activeAgentId: activeAgent(),
-    activeSessionId: ctx.activeSession,
-    // 会话区里两个族群（挂在工作区上的 / 无 cwd 的）由同一个贡献渲染并按 cwd 分组，
-    // 因此给它全集，分组语义留在面板里，宿主不再做 work/chat 预切分。
-    sessions: ownSessions(),
-    workspaces: workspaces(),
-    liveGeneratingSources: liveGeneratingSources(),
-    onSelectSession: id => ctx.selectSession(id),
-    onDeleteSession: handleDelete,
-    onExportSession: handleExport,
-    onArchiveSession: handleArchive,
-    onOpenSessionSettings: id => ctx.openSessionSettings(id),
-    onToggleSessionPin: (id: string) => {
-      const target = sessions().find(session => session.id === id)
-      if (!target) return
-      useIdentityStore.getState().updateSession(id, { pinned: !target.pinned })
-    },
-    // #393：改名是用户意图，置 `renamedByUser` 后显示恒以 `name` 为准——
-    // Agent 后续推的标题只更新 `autoName`（存储以 Agent 为准，显示以用户为准）。
-    onRenameSession: (id: string, name: string) => useIdentityStore.getState().updateSession(id, { name, renamedByUser: true, lastActiveAt: Date.now() }),
-    onCreateLooseSession: () => { window.dispatchEvent(new CustomEvent('pylon:new-session')); ctx.selectSession(null) },
-    onCreateWorkspace: async (name: string, rootPath: string) => { await useWorkspaceEntityStore.getState().createWorkspace(name, rootPath) },
-    onCreateWorkspaceSession: createSessionUnderCwd,
-  })
-}
-
 export interface SidebarProps {
   ctx: SheetContext
   state?: unknown
@@ -227,7 +91,9 @@ export interface SidebarProps {
  * 整页（`activePageId`）则相反——它是「这张 Sheet 的主区此刻显示什么」，留在 Sheet 级。
  *
  * #515：Solid 实体——偏好 store 经注册表信号订阅；first-party 贡献体为 Solid 组件
- * 经 <Dynamic> 直挂（isolated 贡献走 IsolatedPluginSurface）。DOM/aria/data-* 契约：
+ * 经 PluginContributionBody 直挂（isolated 贡献走 IsolatedPluginSurface）。#520 S4-P1-4：
+ * 贡献 props 接线恢复共享工厂 `createAgentSidebarSharedProps`（与 AgentSheetPageHost
+ * 同源）；S4-P1-5：贡献体分发统一走 PluginContributionBody。DOM/aria/data-* 契约：
  * aside.sidebar.agent-sidebar > div.sidebar-modules[role=list] > section.sidebar-block
  * [data-module-id][data-collapsed]，模块外壳（.sidebar-block-head 等）归宿主渲染，
  * 贡献只画 .sidebar-block-body-inner。
@@ -240,7 +106,7 @@ export default function Sidebar(props: SidebarProps) {
   const profiles = createZustandSignal(useIdentityStore, s => s.profiles)
   const activeProfileId = createZustandSignal(useIdentityStore, s => s.activeProfileId)
   const activeAgent = createZustandSignal(useIdentityStore, s => s.activeAgent)
-  const sharedProps = createSidebarContributionProps(props.ctx)
+  const sharedProps = createAgentSidebarSharedProps(props.ctx)
 
   const sidebarRegistry = getAgentSidebarRegistry()
   const sidebarSnapshot = createRegistrySignal(sidebarRegistry, () => sidebarRegistry.getSnapshot())
@@ -260,133 +126,21 @@ export default function Sidebar(props: SidebarProps) {
     return visible.filter(contribution => contribution.when?.({ activeAgentId: activeAgent(), activeSessionId: props.ctx.activeSession }) ?? true)
   })
 
-  // ── 拖拽重排 ──
+  // ── 拖拽重排（状态机见 createSidebarDragReorder，#520 S3-P1-5）──
   // 拖拽期间只改**渲染次序**（预览），抬起才落库——与左栏调宽同一取舍：每帧写
   // localStorage 没有意义，而 live 预览是拖拽体感的关键。
-  const [drag, setDrag] = createSignal<{ id: string; pointerId: number } | null>(null)
-  const [dropIndex, setDropIndex] = createSignal<number | null>(null)
-  let pressRef: { timer: number; pointerId: number; startX: number; startY: number } | null = null
-  let dragEndedAt = 0
-  /**
-   * 拖拽开始时**冻结**各模块头的几何。
-   *
-   * 曾经是「实时重排预览」：pointermove 里直接改渲染次序。那会形成反馈环——重排把被拖
-   * 模块挪到光标之外 → 目标位置按新布局重算 → 又挪回去 → 来回翻转，实机表现为疯狂抖动。
-   * 冻结几何后落点只由按下那一刻的布局决定，预览改用一条落点指示线，抖动在结构上不可能发生。
-   */
-  let dragGeometry: readonly { id: string; center: number }[] | null = null
-  const moduleIds = createMemo(() => modules().map(contribution => contribution.id))
-  /**
-   * 钉区起点：栈里第一个 `alwaysOpen` 模块的下标（`applyModulePrefs` 保证它们都在栈底）。
-   * 拖拽只能落在钉区**之前**——常驻模块是左栏主体（会话），用户要求它「始终位于模块最下方」，
-   * 不该被一次拖拽挤到中间去，也不该被谁顶下去。
-   */
-  const pinnedStart = createMemo(() => {
-    const index = modules().findIndex(contribution => contribution.alwaysOpen === true)
-    return index < 0 ? modules().length : index
-  })
-
-  /** 落点序号：冻结几何里中心线在光标之上的模块个数，钳在钉区之前。 */
-  const dropIndexAt = (clientY: number): number => {
-    const geometry = dragGeometry
-    if (!geometry) return 0
-    let index = 0
-    for (const entry of geometry) { if (clientY > entry.center) index += 1 }
-    return Math.min(index, pinnedStart())
-  }
-
-  const cancelPress = () => {
-    const press = pressRef
-    if (!press) return
-    window.clearTimeout(press.timer)
-    pressRef = null
-  }
-
-  /**
-   * **长按**模块头进入拖拽——不再有独立的拖拽手柄。
-   *
-   * 手柄方案有两个代价：常驻一个抓取图标是噪声（用户点名过「折叠按钮太显眼」同一类问题），
-   * 而按需显形就必须给它 `visibility/pointer-events` 门控，否则是个看不见却能拖的靶子。
-   * 长按把手势和「点击标题」区分开，头部因此可以完全干净。
-   */
-  const onHeadPointerDown = (event: PointerEvent, contributionId: string) => {
-    if (event.button !== 0) return
+  const dragReorder = createSidebarDragReorder({
+    moduleIds: () => modules().map(contribution => contribution.id),
+    pinnedStart: () => {
+      const index = modules().findIndex(contribution => contribution.alwaysOpen === true)
+      return index < 0 ? modules().length : index
+    },
     // 钉住的常驻模块不拖：它能去哪儿？钉区之上的位置对它没有意义，又会让「会话永远在最后」失效。
-    if (modules().find(contribution => contribution.id === contributionId)?.alwaysOpen === true) return
-    // **捕获只能发生在真的进入拖拽那一刻，绝不能在按下时。**
-    // 捕获会把 `pointerup` 的目标改写成捕获元素（模块头），而 `click` 派发在「按下目标」与
-    // 「抬起目标」的**最近公共祖先**上——于是头内部的按钮（标题、折叠钮、「打开」、头部动作）
-    // 全都收不到 click，实机表现为「左栏所有按钮点了没反应」。实测捕获在按时：
-    // pointerdown@.sidebar-block-toggle → pointerup@.sidebar-block-head → click@.sidebar-block-head。
-    // jsdom 不实现指针捕获，这个改派在单测里复现不出来，所以由 `Sidebar.blocks.solid.test.tsx`
-    // 对**捕获时机**本身下断言。
-    const head = event.currentTarget as HTMLElement
-    const pointerId = event.pointerId
-    const timer = window.setTimeout(() => {
-      pressRef = null
-      // 指针仍按着才可能走到这里——抬起与取消都会清掉这个计时器。
-      // 捕获是「拖出元素外仍收得到 pointermove」的关键，但并非所有环境都实现
-      // （jsdom 就没有）。缺了它拖拽退化但仍可用，不该整个拖不动。
-      head.setPointerCapture?.(pointerId)
-      dragGeometry = [...document.querySelectorAll<HTMLElement>('.sidebar-block[data-module-id]')].map(node => {
-        const rect = node.getBoundingClientRect()
-        return { id: node.dataset.moduleId ?? '', center: rect.top + rect.height / 2 }
-      })
-      setDrag({ id: contributionId, pointerId })
-      setDropIndex(moduleIds().indexOf(contributionId))
-    }, LONG_PRESS_MS)
-    pressRef = { timer, pointerId, startX: event.clientX, startY: event.clientY }
-  }
-
-  /**
-   * 按下后指针离开模块头就取消长按。
-   *
-   * 取消捕获之后，头以外的 pointermove 收不到了，`LONG_PRESS_SLOP_PX` 也就测不到——用户按住
-   * 又快速移开（其实是想滚动或点别处）时计时器仍会照常触发拖拽。`pointerleave` 补上这个信号：
-   * 它只在真的离开头的边界时触发，在头内部的子元素之间移动不会触发。
-   */
-  const onHeadPointerLeave = () => {
-    // 已经在拖拽（几何已冻结）时不取消：捕获之后指针本就该自由移动。
-    if (dragGeometry === null) cancelPress()
-  }
-
-  const onHeadPointerMove = (event: PointerEvent) => {
-    const press = pressRef
-    if (press) {
-      if (press.pointerId !== event.pointerId) return
-      if (Math.abs(event.clientX - press.startX) > LONG_PRESS_SLOP_PX || Math.abs(event.clientY - press.startY) > LONG_PRESS_SLOP_PX) cancelPress()
-      return
-    }
-    const current = drag()
-    if (!current || event.pointerId !== current.pointerId) return
-    const next = dropIndexAt(event.clientY)
-    if (next !== dropIndex()) setDropIndex(next)
-  }
-
-  const endDrag = (event: PointerEvent) => {
-    cancelPress()
-    const current = drag()
-    if (!current) return
-    const head = event.currentTarget as HTMLElement
-    if (head.hasPointerCapture?.(event.pointerId)) head.releasePointerCapture?.(event.pointerId)
-    const targetIndex = dropIndex()
-    if (targetIndex !== null) {
-      const ids = moduleIds()
-      const from = ids.indexOf(current.id)
-      // 落点序号是「插入到第几个之前」；移除自身后，靠后的落点要左移一位。
-      const to = from >= 0 && targetIndex > from ? targetIndex - 1 : targetIndex
-      if (from >= 0 && to !== from) {
-        const next = [...ids]
-        next.splice(from, 1)
-        next.splice(to, 0, current.id)
-        sidebarModulePrefsStore.setPrefs({ order: next, hidden: modulePrefs().hidden })
-      }
-    }
-    dragGeometry = null
-    dragEndedAt = Date.now()
-    setDrag(null)
-    setDropIndex(null)
-  }
+    isPinned: contributionId => modules().find(contribution => contribution.id === contributionId)?.alwaysOpen === true,
+    commitOrder: next => sidebarModulePrefsStore.setPrefs({ order: [...next], hidden: modulePrefs().hidden }),
+  })
+  const drag = dragReorder.drag
+  const dropIndex = dragReorder.dropIndex
 
   // 折叠写全局 store（跨 Sheet 共享 + 独立持久化）；整页写 Sheet 级状态。
   const toggleBlock = (contribution: AgentSidebarContribution) => {
@@ -415,26 +169,18 @@ export default function Sidebar(props: SidebarProps) {
     const collapsed = () => isBlockCollapsed(contribution, collapsedMap())
     const pageOpen = () => isBlockPageOpen(contribution, pageState())
     const titleAction = resolveTitleAction(contribution)
-    const isolated = contribution.renderKind === 'isolated-surface'
     const streamedAction = () => pendingSurfaceAction()?.contributionId === contributionId ? pendingSurfaceAction() : null
     const openPageAction = shouldShowOpenPageAction(contribution)
 
-    const surfaceInput = (): AgentSidebarSurfaceInput => {
-      const shared = sharedProps()
-      return {
-        activeAgentId: shared.activeAgentId,
-        activeSessionId: shared.activeSessionId,
-        presentation: 'block',
-        collapsed: collapsed(),
-        pageOpen: pageOpen(),
-        blockAction: streamedAction() ? { actionId: streamedAction()!.actionId, nonce: streamedAction()!.nonce } : null,
-        sessions: shared.sessions.map(session => ({ id: session.id, name: session.name, workspaceId: session.workspaceId })),
-        workspaces: shared.workspaces.map(workspace => ({ id: workspace.id, name: workspace.name, rootPath: workspace.rootPath })),
-      }
-    }
+    const surfaceInput = (): AgentSidebarSurfaceInput => projectAgentSidebarSurfaceInput(sharedProps(), {
+      presentation: 'block',
+      collapsed: collapsed(),
+      pageOpen: pageOpen(),
+      blockAction: streamedAction() ? { actionId: streamedAction()!.actionId, nonce: streamedAction()!.nonce } : null,
+    })
 
     // 贡献体直连渲染（#515 岛退役）：共享 props / 折叠态 / wire 输入经细粒度响应直通
-    // 贡献组件；错误边界 + Suspense 语义与原 React 岛一致。
+    // 贡献组件；错误边界 + Suspense 语义收进 PluginContributionBody（#520 S4-P1-5）。
     const contributionProps = () => ({
       ...sharedProps(),
       presentation: 'block' as const,
@@ -453,26 +199,14 @@ export default function Sidebar(props: SidebarProps) {
       if (event === 'host:open-session-settings' && typeof detail === 'string') shared.onOpenSessionSettings(detail)
     }
     const body = () => (
-      <PluginContributionBoundary contributionId={contributionId}>
-        {isolated ? (
-          <IsolatedPluginSurface
-            surfaceId={(contribution as { surfaceId: string }).surfaceId}
-            className="sidebar-block-body-surface"
-            input={surfaceInput()}
-            onEvent={onSurfaceEvent}
-          />
-        ) : (
-          <Suspense fallback={null}>
-            {/* 运行时边界收窄：first-party 贡献组件是 Solid 组件（宿主内置注册）；
-                联合类型在 isolated 分支外不含 component，此处与原 FirstPartyContribution
-                的边界纪律一致按 Solid 组件收窄。 */}
-            <Dynamic
-              component={(contribution as { component?: unknown }).component as Component<AgentSidebarContributionProps>}
-              {...contributionProps()}
-            />
-          </Suspense>
-        )}
-      </PluginContributionBoundary>
+      <PluginContributionBody
+        contributionId={contributionId}
+        contribution={contribution}
+        surfaceClass="sidebar-block-body-surface"
+        surfaceInput={surfaceInput}
+        onSurfaceEvent={onSurfaceEvent}
+        componentProps={contributionProps}
+      />
     )
 
     const iconName = launchIconName(contribution.icon)
@@ -491,11 +225,11 @@ export default function Sidebar(props: SidebarProps) {
         <div
           class="sidebar-block-head"
           title={contribution.alwaysOpen === true ? '常驻模块固定在栈底' : '长按可拖动调整模块次序'}
-          onPointerDown={event => onHeadPointerDown(event, contributionId)}
-          onPointerMove={onHeadPointerMove}
-          onPointerLeave={onHeadPointerLeave}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
+          onPointerDown={event => dragReorder.onHeadPointerDown(event, contributionId)}
+          onPointerMove={dragReorder.onHeadPointerMove}
+          onPointerLeave={dragReorder.onHeadPointerLeave}
+          onPointerUp={dragReorder.endDrag}
+          onPointerCancel={dragReorder.endDrag}
         >
           <button
             class="sidebar-block-toggle"
@@ -504,7 +238,7 @@ export default function Sidebar(props: SidebarProps) {
             aria-expanded={titleAction === 'expand' && collapsible() ? (collapsed() ? 'false' : 'true') : undefined}
             onClick={() => {
               // 拖拽抬起那一下会补一个 click；不吞掉就会连带展开/进页面。
-              if (Date.now() - dragEndedAt < DRAG_CLICK_SUPPRESS_MS) return
+              if (dragReorder.suppressClick()) return
               if (titleAction === 'page') openPage(contribution)
               else if (collapsible()) toggleBlock(contribution)
             }}

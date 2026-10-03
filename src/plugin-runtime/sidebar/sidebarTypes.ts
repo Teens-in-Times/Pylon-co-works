@@ -1,3 +1,4 @@
+import type { Component } from 'solid-js'
 import type { RegistryEntry } from '../registry/types.ts'
 import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
 import type { Workspace } from '../../domains/workspace/workspaceEntities.ts'
@@ -110,8 +111,13 @@ interface AgentSidebarContributionBase {
 
 export interface FirstPartyAgentSidebarContribution extends AgentSidebarContributionBase {
   readonly renderKind: 'first-party-solid'
-  /** Opaque at the runtime boundary; the Solid host (src/components/Sidebar.solid.tsx) narrows it before rendering. */
-  readonly component: unknown
+  /**
+   * #520 S4-P1-6：typed component（对齐 contextPanelTypes 既有范式，不再 opaque）。
+   * 第一方贡献组件是 Solid `Component<AgentSidebarContributionProps>`，宿主
+   * （Sidebar / AgentSheetPageHost）经 PluginContributionBody 直连渲染——
+   * 宿主侧的 `as Component` 断言随 opaque 收窄一并退役。
+   */
+  readonly component: Component<AgentSidebarContributionProps>
 }
 
 export interface IsolatedAgentSidebarContribution extends AgentSidebarContributionBase {

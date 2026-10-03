@@ -1,4 +1,5 @@
 import type { AgentContext } from '../../domains/agent/agentContext.ts'
+import type { Component } from 'solid-js'
 import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
 import type { WorkspaceEntry, WorkspaceTextPreview } from './fileViewContracts.ts'
 import type { WorkspaceSearchResult } from '../../infrastructure/tauri/workspaceSearchContracts.ts'
@@ -103,7 +104,10 @@ interface FileActivityBase {
 }
 
 export type FileActivityContribution = FileActivityBase & (
-  | { renderKind: 'first-party-solid'; component: unknown }
+  // #520 S4-P1-6/S4-P0-1：typed component（对齐 contextPanelTypes 范式）。FileSheetView
+  // 自 #520 起经 PluginContributionBody 消费本字段（<Dynamic> 直挂注册组件）——第三方
+  // first-party-solid activity 注册即渲染，不再被宿主按 builtin id 白名单无视。
+  | { renderKind: 'first-party-solid'; component: Component<FileActivityProps> }
   | { renderKind: 'isolated-surface'; surfaceId: string }
 )
 
@@ -116,8 +120,28 @@ interface FileViewRendererBase {
   onError?: (error: unknown) => 'fallback' | 'rethrow'
 }
 
+/**
+ * file 视图 renderer（first-party-solid 臂）的 props 面。
+ *
+ * 与 FileSheetView 内置渲染实体 FileViewHost 的 props 同构（该实体不得被
+ * plugins/core 静态 import，故在此声明共享契约；结构性一致由 builtin 注册处
+ * 传入 FileViewHost 实例编译期校验）。
+ */
+export interface FileViewRendererProps {
+  target?: WorkspaceTarget | null
+  fileProvider?: FileProvider | null
+  gitProvider?: GitProvider | null
+  context?: AgentContext | null
+  tab: FileTabRecord | null
+  onCloseTab: (key: string) => void
+  onDirtyChange?: (key: string, dirty: boolean) => void
+  onSavingChange?: (key: string, saving: boolean) => void
+}
+
 export type FileViewRendererDefinition = FileViewRendererBase & (
-  | { renderKind: 'first-party-solid'; component: unknown }
+  // #520 S4-P1-6/S4-P0-1：同 activity——FileSheetView 的视图分支经 PluginContributionBody
+  // 消费本字段，选中的 renderer 注册组件即渲染目标。
+  | { renderKind: 'first-party-solid'; component: Component<FileViewRendererProps> }
   | { renderKind: 'isolated-surface'; surfaceId: string }
 )
 
