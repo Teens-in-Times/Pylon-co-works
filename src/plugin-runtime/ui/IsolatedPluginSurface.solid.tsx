@@ -34,7 +34,7 @@ async function unmount(result: PluginUiUnmount): Promise<void> {
  * IsolatedPluginSurfaceProps — 插件 isolated-surface 贡献的挂载输入（wire 契约见
  * pluginUiApi/pluginUiRegistry，DOM data-* 属性是存量契约，禁止漂移）。
  */
-export interface IsolatedPluginSurfaceProps {
+interface IsolatedPluginSurfaceProps {
   surfaceId: string
   className?: string
   input?: unknown

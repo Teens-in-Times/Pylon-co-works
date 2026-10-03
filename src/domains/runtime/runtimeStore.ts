@@ -77,8 +77,6 @@ interface RuntimeStoreState {
   clearSessionSource: (context: AgentContext) => void
   /** Agent 切换成功：只清会话运行时状态，保留 agentStatuses 供末尾快照对账。 */
   resetSessionRuntime: () => void
-  /** @deprecated 使用 resetSessionRuntime；保留兼容入口但不清 agentStatuses。 */
-  resetAll: () => void
 }
 
 // #515 批0：zustand → Solid 内核置换；W3 起 useRuntimeStore 即内核本体（直连，无 shim）。
@@ -201,7 +199,6 @@ const runtimeKernel = createSolidStoreKernel<RuntimeStoreState>({
     // reducer receive 失效，超时/应答由 controller 与后端保护。
     approvalMode: 'default',
   }),
-  resetAll: () => runtimeKernel.getState().resetSessionRuntime(),
 })
 
 export const useRuntimeStore: SolidStoreKernel<RuntimeStoreState> = runtimeKernel

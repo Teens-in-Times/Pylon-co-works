@@ -5,7 +5,7 @@
  * 事件在快照查询挂起期间到达、以及快照查询失败不伪造 connected。
  *
  * 用真实 runtimeStore + 真实 switchAgentTransaction，deps 接线对齐
- * Settings.tsx / OverviewSheetView.tsx（resetRuntime → resetAll，
+ * Settings / OverviewSheetView（resetRuntime → resetSessionRuntime，
  * applyAgentStatus → setAgentStatus）。事件写入路径对齐 App.tsx listener。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,7 +25,7 @@ function createStoreDeps(overrides: Record<string, unknown> = {}) {
   const calls: string[] = []
   const deps = {
     switchAgent: async (id: string) => { calls.push(`switch:${id}`) },
-    resetRuntime: () => { calls.push('reset'); useRuntimeStore.getState().resetAll() },
+    resetRuntime: () => { calls.push('reset'); useRuntimeStore.getState().resetSessionRuntime() },
     setActiveAgent: (id: string) => { calls.push(`setActive:${id}`) },
     fetchAgentStatus: async () => { calls.push('fetchStatus'); return { status: 'connected', generation: 5 } },
     applyAgentStatus: (id: string, status: AgentStatus) => {

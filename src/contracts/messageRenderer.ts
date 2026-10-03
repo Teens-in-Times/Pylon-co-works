@@ -45,8 +45,7 @@ export type RenderSurfaceEvent = 'error' | 'request-action'
 
 /**
  * 命令式渲染面：由 MessageRenderer.render* 返回。
- * mount 的 props 是实现层载荷；core facade 约定 `{ component, componentProps }`，
- * 宿主把现有组件（如 MessageRow / SolidMessageRow）作为 component 传入即可。
+ * mount 以语义 snapshot/appearance/commands 为载荷，宿主不传组件实例。
  */
 export interface RenderSurface {
   readonly rendererId: string
@@ -98,20 +97,4 @@ export interface MessageRenderer {
   renderMessage(props: MessageRenderProps): RenderSurface
   renderTool(props: ToolRenderProps): RenderSurface
   renderReasoning(props: ReasoningRenderProps): RenderSurface
-}
-
-/** core facade 约定的 mount 载荷形状（实现层，不进 manifest）。 */
-export interface RendererMountProps {
-  component: unknown
-  componentProps?: unknown
-}
-
-/** 从 mount 载荷中解析组件与组件 props（core facade 内部工具）。 */
-/** @deprecated 仅供旧 adapter；核心 host 不再构造 component/componentProps。 */
-export function resolveRendererMountProps(props: unknown): RendererMountProps {
-  const value = (props ?? {}) as RendererMountProps
-  if (!value || typeof value !== 'object' || !('component' in value) || !value.component) {
-    throw new Error('RenderSurface.mount 需要 { component } 载荷')
-  }
-  return { component: value.component, componentProps: value.componentProps ?? {} }
 }

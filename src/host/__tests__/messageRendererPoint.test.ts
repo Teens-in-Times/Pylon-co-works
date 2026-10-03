@@ -1,6 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
-  resolveRendererMountProps,
   type MessageRenderer,
   type RenderSurface,
 } from '../../contracts/messageRenderer'
@@ -76,10 +75,5 @@ describe('v2 Message Renderer Registry', () => {
 
     await deactivatePluginInstance(incapable)
     temporaryInstances.splice(temporaryInstances.indexOf(incapable), 1)
-  })
-
-  it('resolveRendererMountProps 拒绝缺失 component 的载荷', () => {
-    expect(resolveRendererMountProps({ component: { marker: true } }).componentProps).toEqual({})
-    expect(() => resolveRendererMountProps(undefined)).toThrow(/component/)
   })
 })

@@ -32,7 +32,7 @@ export function createStandardSwitchAgent(getAgentName: (agentId: string) => str
   const operationKey = (agentId: string, action: string) => `agent-switch:${agentId}:${action}`
   return (agentId: string) => switchAgentTransaction(agentId, getAgentName(agentId) ?? agentId, {
     switchAgent: id => createAgentClient({ invoke: tauriInvokeTransport }).switchAgent(id),
-    resetRuntime: () => useRuntimeStore.getState().resetAll(),
+    resetRuntime: () => useRuntimeStore.getState().resetSessionRuntime(),
     setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
     fetchAgentStatus: () => createAgentClient({ invoke: tauriInvokeTransport }).agentStatus(),
     applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),

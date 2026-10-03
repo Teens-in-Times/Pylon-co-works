@@ -12,22 +12,20 @@ import { normalizeWorkspaceShape, type Workspace } from '../../domains/workspace
 import type { WorkspaceTargetWire } from '../../domains/workspace/workspaceTarget.ts'
 
 export function createWorkspaceClient(transport: ClientTransport) {
-  /** @deprecated string form only keeps direct legacy tests compiling; production passes WorkspaceTarget. */
-  const targetArgs = (target: WorkspaceTargetWire | string) => typeof target === 'string' ? { source: target } : { target }
   const normalizeWorkspaceList = (raw: unknown): Workspace[] =>
     Array.isArray(raw) ? raw.map(normalizeWorkspaceShape).filter((w): w is Workspace => w !== null) : []
   return {
-    listEntries: (target: WorkspaceTargetWire | string, relativePath: string): Promise<unknown> =>
-      transport.invoke('list_workspace_entries', { ...targetArgs(target), relativePath }).then(normalizeWorkspaceEntries),
+    listEntries: (target: WorkspaceTargetWire, relativePath: string): Promise<unknown> =>
+      transport.invoke('list_workspace_entries', { target, relativePath }).then(normalizeWorkspaceEntries),
     /** 0-C1：quick open 文件名索引（有界枚举，本地匹配）。 */
-    listFiles: (target: WorkspaceTargetWire | string, maxEntries?: number): Promise<unknown> =>
+    listFiles: (target: WorkspaceTargetWire, maxEntries?: number): Promise<unknown> =>
       transport.invoke('list_workspace_files', {
-        ...targetArgs(target),
+        target,
         ...(maxEntries === undefined ? {} : { maxEntries }),
       }).then(normalizeWorkspaceFileIndexPage),
-    readText: (target: WorkspaceTargetWire | string, relativePath: string, maxBytes?: number): Promise<unknown> =>
+    readText: (target: WorkspaceTargetWire, relativePath: string, maxBytes?: number): Promise<unknown> =>
       transport.invoke('read_workspace_text', {
-        ...targetArgs(target),
+        target,
         relativePath,
         ...(maxBytes === undefined ? {} : { maxBytes }),
       }).then(normalizeWorkspaceText),
@@ -41,12 +39,12 @@ export function createWorkspaceClient(transport: ClientTransport) {
     /** 0-C2：merge/rebase/cherry-pick 进行态 + 冲突清单。 */
     gitSequenceState: (target: WorkspaceTargetWire): Promise<GitSequenceState> =>
       transport.invoke('git_sequence_state', { target }).then(normalizeGitSequenceState),
-    gitStatus: (target: WorkspaceTargetWire | string): Promise<unknown> => transport.invoke('git_status', targetArgs(target)).then(normalizeGitStatus),
-    gitStatusWithBranch: (target: WorkspaceTargetWire | string): Promise<unknown> =>
-      transport.invoke('git_status_with_branch', targetArgs(target)).then(normalizeGitStatusWithBranch),
+    gitStatus: (target: WorkspaceTargetWire): Promise<unknown> => transport.invoke('git_status', { target }).then(normalizeGitStatus),
+    gitStatusWithBranch: (target: WorkspaceTargetWire): Promise<unknown> =>
+      transport.invoke('git_status_with_branch', { target }).then(normalizeGitStatusWithBranch),
     gitHistory: (target: WorkspaceTargetWire): Promise<unknown> => transport.invoke('git_history', { target }).then(normalizeGitHistory),
-    gitDiff: (target: WorkspaceTargetWire | string, path: string, staged: boolean): Promise<string> =>
-      transport.invoke('git_diff', { ...targetArgs(target), path, staged }).then(normalizeGitText),
+    gitDiff: (target: WorkspaceTargetWire, path: string, staged: boolean): Promise<string> =>
+      transport.invoke('git_diff', { target, path, staged }).then(normalizeGitText),
     gitStage: (target: WorkspaceTargetWire, paths: string[]): Promise<unknown> =>
       transport.invoke('git_stage', { target, paths }).then(normalizeGitOperationResult),
     gitUnstage: (target: WorkspaceTargetWire, paths: string[]): Promise<unknown> =>

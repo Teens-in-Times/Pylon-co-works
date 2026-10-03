@@ -35,7 +35,7 @@ export function createSettingsAgentActions(activeAgent: () => string) {
     setSwitchingAgentId(agentId)
     await switchAgentTransaction(agentId, agentId, {
       switchAgent: () => agentClient.switchAgent(agentId),
-      resetRuntime: () => useRuntimeStore.getState().resetAll(),
+      resetRuntime: () => useRuntimeStore.getState().resetSessionRuntime(),
       setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
       fetchAgentStatus: () => agentClient.agentStatus(),
       applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),

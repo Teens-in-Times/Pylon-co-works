@@ -554,7 +554,7 @@ onError?(error, input) → fallback | rethrow
 
 工具渲染器可提供 summary、search text、output label 和 diff candidate 判断。代码高亮器返回 HTML 字符串或 `null`。
 
-Renderer Engine 与视觉风格正交。用户可在“设置 → 外观 → 渲染器”选择消息渲染引擎（Renderer Suite 选择器，呈现偏好持久化）；`auto` 按 `priority / fallback / canRender` 解析。宿主向 `RenderSurface.mount/update` 提供语义 `messageProps` 与可序列化 `appearance`。旧 `component/componentProps` 载荷已废弃（`@deprecated`）且宿主核心不再构造——`resolveRendererMountProps` 仅留给旧 adapter 兼容（见 `src/contracts/messageRenderer.ts`）。外置渲染器应消费语义载荷，不要依赖组件载荷形态。
+Renderer Engine 与视觉风格正交。用户可在“设置 → 外观 → 渲染器”选择消息渲染引擎（Renderer Suite 选择器，呈现偏好持久化）；`auto` 按 `priority / fallback / canRender` 解析。宿主向 `RenderSurface.mount/update` 提供语义 `messageProps` 与可序列化 `appearance`。旧 `component/componentProps` 组件载荷已随兼容链删除，宿主不再提供——外置渲染器应消费语义载荷。
 
 ### 6.4.1 Presentation Profile（渲染风格）
 

@@ -164,7 +164,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
     const agentClient = appClients.agent()
     const result = await switchAgentTransaction(agent.id, agent.name, {
       switchAgent: () => agentClient.switchAgent(agent.id),
-      resetRuntime: () => useRuntimeStore.getState().resetAll(),
+      resetRuntime: () => useRuntimeStore.getState().resetSessionRuntime(),
       setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
       fetchAgentStatus: () => agentClient.agentStatus(),
       applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),
