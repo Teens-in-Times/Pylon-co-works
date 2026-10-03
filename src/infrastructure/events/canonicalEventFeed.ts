@@ -327,14 +327,19 @@ export function createCanonicalEventFeed(): CanonicalEventFeed {
     },
   }
 
-  // B1：user echo 后端已 Channel 优先（send_update_frame 单轨）；本广播兜底
-  // 服务未注册 Channel 的来源（平台 ingest / 非 Tauri 环境）。feed 为应用级
-  // 单例，监听随 feed 生命周期注册一次；失败仅上报（Channel 主轨不受影响）。
-  void listen(PYLON_STREAM_WIRE_EVENTS.user, event => {
-    void feed.acceptFrame({ event: PYLON_STREAM_WIRE_EVENTS.user, payload: event.payload })
-  }).catch(error => {
-    reportRuntimeError('注册 canonical feed user 兜底监听', error)
-  })
+  // 两条广播兜底都依赖 Tauri 事件宿主（`listen` 需要 window + __TAURI_INTERNALS__）。
+  // node 纯单元环境（无 window）里注册必然失败且失败只化为噪音上报（#228 B 类
+  // console.error 的根因），故按环境守卫静默跳过；浏览器/Tauri 环境 window 恒在，
+  // 守卫不改变任何行为。
+  if (typeof window !== 'undefined') {
+    // B1：user echo 后端已 Channel 优先（send_update_frame 单轨）；本广播兜底
+    // 服务未注册 Channel 的来源（平台 ingest / 非 Tauri 环境）。feed 为应用级
+    // 单例，监听随 feed 生命周期注册一次；失败仅上报（Channel 主轨不受影响）。
+    void listen(PYLON_STREAM_WIRE_EVENTS.user, event => {
+      void feed.acceptFrame({ event: PYLON_STREAM_WIRE_EVENTS.user, payload: event.payload })
+    }).catch(error => {
+      reportRuntimeError('注册 canonical feed user 兜底监听', error)
+    })
 
   // #310：`pylon:update` 同样需要广播兜底。后端对**未注册 per-source Channel** 的来源
   // 整回合改走 `emit_event_all` 广播（与 Channel 互斥，见 dispatcher 的
@@ -344,11 +349,12 @@ export function createCanonicalEventFeed(): CanonicalEventFeed {
   // `pylon:done` 的兜底轨到得了 → 界面只剩「处理耗时」页脚，正文要等重启冷装载
   // 读 journal 才出现（issue #310 实机复现：回合内 DOM 4 行／重载后 6 行）。
   // 与 `pylon:user` 兜底同形：重复投递由 cursor 的 sequence 去重与投影器幂等吸收。
-  void listen(PYLON_STREAM_WIRE_EVENTS.update, event => {
-    void feed.acceptFrame({ event: PYLON_STREAM_WIRE_EVENTS.update, payload: event.payload })
-  }).catch(error => {
-    reportRuntimeError('注册 canonical feed update 兜底监听', error)
-  })
+    void listen(PYLON_STREAM_WIRE_EVENTS.update, event => {
+      void feed.acceptFrame({ event: PYLON_STREAM_WIRE_EVENTS.update, payload: event.payload })
+    }).catch(error => {
+      reportRuntimeError('注册 canonical feed update 兜底监听', error)
+    })
+  }
 
   return feed
 }

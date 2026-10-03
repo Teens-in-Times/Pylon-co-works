@@ -30,32 +30,27 @@ process.on('unhandledRejection', onUnhandledRejection)
 //     （错误中心、渲染边界、事务回滚、网关写回、Agent 切换/探测失败等）；
 //   B node 环境噪音——canonical feed 兜底监听注册在无 window/Tauri 的 node 工程
 //     里失败（「注册 canonical feed user 兜底监听失败 …」）。根因是产品侧注册无
-//     环境守卫（src/infrastructure/events/canonicalEventFeed.ts:241 一带）；
+//     环境守卫——守卫已落地（canonicalEventFeed.createCanonicalEventFeed 按
+//     `typeof window` 静默跳过注册），B 类 node 组条目已全部移出；jsdom 组
+//     （有 window、无 Tauri 宿主，listen 照旧失败）条目仍在；
 //   C Renderer Suite fatal 回退链——「Renderer Suite 回退失败 …（自动重试 N/M）」
 //     是回退机制的过程日志，用例正是断言该回退行为。
 // 白名单外文件出现任何 console.error 一律 fail（fail 消息带首条原文，便于定性）。
-// 回收计划：B 类在产品注册处补 `typeof window`/Tauri 可用性守卫后逐文件移出；
-// A/C 类在产品改走诊断通道上报后移出；**名单清零后删除整个白名单机制**，
-// afterAll 对 console.error 无条件 throw（即原「阶段 8 硬断言」，届时本注释一并删除）。
+// 回收计划：B 类余量在测试宿主给 jsdom 注入 Tauri 垫片后移出（注册点不宜直接
+// 收窄到 IS_TAURI——canonicalEventFeed.test.ts 在无宿主 jsdom 里断言注册发生，
+// 需先补垫片）；A/C 类在产品改走诊断通道上报后移出；**名单清零后删除整个白
+// 名单机制**，afterAll 对 console.error 无条件 throw（即原「阶段 8 硬断言」，
+// 届时本注释一并删除）。
 const EXPECTED_CONSOLE_ERROR_FILES: readonly string[] = [
-  // B 类：canonical feed 兜底监听注册在 node 环境失败的噪音
-  'src/__tests__/replay/livenessAuthority.test.ts',
-  'src/__tests__/replay/agentWorkbenchSession.batch.test.ts',
-  'src/__tests__/replay/agentWorkbenchSession.rebindIndicator.test.ts',
-  'src/__tests__/replay/agentWorkbenchSession.snapshotBridge.test.ts',
-  // #376-b：与上面三个 agentWorkbenchSession 同族（同一个 feed 注册噪音源）。
+  // B 类：canonical feed 兜底监听注册噪音。node 组（无 window）条目已随产品侧
+  // window 守卫全部移出；剩余为 jsdom 组（有 window、无 Tauri 宿主，listen 照旧
+  // 失败）——
+  // #376-b：agentWorkbenchSession 族在 jsdom 的 feed 注册噪音（node 同族条目已摘）。
   'src/__tests__/replay/agentWorkbenchSession.pagedLoad.test.ts',
-  // #390：同族（生成指示器稳定性回归，同一个 feed 注册噪音源）。
-  'src/__tests__/replay/agentWorkbenchSession.indicatorStability.test.ts',
-  // #442：同族（turnBoundary 权威字段行为，同一个 feed 注册噪音源）。
-  'src/__tests__/replay/agentWorkbenchSession.turnBoundary.test.ts',
-  'src/__tests__/replay/documentLayer.test.ts',
-  'src/application/agent-workbench/__tests__/agentWorkbenchSession.test.ts',
-  'src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts',
-  'src/application/agent-workbench/__tests__/agentWorkbenchSession.emptyStateFirstPrompt.test.ts',
-  // #515：两文件随实体迁移改名 .solid.test.tsx（同族 feed 注册噪音，白名单跟随）。
+  // #515：随实体迁移改名 .solid.test.tsx（同族 feed 注册噪音，白名单跟随）。
+  // 同族的 sheetLayoutSidebarCollapsedReactive.solid.test.tsx 只直连 SheetLayout
+  // （activeSession=null，不构建 feed），噪音实测已消失，条目一并摘除。
   'src/workspace-sheets/__tests__/agentSuiteKeepAlive.integration.solid.test.tsx',
-  'src/workspace-sheets/__tests__/sheetLayoutSidebarCollapsedReactive.solid.test.tsx',
   // C 类：Renderer Suite fatal 回退链过程日志（含少量 B 类注册噪音）
   // #515：两文件随实体直连改名 .solid.test.tsx（同一错误路径契约，白名单跟随）。
   'src/application/agent-workbench/__tests__/AgentRendererSuiteWorkbench.fatal.solid.test.tsx',
