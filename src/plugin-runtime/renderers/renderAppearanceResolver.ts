@@ -1,13 +1,9 @@
-import type {
-  RenderSettingField,
-  RendererSettingValue,
-  RendererSettingsSchema,
-} from './rendererSettingsTypes.ts'
+import type { RenderSettingField, RendererSettingValue, RendererSettingsSchema } from './rendererSettingsTypes.ts'
 import { settingFieldKey } from './rendererSettingsTypes.ts'
 import type { RendererSettingOption } from './rendererSettingsTypes.ts'
-import type { RegistryEntry } from '../registry/types.ts'
-import type { PluginSettingOptionsContribution } from '../settings/pluginSettingsTypes.ts'
-import { resolvePluginSettingOptions } from '../settings/pluginSettingOptionsRegistry.ts'
+// #520 S4-P0-3：选项解析正身住 contracts/settingOptions——renderers ⇄ settings
+// 的最后一跳运行时值边在此断开（贡献类型由调用侧以结构兼容的 EntryLike 传入）。
+import { resolveSettingOptions, type SettingOptionsEntryLike } from '../../contracts/settingOptions.ts'
 
 export type RenderAppearanceSource = 'schema-default' | 'host-default' | 'kind-default' | 'profile' | 'user-override' | 'session-preview'
 
@@ -40,12 +36,12 @@ export interface RenderAppearanceResolution {
 export function resolveFieldOptions(
   field: RenderSettingField,
   target: string,
-  entries: readonly RegistryEntry<PluginSettingOptionsContribution>[] = [],
+  entries: readonly SettingOptionsEntryLike[] = [],
 ): readonly RendererSettingOption[] {
   const base = field.type === 'choice' || field.type === 'multi-choice' ? field.options : []
   if (field.type !== 'choice' && field.type !== 'multi-choice' && field.type !== 'color') return Object.freeze([])
   const optionTarget = field.type === 'color' ? field.paletteTarget : field.optionTarget
-  return resolvePluginSettingOptions(optionTarget ?? target, base, entries)
+  return resolveSettingOptions(optionTarget ?? target, base, entries)
 }
 
 function fieldsOf(schema: RendererSettingsSchema): Map<string, RenderSettingField> {

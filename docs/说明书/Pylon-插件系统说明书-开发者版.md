@@ -554,6 +554,13 @@ onError?(error, input) → fallback | rethrow
 
 工具渲染器可提供 summary、search text、output label 和 diff candidate 判断。代码高亮器返回 HTML 字符串或 `null`。
 
+★ **双轨正名（#520）**：Renderer 注册有两条**都在役**的轨道，不是新旧替代关系——
+
+- **kind 语义面**：`registerRenderKind` 声明语义 kind 与 fallback 链（`validateInput` / `fixture` / settings schema / `settingsPlacement`），是解析顺序与设置归类的真源；
+- **suite 实现面**：`registerSuite` / `registerSlot` 以「套件 + 槽位」为单位装配完整 Workbench 实现（类型 `RendererSuiteContribution` / `RendererSlotContribution` 已从 SDK 导出）。
+
+上面四个 `register*` 定义面（message/content/tool/highlighter）是**在役兼容轨道**：宿主 `resolveSurface` 按 kind 语义面的 fallback 链在 content/tool 臂中挑选渲染器，message/highlighter 臂由会话消息面消费。它们与 Suite/Slot 面并存，退役前提是 Suite/Slot 面全量承接这两类消费并另行公告；在此之前照常使用，不要把它们当弃用 API。
+
 Renderer Engine 与视觉风格正交。用户可在“设置 → 外观 → 渲染器”选择消息渲染引擎（Renderer Suite 选择器，呈现偏好持久化）；`auto` 按 `priority / fallback / canRender` 解析。宿主向 `RenderSurface.mount/update` 提供语义 `messageProps` 与可序列化 `appearance`。旧 `component/componentProps` 组件载荷已随兼容链删除，宿主不再提供——外置渲染器应消费语义载荷。
 
 ### 6.4.1 Presentation Profile（渲染风格）
@@ -986,7 +993,7 @@ import {
 - 类型一律 `export type` re-export（`PluginActivationContext`、`CommandDefinition`、`HookDefinition`、`PluginUiSurface`、`WorkspaceTypeDefinition`、renderer/settings/presentation/sessionCreation/process/scope 等），编译期消失；
 - 运行时值仅限常量表与纯函数，禁止 import 宿主运行时模块——SDK 可安全内联进插件 bundle，不会泄漏宿主代码。
 
-**契约类型出口覆盖 API 1.0–1.3 / 2.0–2.4 的全部 context 面**（application/workspace/renderer/commands/hooks/sessions/turns/process/ui/services/sidebar/fileWorkbench/contextPanel/presentation/settings/fonts/sessionCreation/interfaceModes/shellRecipes/titlebar/storage/ccWidget/presets/management），以及按域分组的贡献类型（2.0 region 左栏模块、2.1 `CommandTitlebarContribution` app-menu、cc-widget placement、preset 注册、1.2 管理面投影类型等）。**隔离面 wire 协议**也是 SDK 出口：左栏模块与右栏面板的 `renderKind: 'isolated-surface'` 形态，宿主经 `host:input` 推送的输入类型（`AgentSidebarSurfaceInput` / `ContextPanelSurfaceInput`）与可回传事件词表（`SIDEBAR_SURFACE_EVENTS` / `CONTEXT_PANEL_SURFACE_EVENTS`）——写隔离面插件不必再反推宿主桥接协议。
+**契约类型出口覆盖 API 1.0–1.3 / 2.0–2.4 的全部 context 面**（application/workspace/renderer/commands/hooks/sessions/turns/process/ui/services/sidebar/fileWorkbench/contextPanel/presentation/settings/fonts/sessionCreation/interfaceModes/shellRecipes/titlebar/storage/ccWidget/presets/management），以及按域分组的贡献类型（2.0 region 左栏模块、2.1 `CommandTitlebarContribution` app-menu、cc-widget placement、preset 注册、1.2 管理面投影类型、Renderer Suite/Slot 贡献类型 `RendererSuiteContribution` / `RendererSlotContribution`（#520 补齐）等）。**隔离面 wire 协议**也是 SDK 出口：左栏模块与右栏面板的 `renderKind: 'isolated-surface'` 形态，宿主经 `host:input` 推送的输入类型（`AgentSidebarSurfaceInput` / `ContextPanelSurfaceInput`）与可回传事件词表（`SIDEBAR_SURFACE_EVENTS` / `CONTEXT_PANEL_SURFACE_EVENTS`）——写隔离面插件不必再反推宿主桥接协议。
 
 有一道**防漂移门**看守这份出口：`sdkExports.test.ts` 的 parity 断言强制「activation context 每个成员 ↔ SDK 出口类型」一一对应，宿主新增 context 成员而未补出口时编译期变红。
 

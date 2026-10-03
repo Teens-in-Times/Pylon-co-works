@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js'
-import type { SettingsSchema, SettingsValueAdapter } from '../renderers/rendererSettingsTypes.ts'
+import type { SettingsSchema, SettingsValueAdapter } from '../../contracts/rendererSettingsSchema.ts'
 import type { SettingsTarget } from './settingsTargetGrammar.ts'
 
 export type PluginSettingValue = null | boolean | number | string | readonly PluginSettingValue[] | {

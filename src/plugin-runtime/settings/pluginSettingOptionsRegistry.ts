@@ -1,4 +1,5 @@
 import { THEME_FIELD_DEFS, type ThemeFieldKey } from '../../domains/theme/themeFieldDefs.ts'
+import { resolveSettingOptions, type ResolvedSettingOption } from '../../contracts/settingOptions.ts'
 import { ValidatedContributionRegistry } from '../registry/validatedContributionRegistry.ts'
 import type { RegistryEntry } from '../registry/types.ts'
 import type { PluginSettingOption, PluginSettingOptionsContribution } from './pluginSettingsTypes.ts'
@@ -73,46 +74,18 @@ export class PluginSettingOptionsRegistry extends ValidatedContributionRegistry<
   constructor() { super(validatePluginSettingOptionsContribution) }
 }
 
-interface ResolvedOption extends PluginSettingOption {
-  readonly label: string
-  readonly contributionId?: string
-}
-
-interface MutableResolvedOption {
-  value: string
-  label: string
-  description?: string
-  disabled?: boolean
-  order?: number
-  contributionId?: string
-  sequence: number
-}
-
-/** Pure resolver shared by Settings controls and contract tests. */
+/**
+ * Pure resolver shared by Settings controls and contract tests.
+ *
+ * 正身住 `src/contracts/settingOptions.ts`（#520 S4-P0-3：renderers⇄settings 值环
+ * 破除件——renderers/renderAppearanceResolver 直接取 contracts 算法，本文件只保留
+ * `RegistryEntry<PluginSettingOptionsContribution>` 签名的兼容出口；registry 校验
+ * 已把 structured target 归一为 dotted string，结构上满足 EntryLike 约束）。
+ */
 export function resolvePluginSettingOptions(
   target: string,
   base: readonly PluginSettingOption[],
   entries: readonly RegistryEntry<PluginSettingOptionsContribution>[],
-): readonly ResolvedOption[] {
-  const values = new Map<string, MutableResolvedOption>()
-  let sequence = 0
-  for (const option of base) {
-    values.set(option.value, { ...option, label: option.label ?? option.value, sequence: sequence++ })
-  }
-  for (const entry of entries) {
-    if (entry.value.target !== target) continue
-    for (const value of entry.value.remove ?? []) values.delete(value)
-    for (const option of entry.value.upsert ?? []) {
-      const current = values.get(option.value)
-      values.set(option.value, {
-        ...(current ?? { value: option.value, label: option.value, sequence: sequence++ }),
-        ...option,
-        label: option.label ?? current?.label ?? option.value,
-        contributionId: entry.contributionId,
-      })
-    }
-  }
-  return Object.freeze([...values.values()]
-    .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || a.sequence - b.sequence)
-    .map(({ sequence: _sequence, ...option }) => Object.freeze(option)))
+): readonly ResolvedSettingOption[] {
+  return resolveSettingOptions(target, base, entries)
 }

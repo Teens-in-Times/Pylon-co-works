@@ -2,7 +2,6 @@ import { CommandRegistry } from './commands/commandRegistry.ts'
 import { PromptContributionRegistry } from './prompt/promptContributionRegistry.ts'
 import { PluginEventBus } from './events/pluginEventBus.ts'
 import { HookRuntime } from './hooks/hookRuntime.ts'
-import { RegistryHub } from './registry/registryHub.ts'
 import { RendererRegistry } from './renderers/rendererRegistry.ts'
 import { createRendererSettingsStore, type RendererSettingsStore } from './renderers/rendererSettingsStore.ts'
 import { PluginUiRegistry } from './ui/pluginUiRegistry.ts'
@@ -41,7 +40,6 @@ export interface CreateRuntimeServicesOptions {
 export function createRuntimeServices(options: CreateRuntimeServicesOptions = {}): RuntimeServices {
   const workspaceRegistry = options.workspaceRegistry ?? new WorkspaceRegistryStore()
   const services = Object.freeze({
-    registryHub: new RegistryHub(),
     commandRegistry: new CommandRegistry(),
     promptContributionRegistry: new PromptContributionRegistry(),
     eventBus: new PluginEventBus(),
@@ -91,10 +89,6 @@ export function bindPluginDisableHandler(handler: PluginDisableHandler): void {
 
 export function getRuntimeServices(): RuntimeServices {
   return runtimeServices
-}
-
-export function getRegistryHub(): RegistryHub {
-  return runtimeServices.registryHub
 }
 
 export function getCommandRegistry(): CommandRegistry {

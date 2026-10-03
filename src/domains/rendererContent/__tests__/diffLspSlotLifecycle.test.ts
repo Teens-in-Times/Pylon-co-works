@@ -34,7 +34,8 @@ function suite(id: string, requiredKinds: readonly string[], optionalKinds: read
     runtime: { framework: 'solid', version: '1.0.0' },
     compatibility: { documentSchema: 'workbench.v1', renderCatalogSchema: 1 },
     requiredKinds: [...requiredKinds], optionalKinds: [...optionalKinds],
-    factory: () => null,
+    // factory 只剩 prepare 工厂形态（#520 S4-P2 函数臂塌缩）；本测试不挂载实现。
+    factory: { prepare: async () => { throw new Error('not mounted in test') } },
   }
 }
 

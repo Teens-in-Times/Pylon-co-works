@@ -1,5 +1,5 @@
 import type { PluginSettingValue } from './pluginSettingsTypes.ts'
-import type { SettingsValueAdapter } from '../renderers/rendererSettingsTypes.ts'
+import type { SettingsValueAdapter } from '../../contracts/rendererSettingsSchema.ts'
 import { validatePluginKey } from './pluginKeyValidation.ts'
 
 const STORAGE_KEY = 'pylon-plugin-settings-v1'

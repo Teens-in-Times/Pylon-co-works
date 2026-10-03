@@ -30,7 +30,13 @@ import type {
   PluginUiApi,
   PluginWorkspaceApi,
   RendererApi,
+  RendererSlotContribution,
+  RendererSuiteContribution,
 } from '../index.ts'
+import type {
+  RendererSlotContribution as HostRendererSlotContribution,
+  RendererSuiteContribution as HostRendererSuiteContribution,
+} from '../../plugin-runtime/renderers/rendererSuiteTypes.ts'
 
 /** 编译期恒等断言 helpers（parity 门的机器检查核心）。 */
 type Expect<T extends true> = T
@@ -72,6 +78,13 @@ type SdkTypeForMember = {
 type _ParityGate = Expect<Equal<keyof SdkTypeForMember, keyof PluginActivationContext>>
 // 门的运行时可读引用（同时满足 noUnusedLocals）：键集不一致时本行编译失败。
 const parityGate: _ParityGate = true
+
+/**
+ * #520 S4-P1-8：Suite/Slot 贡献类型必须经 SDK barrel 原样可达（与宿主真源
+ * `rendererSuiteTypes` 编译期恒等，防止 SDK 面再手写平行类型）。
+ */
+type _SuiteSlotParityGate = Expect<Equal<RendererSuiteContribution, HostRendererSuiteContribution> & Equal<RendererSlotContribution, HostRendererSlotContribution>>
+const suiteSlotParityGate: _SuiteSlotParityGate = true
 
 describe('SDK public exports', () => {
   it('keeps every activation-context member reachable from the SDK index (parity gate)', () => {
@@ -115,6 +128,11 @@ describe('SDK public exports', () => {
     expect(keys).not.toContain('management')
     expect(Object.keys(createMockContext({ management: true }))).toContain('management')
     expect(keys.length).toBe(Object.keys(createMockContext({ management: true })).length - 1)
+  })
+
+  it('exposes the renderer Suite/Slot contribution types verbatim from the host catalog', () => {
+    // 编译期由 _SuiteSlotParityGate 强制恒等；此处补运行时可读引用。
+    expect(suiteSlotParityGate).toBe(true)
   })
 
   it('exposes the runtime-value export surface of the SDK barrel', () => {

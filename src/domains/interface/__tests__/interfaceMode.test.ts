@@ -46,7 +46,8 @@ function registerBuiltinAppearanceContributions(): void {
     runtime: { framework: 'solid', version: '1.0.0' },
     compatibility: { documentSchema: 'workbench.v1', renderCatalogSchema: 1 },
     requiredKinds: ['content.unknown'],
-    factory: () => ({}),
+    // factory 只剩 prepare 工厂形态（#520 S4-P2 函数臂塌缩）；本测试不挂载实现。
+    factory: { prepare: async () => { throw new Error('not mounted in test') } },
   }))
   const recipes = getShellRecipeRegistry()
   registrations.push(recipes.register(owner, DEFAULT_SHELL_RECIPE))

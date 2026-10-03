@@ -11,7 +11,6 @@ import type { HookRuntime } from './hooks/hookRuntime.ts'
 import type { InterfaceModeRegistry } from './interface-mode/interfaceModeRegistry.ts'
 import type { ShellRecipeRegistry } from './shell-recipe/shellRecipeRegistry.ts'
 import type { PresentationProfileRegistry } from './presentation/presentationProfileRegistry.ts'
-import type { RegistryHub } from './registry/registryHub.ts'
 import type { RendererRegistry } from './renderers/rendererRegistry.ts'
 import type { SessionCreationRegistry } from './session-creation/sessionCreationRegistry.ts'
 import type { PluginServiceRegistry } from './services/pluginServiceRegistry.ts'
@@ -25,7 +24,6 @@ import type { CcWidgetRegistry } from './cc-widget/ccWidgetRegistry.ts'
 import type { PresetRegistry } from './preset/presetRegistry.ts'
 
 export interface RuntimeRegistries {
-  readonly registryHub: RegistryHub
   readonly commandRegistry: CommandRegistry
   readonly promptContributionRegistry: PromptContributionRegistry
   readonly eventBus: PluginEventBus

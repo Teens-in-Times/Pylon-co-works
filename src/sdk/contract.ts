@@ -111,6 +111,12 @@ export type {
   CodeHighlighterDefinition,
   RendererApi,
 } from '../plugin-runtime/renderers/rendererRegistry.ts'
+/** Renderer Suite/Slot 贡献类型（随 `RendererApi.registerSuite/registerSlot` 的
+ * 注册通道存在；类型出口补齐于 #520 S4-P1-8）。 */
+export type {
+  RendererSuiteContribution,
+  RendererSlotContribution,
+} from '../plugin-runtime/renderers/rendererSuiteTypes.ts'
 
 // ── 呈现档 / 设置（API 1.0；设置目标语法 helpers 在 runtime.ts）──
 export type {
@@ -123,14 +129,21 @@ export type {
   PluginSettingValue,
 } from '../plugin-runtime/settings/pluginSettingsTypes.ts'
 export type { PluginSettingsApi } from '../plugin-runtime/settings/pluginSettingsApi.ts'
-/** Framework-neutral settings schema/adapter contract for plugin pages and
- * context panels. Renderer-prefixed names remain available as compatibility
- * aliases from the same module. */
+/** Framework-neutral settings schema/adapter contract（正身住
+ * `src/contracts/rendererSettingsSchema.ts`，#520 S4-P0-3 起 B-5 破环范式）。
+ * Renderer-prefixed 兼容别名保留在 plugin-runtime 侧再出口。 */
 export type {
   SettingsSchema,
   SettingsField,
   SettingsValue,
   SettingsValueAdapter,
+  SettingValue,
+  SettingOption,
+  SettingsPlacement,
+  SettingsPresentation,
+  SettingsDensity,
+} from '../contracts/rendererSettingsSchema.ts'
+export type {
   RendererSettingsSchema,
   RenderSettingField,
   RendererSettingValue,
