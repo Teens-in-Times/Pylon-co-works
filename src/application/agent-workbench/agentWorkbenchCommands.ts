@@ -11,6 +11,8 @@ import type { InteractionResponseAnswer, InteractionResponseIdentity } from '../
 import type { AgentContext } from '../../domains/agent/agentContext.ts'
 import { sendMessageWithStream } from '../../domains/chat/streamingSend.ts'
 import { formatRuntimeError, reportRuntimeError } from '../../app/runtimeError.ts'
+import type { LocalSessionFact } from './agentWorkbenchProjection.ts'
+import { createAgentWorkbenchSession, discardAgentWorkbenchSession } from './agentWorkbenchSessionCreation.ts'
 
 export interface ResolvedWorkbenchInteraction {
   readonly identity: InteractionResponseIdentity
@@ -256,4 +258,73 @@ export function createAgentWorkbenchCommandFacade(
 function sameConfigValue(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true
   try { return JSON.stringify(left) === JSON.stringify(right) } catch { return false }
+}
+
+/** 会话运行时宿主中命令装配需要的最小结构面（宿主晚绑定——组件体 const 尚在构造）。 */
+export interface AgentWorkbenchSessionControlHost {
+  applySessionResponse(response: unknown, targetSessionId?: string, options?: { syntheticReason?: string }): void
+  runSessionControl(
+    context: { agentId: string; source: string },
+    fact: LocalSessionFact,
+    request: () => Promise<unknown>,
+  ): Promise<void>
+}
+
+export interface AgentWorkbenchHostCommandSeams {
+  /** sheet 绑定的归属 Agent；空回落当前活动 Agent（由本装配读 identity store）。 */
+  resolveSheetAgentId(): string | undefined
+  /** 会话选中缝（SheetContext 由视图持有）。 */
+  selectSession(sessionId: string | null): void
+  /** 晚绑定的会话运行时；回调仅在构造完成后被调用，闭包引用无 TDZ 问题。 */
+  runtime(): AgentWorkbenchSessionControlHost
+  /**
+   * 视图层资源导航（file sheet 打开/揭示；返回 false = 未受理）。application 禁
+   * import 视图层（check-layer-boundaries），故由视图注入而非直接依赖。
+   */
+  openResourceInFileSheet(sessionId: string, resource: unknown): boolean
+}
+
+/**
+ * #520 S3-P1：AgentRendererSuiteWorkbench 组件体内联的 IPC 命令装配（逐条
+ * appClients.chat.* + 会话事务 + 资源导航分流）收拢到 application 层；视图只提供
+ * 视图域缝（sheet Agent / 会话选中 / file-sheet 导航）并消费装配产物。
+ */
+export function createAgentWorkbenchHostCommands(seams: AgentWorkbenchHostCommandSeams): Partial<AgentWorkbenchCommandDependencies> {
+  return {
+    createSession: request => {
+      return createAgentWorkbenchSession(request, {
+        agentId: seams.resolveSheetAgentId() || useIdentityStore.getState().activeAgent,
+        applySessionResponse: (sessionId, response) => seams.runtime().applySessionResponse(response, sessionId),
+      })
+    },
+    selectSession: id => seams.selectSession(id),
+    setModel: async (context, modelId) => {
+      await seams.runtime().runSessionControl(context, { kind: 'model', model: modelId },
+        () => appClients.chat.setConfigOption({ ...context, key: 'model', value: modelId }))
+    },
+    setMode: async (context, modeId) => {
+      await seams.runtime().runSessionControl(context, { kind: 'mode', mode: modeId },
+        () => appClients.chat.setMode({ ...context, mode: modeId }))
+    },
+    setConfigOption: async (context, key, value) => {
+      if (typeof value !== 'string' && typeof value !== 'boolean') throw new Error('config_value_unsupported')
+      await seams.runtime().runSessionControl(context, { kind: 'option', id: key, value },
+        () => appClients.chat.setConfigOption({ ...context, key, value }))
+    },
+    discardSession: discardAgentWorkbenchSession,
+    async openResource(session, resource) {
+      if (seams.openResourceInFileSheet(session.id, resource)) return
+      const uri = resource && typeof resource === 'object' && !Array.isArray(resource) && 'uri' in resource
+        ? (resource as { uri?: unknown }).uri
+        : undefined
+      if (typeof uri === 'string' && /^(?:https?:|mailto:)/i.test(uri)) {
+        window.open(uri, '_blank', 'noopener,noreferrer')
+        return
+      }
+      throw new Error('resource_not_openable')
+    },
+    async revealResource(session, resource) {
+      if (!seams.openResourceInFileSheet(session.id, resource)) throw new Error('resource_not_revealable')
+    },
+  }
 }

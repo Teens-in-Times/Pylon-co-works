@@ -15,6 +15,8 @@ import type { AgentWorkbenchTurnClock, RuntimeStatePatch, WorkbenchRuntime } fro
 /** 会话宿主的共享绑定状态（原工厂散落闭包 let 的单源化）。宿主与子系统共同读写。 */
 export interface AgentWorkbenchBindingState {
   boundSessionId: string | undefined
+  /** 当前绑定的本地 Session 行（`withReplayNegotiationFact` 等读其 remote id）。 */
+  boundSession: import('../../domains/identity/identityStore.ts').Session | undefined
   boundProvider: string
   boundSessionBindingKey: string | undefined
   ownerKey: string | undefined

@@ -2,7 +2,7 @@ import { createSignal } from 'solid-js'
 import { appClients } from '../../app/appClients.ts'
 import { applyToolDictionaryThroughPort } from '../../app/ports/productContributionPorts.ts'
 import { reportRuntimeDiagnostic } from '../../app/runtimeError'
-import { switchAgentTransaction } from '../../application/transactions/switchAgentTransaction'
+import { createSwitchAgentRunner } from '../../application/transactions/openOwnedSessionTransaction'
 import { reloadAgentsTransaction } from '../../application/transactions/reloadAgentsTransaction.ts'
 import { normalizeAgentStatus } from '../../contracts/agentTypes'
 import { useIdentityStore } from '../../domains/identity/identityStore'
@@ -30,19 +30,16 @@ export function createSettingsAgentActions(activeAgent: () => string) {
   const [dictFeedback, setDictFeedback] = createSignal<string | null>(null)
 
   const switchAgent = async (agentId: string) => {
-    const agentClient = appClients.agent()
     if (switchingAgentId() || agentId === activeAgent()) return
     setSwitchingAgentId(agentId)
-    await switchAgentTransaction(agentId, agentId, {
-      switchAgent: () => agentClient.switchAgent(agentId),
-      resetRuntime: () => useRuntimeStore.getState().resetSessionRuntime(),
-      setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
-      fetchAgentStatus: () => agentClient.agentStatus(),
-      applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),
-      reportError: (action, error) => reportSettingsError(action, error, agentId),
-      resolveError: action => resolveSettingsError(action, agentId),
-      dispatchSwitched: () => window.dispatchEvent(new CustomEvent('pylon:agent-switched')),
-    })
+    // #520 S2-P2：ports 装配（client/runtime/identity/广播）与 openOwnedSessionTransaction
+    // 共用 createSwitchAgentRunner；Settings 只注入自己的错误口径（key `settings:*` /
+    // source 'settings'，settingsErrorReports 单源）。agentName 取 agentId（无名称解析），
+    // 与原直连形态一致；switchAgent/agentStatus 均为无状态 invoke，client 实例归工厂管。
+    await createSwitchAgentRunner({
+      reportError: (action, error, id) => { reportSettingsError(action, error, id) },
+      resolveError: (action, id) => { resolveSettingsError(action, id) },
+    })(agentId)
     setSwitchingAgentId(null)
   }
 

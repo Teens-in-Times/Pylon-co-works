@@ -28,7 +28,7 @@ class TolerantFakeInvoke extends FakeInvoke {
 }
 vi.mock('../../../domains/identity/identityStore.ts', () => ({ useIdentityStore: { getState: mocks.identity } }))
 vi.mock('../../../domains/runtime/runtimeStore.ts', () => ({ useRuntimeStore: { getState: mocks.runtime } }))
-vi.mock('../../../infrastructure/persistence/workspaceEntityStore.ts', () => ({ useWorkspaceEntityStore: { getState: () => ({ workspaces: [] }) } }))
+vi.mock('../../../domains/workspace/workspaceEntityStore.ts', () => ({ useWorkspaceEntityStore: { getState: () => ({ workspaces: [] }) } }))
 vi.mock('../../../plugins/core/sessionCreation/sessionPreflight.ts', () => ({ runSessionPreflight: mocks.preflight }))
 vi.mock('../../../plugin-runtime/runtimeServices.ts', () => ({ getHookRuntime: () => ({ invoke: mocks.hook }) }))
 vi.mock('../../../application/transactions/sessionHookTransactions.ts', () => ({ runSessionBoundaryHook: mocks.boundary }))

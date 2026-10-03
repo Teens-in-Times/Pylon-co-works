@@ -1,7 +1,7 @@
 import { appClients } from '../../app/appClients.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../domains/runtime/runtimeStore.ts'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore.ts'
 import type { SessionCreateInput } from '../../domains/workbench/workbenchCommandFacade.ts'
 import { sessionResponseObject } from '../../infrastructure/acp/chatContracts.ts'
 import { applySessionStateResponse } from '../../domains/session/sessionStateSync.ts'

@@ -46,12 +46,12 @@ describe('I01-W2 runtimeStore 双 Agent 同名 source 隔离', () => {
     expect(key).not.toBe('a:local:x:y')
   })
 
-  it('clearSessionRuntime 只清指定 context，其他 Agent 同名 source 保留', () => {
+  it('clearSessionSource 只清指定 context，其他 Agent 同名 source 保留', () => {
     const store = useRuntimeStore.getState()
     store.setSessionConfig(ctxA, { model: 'model-a' })
     store.setSessionConfig(ctxB, { model: 'model-b' })
     store.setSessionMode(ctxB, 'auto')
-    store.clearSessionRuntime(ctxA)
+    store.clearSessionSource(ctxA)
 
     const s = useRuntimeStore.getState()
     expect(s.sessionConfig[toAgentContextKey(ctxA)]).toBeUndefined()
