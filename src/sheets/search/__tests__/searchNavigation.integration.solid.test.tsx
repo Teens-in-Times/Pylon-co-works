@@ -18,7 +18,7 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
 import SearchSheetView from '../SearchSheetView.solid.tsx'
 import { useIdentityStore } from '../../../domains/identity/identityStore'
 import { resetStores } from '../../../test/resetStores'
-import { sessionUiStateGet } from '../../../domains/chat/sessionUiState'
+import { sessionUiStore } from '../../../domains/workbench/sessionUiStore.ts'
 import type { SheetContext, SheetRecord } from '../../../workspace-sheets/sheetTypes'
 
 afterEach(cleanup)
@@ -56,10 +56,11 @@ describe('FE-AUD-003 搜索定位消费者', () => {
     resetStores()
   })
 
-  it('点击结果创建持久定位意图（sessionUiState 持久，不依赖瞬时 CustomEvent）', async () => {
+  it('点击结果创建持久定位意图（sessionUiStore 持久，不依赖瞬时 CustomEvent）', async () => {
     seedLocalSnapshot()
     await searchAndClick('定位', setupCtx())
-    expect(sessionUiStateGet('s1', 'pendingMessageLocation')).toEqual({ sessionId: 's1', messageId: 'm1' })
+    expect(sessionUiStore.get<{ sessionId: string; messageId: string } | undefined>('s1', 'pendingMessageLocation', undefined))
+      .toEqual({ sessionId: 's1', messageId: 'm1' })
   })
 
   it('点击结果打开对应会话（owner-aware 接线基线绿）', async () => {

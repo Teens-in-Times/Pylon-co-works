@@ -13,6 +13,7 @@ import { useInterfaceModeStore } from '../../domains/interface/interfaceModeStor
 import type { ZoneName } from '../../domains/theme/themeFieldDefs'
 import { ZoneGroupFields, type RenderCtx } from './themeFieldRenderer.solid.tsx'
 import InterfaceModePicker from './InterfaceModePicker.solid.tsx'
+import ConfirmArmButton from '../ui/ConfirmArmButton.solid.tsx'
 import { Group, reportSettingsError, resolveSettingsError } from './settingsSectionShared.solid.tsx'
 
 interface GlobalPresetSectionProps {
@@ -40,8 +41,8 @@ export default function GlobalPresetSection(props: GlobalPresetSectionProps) {
   const fallbackPresetChipView = createMemo(() => fallbackPresetChip(globalStatus(), customPresets().map(preset => preset.id)))
   // 刀5（#201，UI 二次修订 2026-09-19）：当前模式不在归属表内（如 tactical-blue）⇒ 整组不出现。
 
-  // #116 子项 9：破坏性操作（删除自定义预设）两段式确认。
-  const [pendingDeletePresetId, setPendingDeletePresetId] = createSignal<string | null>(null)
+  // #116 子项 9：破坏性操作（删除自定义预设）两段式确认——#520 K 域起由
+  // ui/ConfirmArmButton 统一承载（armed 态带影响面 hint，3s 未确认自动回弹）。
   const [customPresetName, setCustomPresetName] = createSignal('')
   const [customPresetFeedback, setCustomPresetFeedback] = createSignal<{ kind: 'success' | 'error'; message: string } | null>(null)
   const [applyingPresetId, setApplyingPresetId] = createSignal<string | null>(null)
@@ -163,16 +164,13 @@ export default function GlobalPresetSection(props: GlobalPresetSectionProps) {
                 <div class="set-custom-preset">
                   <button type="button" class={`set-preset-chip ${globalStatus() === preset.id ? 'active' : ''}`} disabled={applyingPresetId() !== null} aria-busy={applyingPresetId() === preset.id || undefined} onClick={() => { void applyCustomPresetFromSettings(preset.id) }}>{preset.name}</button>
                   <button type="button" class="ps-btn sm" onClick={() => { void saveCustomPresetFromSettings(preset.name, preset.id) }}>覆盖</button>
-                  <Show when={pendingDeletePresetId() === preset.id} fallback={
-                    <button type="button" class="ps-btn sm danger" onClick={() => setPendingDeletePresetId(preset.id)}>删除</button>
-                  }>
-                    <div class="set-confirm set-confirm-inline" role="alertdialog" aria-label={`确认删除预设 ${preset.name}`}>
-                      <span class="set-confirm-text">删除后不可恢复；引用它的区域会保留现值但失去预设基准。</span>
-                      <button type="button" class="ps-btn sm danger"
-                        onClick={() => { setPendingDeletePresetId(null); useCustomPresetStore.getState().removeCustomPreset(preset.id) }}>确认删除</button>
-                      <button type="button" class="ps-btn sm" onClick={() => setPendingDeletePresetId(null)}>取消</button>
-                    </div>
-                  </Show>
+                  <ConfirmArmButton
+                    label="删除"
+                    confirmLabel="确认删除"
+                    class="ps-btn sm danger"
+                    hint="删除后不可恢复；引用它的区域会保留现值但失去预设基准。"
+                    onConfirm={() => useCustomPresetStore.getState().removeCustomPreset(preset.id)}
+                  />
                 </div>
               )}</For>
             </div>

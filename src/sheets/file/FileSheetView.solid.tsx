@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup, Show } from 'solid-js'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 import { createRegistrySignal } from '../../infrastructure/state/solidSheetSupport.solid.tsx'
 import { useIdentityStore } from '../../domains/identity/identityStore'
@@ -16,7 +16,6 @@ import { PluginContributionBody } from '../../plugin-runtime/ui/PluginContributi
 import FileViewRenderBoundarySolid from './FileViewRenderBoundary.solid.tsx'
 import { registerWorkspaceLiveCloseGuard } from '../../workspace-sheets/workspaceLiveCloseGuards.ts'
 import { FILE_NAVIGATION_METADATA_KEY, parsePendingFileNavigation } from './fileSheetNavigation.ts'
-import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
 
 /**
  * FileSheetViewProps — 名字承自历史 React 契约（FileSheetView.tsx，已退役）；本实体即唯一真源。

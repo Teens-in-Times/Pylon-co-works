@@ -4,7 +4,7 @@
  * 覆盖的持久化 key：主题（pylon-theme）、工作区 sheets（pylon-workspace-sheets）、
  * 窗口尺寸（pylon-window-size）、会话（pylon-sessions）、Profile（pylon-profiles，
  * FE-AUD-002）。
- * 其他 key（pylon-pet-v3、pylon-msgs-* 等运行态）不导出。
+ * 其他 key（pylon-msgs-* 等运行态；宠物链 pylon-pet-v3 已随 #520 K 域退役）不导出。
  * I14-W8：Tauri 模式导出聚合后端 versioned user store 的 profiles/sessions envelope
  * （权威源）；导入预检对 profiles/sessions 值做结构校验（损坏拒绝、legacy 形状兼容）。
  */

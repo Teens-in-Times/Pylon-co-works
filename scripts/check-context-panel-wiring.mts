@@ -51,8 +51,12 @@ assert.match(slot, /right-rail-host\$\{collapsed/, '折叠状态必须由右栏�
 assert.match(slot, /data-collapsed=\{collapsed\(\) \? 'true' : 'false'\}/, '右栏外壳必须暴露折叠状态')
 assert.match(slot, /<ContextPanelHost sheet=\{props\.sheet \?\? VIRTUAL_SHEET\} ctx=\{props\.ctx\} activePanelId=\{effectivePanelId\(\)\} \/>/, '宿主必须挂统一贡献 Host')
 assert.match(host, /role="tablist"/, '多贡献必须以可访问标签切换')
-assert.match(host, /PluginContributionBoundary/, '每个右栏贡献必须有独立错误边界')
-assert.match(host, /renderKind === 'isolated-surface'/, '外置 UI 必须走隔离 surface')
+// #520 S4-P1-5：分发块（错误边界 + isolated/first-party 分支 + Suspense）收进
+// PluginContributionBody；宿主只保留数据投影与受控事件分诊。
+const contributionBody = read('src/plugin-runtime/ui/PluginContributionBody.solid.tsx')
+assert.match(host, /PluginContributionBody/, '右栏贡献分发必须走统一 PluginContributionBody')
+assert.match(contributionBody, /PluginContributionBoundary/, '每个右栏贡献必须有独立错误边界')
+assert.match(contributionBody, /renderKind === 'isolated-surface'/, '外置 UI 必须走隔离 surface')
 assert.match(host, /event === 'host:collapse'/, '隔离 surface 只能通过受控事件请求宿主动作')
 assert.match(productWorkspace, /workspaceKind: 'agent'/, 'Agent 右栏必须注册贡献')
 assert.match(productWorkspace, /workspaceKind: 'file'/, 'File 右栏必须注册贡献')
@@ -60,7 +64,7 @@ assert.match(activation, /contextPanel: createPluginContextPanelApi/, '激活上
 assert.match(shadow, /contextPanel: registries\.contextPanelRegistry\.beginShadowTransaction/, '右栏贡献必须参与 shadow hot-swap')
 
 const agentPanel = read('src/components/right-panel/AgentContextPanel.solid.tsx')
-assert.match(agentPanel, /sessionUiStateGet<T>\(sessionId/, 'Agent 搜索必须复用 sessionUiState')
+assert.match(agentPanel, /createSessionUiSignal\(sessionUiStore, sessionId/, 'Agent 搜索必须复用统一 sessionUi 注册表（#520 S2-P1-1 双注册表归一）')
 assert.match(agentPanel, /createHostDocument\(hostPort\)/, '消息快照必须经当前 Workbench Host Port')
 assert.match(agentPanel, /createZustandSignal\(useWorkspaceStore, s => s\.touchedFiles\)/, 'Agent 关联必须读 touchedFiles')
 assert.match(agentPanel, /touchedFilesRecord\(\)\[toAgentContextKey\(touchedContext\)\]/, 'Agent 关联必须使用 context key')

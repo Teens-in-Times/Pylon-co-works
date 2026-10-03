@@ -94,7 +94,7 @@ flowchart TB
 | `src/plugin-runtime` | PluginRuntime、Scope、registries、shadow update、package runtime | Kernel 扩展机制 | `pluginCompositionRoot.ts`、`pluginRuntime.ts`、`pluginActivationContext.ts` |
 | `src/plugins/product` | 第一方插件包定义、依赖拓扑、激活入口 | Product Plugin | `builtinProductPlugins.ts`、`packages/*` |
 | `src/plugins/core` | 第一方插件的具体贡献 implementation | Product Plugin implementation | 按目标贡献定向阅读 |
-| `src/domains/chat` | 消息投影、发送事务、replay 协调与呈现纯逻辑（结构全修批自 `src/components/chat` 迁入：目录名与内容一致化，只剩真组件在 `components/file`、`components/right-panel`） | Domain modules（原「横跨 Product 与概念 Kernel」的错位随迁移消解） | `streamingSend.ts`、`chatReplayCoordinator.ts`、`messagePipeline.ts` |
+| `src/domains/chat` | 消息投影、发送事务、replay 协调与呈现纯逻辑（结构全修批自 `src/components/chat` 迁入：目录名与内容一致化，真组件留守 `components/`（`components/right-panel` 等；原 `components/file` 空壳已随 #520 K 域撤销，CollapsibleRegion 测试迁实体旁）） | Domain modules（原「横跨 Product 与概念 Kernel」的错位随迁移消解） | `streamingSend.ts`、`chatReplayCoordinator.ts`、`messagePipeline.ts` |
 | `src/application/agent-workbench`（#486 项1 自 `src/sheets/agent-workbench` 归位，原址仅留视图件 AgentRendererSuiteWorkbench.tsx） | Workbench 会话运行时（TurnClock 生成时钟）、生命周期 IPC 编排与命令面 | Product Workbench | `agentWorkbenchSession.ts`、`agentWorkbenchLifecycle.ts` |
 | `src/domains/identity` | Profile/Session/Agent 前端状态与 hydration（#351 自 src 根下沉；跨域联动经 `src/app/ports/identityCrossDomainPort` 装配） | 当前横跨 Product 与概念 Kernel | 同时阅读 `src/infrastructure/persistence/`（userDataRepository / identityBackendSync） |
 | `src/infrastructure/events` | canonical feed/cursor、repository、pluginEventBus（#439 起 sink/scheduler 已退役，journal 写路径严格归 kernel） | 当前概念 Kernel implementation | `canonicalEventFeed.ts`、cursor、repository |

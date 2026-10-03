@@ -7,6 +7,7 @@ import { advanceSourceContext, beginSourceRequest, isCurrentSourceRequest, type 
 import { workspaceTargetKey, type WorkspaceTarget } from '../../domains/workspace/workspaceTarget.ts'
 import type { FileProvider } from '../../plugin-runtime/file-workbench/fileWorkbenchTypes.ts'
 import { FileTypeIconSolid, WorkbenchIcon } from './fileIcons.solid.tsx'
+import EmptyState from '../../components/ui/EmptyState.solid.tsx'
 
 /**
  * FileTreeProps — 名字承自历史 React 契约（FileTree.tsx，已退役）；本实体即唯一真源。
@@ -163,18 +164,10 @@ export default function FileTree(props: FileTreeProps) {
         <p class="file-section-hint file-tree-error-reference" role="status">文件树读取失败，详情见右下角错误中心</p>
       </Show>
       <Show when={!props.target || !props.provider}>
-        <div class="sheet-empty-state file-tree-empty-state" role="status">
-          <div class="sheet-empty-mark" aria-hidden="true">⌁</div>
-          <strong>尚未选择工作区</strong>
-          <span>先从会话分区选择一个工作区会话，再浏览文件。</span>
-        </div>
+        <EmptyState class="file-tree-empty-state" title="尚未选择工作区" hint="先从会话分区选择一个工作区会话，再浏览文件。" />
       </Show>
       <Show when={props.target && tree().entries.length === 0 && !error() && !loading().has('')}>
-        <div class="sheet-empty-state file-tree-empty-state" role="status">
-          <div class="sheet-empty-mark" aria-hidden="true">⌁</div>
-          <strong>工作区为空</strong>
-          <span>当前工作区没有可浏览的文件。</span>
-        </div>
+        <EmptyState class="file-tree-empty-state" title="工作区为空" hint="当前工作区没有可浏览的文件。" />
       </Show>
       <div class="file-tree-rows">{renderEntries(tree().entries, 0)}</div>
     </div>

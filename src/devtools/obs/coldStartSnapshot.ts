@@ -30,7 +30,9 @@
  */
 
 import type { Session } from '../../domains/identity/identityStore'
-import type { SheetRecord } from '../../workspace-sheets/sheetTypes'
+// #520 K 域：SheetRecord 取契约正身（contracts/sheets.ts），不再向视图层
+// workspace-sheets/sheetTypes 伸手（sheetTypes 本就是它的再出口）。
+import type { SheetRecord } from '../../contracts/sheets'
 import type { SheetWorkspaceState } from '../../domains/workspace/sheetPersistence'
 import type { AgentStatus } from '../../contracts/agentTypes'
 import type { SessionConfig } from '../../domains/runtime/runtimeStore'

@@ -24,7 +24,7 @@
  * 的翻红基线——修好对应卡后翻转为 true。
  */
 
-import { THEME_FIELD_DEFS } from '../domains/theme/themeFieldDefs.ts'
+import { THEME_FIELD_DEFS } from './themeFieldDefs.ts'
 
 /** 结构性常量：P6 typography 关键证据（与 OBS-06/07 结构性常量同模式，代码级登记）。 */
 export const TYPOGRAPHY_EVIDENCE = {

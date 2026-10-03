@@ -30,9 +30,9 @@ import { toCanonicalOwnerKey } from '../../domains/events/eventSchema.ts'
 import { bindingHint, refineBindingGeneration, resolveBindingState } from '../../domains/binding/bindingState.ts'
 import { sessionContext, toAgentContextKey } from '../../domains/agent/agentContext.ts'
 import { resolveRendererSuiteFallback } from '../../host/renderer-suite/rendererSuiteFallbackPolicy.ts'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore.ts'
 import { publishActiveWorkbenchHostPort } from '../../application/agent-workbench/activeWorkbenchHostPort.ts'
-import { createAgentWorkbenchSession, discardAgentWorkbenchSession } from '../../application/agent-workbench/agentWorkbenchSessionCreation.ts'
+import { createAgentWorkbenchHostCommands } from '../../application/agent-workbench/agentWorkbenchCommands.ts'
 import { openFileLinkFromEvent, openResourceInFileSheet } from '../file/fileSheetNavigation.ts'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
@@ -79,45 +79,15 @@ const rendererRegistry = getRendererRegistry()
 export default function AgentRendererSuiteWorkbench(props: AgentRendererSuiteWorkbenchProps) {
   let containerEl: HTMLDivElement | undefined
   // sessionRuntime 组件生命周期内恒定（原 useRef 惰性初始化）；commands 回调仅在构造
-  // 完成后被调用，闭包引用本 const 无 TDZ 问题。
+  // 完成后被调用，闭包引用本 const 无 TDZ 问题。#520 S3-P1：IPC 命令装配上移
+  // application 层（agentWorkbenchCommands.ts），视图只注入视图域缝并消费装配产物。
   const sessionRuntime = createAgentWorkbenchSessionRuntime({
-    commands: {
-      createSession: request => {
-        return createAgentWorkbenchSession(request, {
-          agentId: props.sheet.agentId || useIdentityStore.getState().activeAgent,
-          applySessionResponse: (sessionId, response) => sessionRuntime.applySessionResponse(response, sessionId),
-        })
-      },
+    commands: createAgentWorkbenchHostCommands({
+      resolveSheetAgentId: () => props.sheet.agentId,
       selectSession: id => props.ctx.selectSession(id),
-      setModel: async (context, modelId) => {
-        await sessionRuntime.runSessionControl(context, { kind: 'model', model: modelId },
-          () => appClients.chat.setConfigOption({ ...context, key: 'model', value: modelId }))
-      },
-      setMode: async (context, modeId) => {
-        await sessionRuntime.runSessionControl(context, { kind: 'mode', mode: modeId },
-          () => appClients.chat.setMode({ ...context, mode: modeId }))
-      },
-      setConfigOption: async (context, key, value) => {
-        if (typeof value !== 'string' && typeof value !== 'boolean') throw new Error('config_value_unsupported')
-        await sessionRuntime.runSessionControl(context, { kind: 'option', id: key, value },
-          () => appClients.chat.setConfigOption({ ...context, key, value }))
-      },
-      discardSession: discardAgentWorkbenchSession,
-      async openResource(session, resource) {
-        if (openResourceInFileSheet(session.id, resource)) return
-        const uri = resource && typeof resource === 'object' && !Array.isArray(resource) && 'uri' in resource
-          ? (resource as { uri?: unknown }).uri
-          : undefined
-        if (typeof uri === 'string' && /^(?:https?:|mailto:)/i.test(uri)) {
-          window.open(uri, '_blank', 'noopener,noreferrer')
-          return
-        }
-        throw new Error('resource_not_openable')
-      },
-      async revealResource(session, resource) {
-        if (!openResourceInFileSheet(session.id, resource)) throw new Error('resource_not_revealable')
-      },
-    },
+      runtime: () => sessionRuntime,
+      openResourceInFileSheet,
+    }),
   })
   // store 切片（原 hook 消费 → createZustandSignal；selector 语义与 useThemeStore 一致）。
   const sessions = createZustandSignal(useIdentityStore, state => state.sessions)
@@ -141,10 +111,14 @@ export default function AgentRendererSuiteWorkbench(props: AgentRendererSuiteWor
   // （原 useIdentityStore.getState().activeAgent 非订阅读——这里以信号订阅，探测
   // effect 会在 activeAgent 变化时重跑；探测幂等（fresh/in-flight 守卫），超集无害。）
   const sheetAgentId = createMemo(() => props.sheet.agentId || activeAgentId())
-  // runtime store 通知 → 快照重读（原 useSyncExternalStore(useRuntimeStore.subscribe, …)）。
+  // runtime store 通知 → 版本重读（原 useSyncExternalStore(useRuntimeStore.subscribe, …)）。
+  // #536：快照函数必须返回**跨写入变更的值**——solidStoreKernel 就地改写裸对象，
+  // getState() 返回同一引用，createRegistrySignal 按引用判等会把信号钉死在首帧，
+  // 下游 agentAdvertisedModels / bindingHintPayload 两个 memo 随之冻结；getVersion()
+  // （每次 set 单调 +1）才是合法快照。
   const runtimeStoreVersion = createRegistrySignal(
     { subscribe: listener => useRuntimeStore.subscribe(listener) },
-    () => useRuntimeStore.getState(),
+    () => useRuntimeStore.getVersion(),
   )
   const agentAdvertisedModels = createMemo(() => {
     void runtimeStoreVersion()

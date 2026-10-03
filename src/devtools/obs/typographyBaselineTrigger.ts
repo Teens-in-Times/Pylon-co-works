@@ -13,8 +13,8 @@
  * 只读取证：不修改样式、不触发重排写入；对 DOM 仅一次 query + getComputedStyle。
  */
 
-import { captureComputedStyleBaseline, buildTypographyBaselineArtifact, type TypographyBaselineArtifact } from './typographyBaseline'
-import { THEME_FIELD_DEFS } from '../domains/theme/themeFieldDefs.ts'
+import { captureComputedStyleBaseline, buildTypographyBaselineArtifact, type TypographyBaselineArtifact } from '../../domains/theme/typographyBaseline.ts'
+import { THEME_FIELD_DEFS } from '../../domains/theme/themeFieldDefs.ts'
 
 export interface Css01ConsoleApi {
   __pylonTypographyBaseline: (phase?: string) => Promise<TypographyBaselineArtifact>

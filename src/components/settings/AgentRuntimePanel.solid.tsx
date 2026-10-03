@@ -214,20 +214,15 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
 
   /** issue #67A：删除已连接的 agent runtime 配置条目。
    *  用户裁定口径：仅摘配置 + 停 runtime，**不**删该 agent 的会话与记录数据；
-   *  删除前必须让用户看清"将移除什么 / 保留什么"。active agent 先由前端拦一道
-   *  （后端 `config_active_agent_protected` 仍是唯一真值）。 */
+   *  删除前必须让用户看清"将移除什么 / 保留什么"——确认交互由 AgentRuntimeCard 的
+   *  ConfirmArmButton 承载（armed 态旁注影响面，#520 K 域起替代 window.confirm 式）。
+   *  active agent 先由前端拦一道（后端 `config_active_agent_protected` 仍是唯一真值）。 */
   const deleteAgent = async (agent: AgentEntry) => {
     if (savingId() || testingId()) return
     if (agent.id === activeAgent()) {
       setFeedback('当前正在使用的 Agent 不能删除，请先切换到其它 Agent。')
       return
     }
-    const confirmed = typeof window.confirm === 'function'
-      ? window.confirm(
-        `确认删除 Agent「${agent.name}」？\n\n将移除：\n  · 配置条目 ${agent.id}（agents.yaml）\n  · 运行中的 runtime 实例（若在运行，将停止）\n\n保留不动：\n  · 该 Agent 的历史会话与记录数据\n  · 其它 Agent 配置`,
-      )
-      : false
-    if (!confirmed) return
     setSavingId(agent.id)
     setFeedback(null)
     try {

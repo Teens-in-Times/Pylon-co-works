@@ -8,6 +8,7 @@ import { builtinAgentCatalog } from '../../domains/agent/agentCatalog.ts'
 import type { AgentDraftState } from '../../domains/agent/agentDraftMachine.ts'
 import ArgumentListEditor from './ArgumentListEditor.solid.tsx'
 import InvocationPreview from './InvocationPreview.solid.tsx'
+import ConfirmArmButton from '../ui/ConfirmArmButton.solid.tsx'
 import { pickAgentExecutable } from './pickAgentExecutable.ts'
 import type { Draft } from './agentRuntimePanelDrafts'
 
@@ -125,15 +126,18 @@ export default function AgentRuntimeCard(props: AgentRuntimeCardProps) {
             {props.savingId === props.agent.id ? '正在重启…' : '立即重启应用此配置'}
           </button>
         </Show>
-        {/* issue #67A：删除入口。active agent 禁用（禁用按钮不弹 tooltip，故用内联说明）。 */}
-        <button
+        {/* issue #67A：删除入口。active agent 禁用（禁用按钮不弹 tooltip，故用内联说明）。
+            #520 K 域：确认交互由 ui/ConfirmArmButton 承载（原 window.confirm 式退役）；
+            armed 态旁注影响面（移除什么/保留什么），3s 未确认自动回弹。 */}
+        <ConfirmArmButton
+          label={props.savingId === props.agent.id ? '删除中…' : '删除'}
+          confirmLabel="确认删除"
           class="ps-btn sm"
-          type="button"
+          confirmClass="ps-btn sm danger"
           disabled={props.savingId !== null || props.testingId !== null || props.agent.id === props.activeAgent}
-          onClick={props.onDeleteAgent}
-        >
-          {props.savingId === props.agent.id ? '删除中…' : '删除'}
-        </button>
+          hint={`将移除：配置条目 ${props.agent.id}（agents.yaml）与运行中的 runtime 实例（若在运行，将停止）；保留不动：该 Agent 的历史会话与记录数据、其它 Agent 配置`}
+          onConfirm={props.onDeleteAgent}
+        />
         <Show when={props.agent.id === props.activeAgent}>
           <span class="set-hint" role="note">当前正在使用的 Agent 不能删除，请先切换到其它 Agent</span>
         </Show>
