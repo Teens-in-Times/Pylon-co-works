@@ -6,7 +6,8 @@ import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge
 import { useIdentityStore } from '../../domains/identity/identityStore'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore'
 import { toAgentContextKey } from '../../domains/agent/agentContext'
-import { sessionUiStateGet, sessionUiStateSet } from '../../domains/chat/sessionUiState'
+import { sessionUiStore } from '../../domains/workbench/sessionUiStore.ts'
+import { createSessionUiSignal } from '../../renderers/solid-workbench/adapters/sessionUiSignal.solid.tsx'
 import { searchValuesMatchQuery } from '../../domains/chat/messageSearchIndex'
 import type { SessionUiKey } from '../../domains/workbench/sessionUiStore.ts'
 import type { WorkbenchDocument } from '../../domains/workbench/workbenchProjector.ts'
@@ -17,28 +18,14 @@ import {
 } from '../../application/agent-workbench/activeWorkbenchHostPort.ts'
 import type { AgentContextPanelProps } from './rightPanelTypes.ts'
 
-/** 按会话作用域的 UI 状态：值以 (sessionId, key) 存取 sessionUiState，signal 为本地
- * 读视图，set 在 updater 求值后同步双写回 store。 */
+/** 按会话作用域的 UI 状态：#520 S2-P1-1 双注册表归一后，legacy 值直接住统一
+ * sessionUiStore 单例（订阅完整），signal 为本地读视图（sessionUiSignal 适配器）。 */
 function createSessionUiState<T>(
   sessionId: () => string | null,
-  key: string,
+  key: SessionUiKey,
   initial: T,
 ): [Accessor<T>, (action: T | ((previous: T) => T)) => void] {
-  const [state, setState] = createSignal<T>(sessionUiStateGet<T>(sessionId() ?? '', key) ?? initial)
-  // 会话切换：恢复该会话存档（createEffect 在同一次渲染提交内读值，切换无闪现窗口）。
-  createEffect(() => {
-    const id = sessionId() ?? ''
-    // updater 形态：泛型 T 可能是函数值，走 (prev) => next 重载避开 Solid setter 的排除分支。
-    setState(() => sessionUiStateGet<T>(id, key) ?? initial)
-  })
-  const set = (action: T | ((previous: T) => T)) => {
-    setState(prev => {
-      const next = typeof action === 'function' ? (action as (p: T) => T)(prev) : action
-      sessionUiStateSet(sessionId() ?? '', key, next)
-      return next
-    })
-  }
-  return [state, set]
+  return createSessionUiSignal(sessionUiStore, sessionId, key, initial)
 }
 
 /** 当前 Sheet 发布的 Workbench Host Port（订阅随 sheetId 变化重挂）。 */

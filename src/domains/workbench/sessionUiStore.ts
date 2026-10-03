@@ -140,3 +140,12 @@ export function createSessionUiStore(): SessionUiStore {
     },
   }
 }
+
+/**
+ * 模块级单例（#520 S2-P1-1：会话级 UI 双注册表归一）——原 chat/sessionUiState 的
+ * 无响应 Map 退役，其全部键（draft、search-query 等）迁入本注册表；
+ * 面板/搜索等跨 workbench 的消费方经此单例读写并获得订阅语义。会话宿主
+ * （agentWorkbenchSession）仍按 runtime 各自 createSessionUiStore 作 port 命名空间，
+ * 不受本单例影响。测试 resetStores 经 clearAll() 清场。
+ */
+export const sessionUiStore: SessionUiStore = createSessionUiStore()

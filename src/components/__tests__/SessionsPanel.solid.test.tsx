@@ -13,7 +13,7 @@ import { createSignal } from 'solid-js'
 import SessionsPanel from '../sidebar/SessionsPanel.solid.tsx'
 import { resetStores } from '../../test/resetStores'
 import type { AgentSidebarContributionProps } from '../../plugin-runtime/sidebar/sidebarTypes'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore'
 import { getPluginRuntime } from '../../plugin-runtime/pluginCompositionRoot.ts'
 
 const { invoke, open } = vi.hoisted(() => ({
