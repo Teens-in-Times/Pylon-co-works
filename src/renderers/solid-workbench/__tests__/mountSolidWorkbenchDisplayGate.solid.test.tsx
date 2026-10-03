@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup } from '@solidjs/testing-library'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mountSolidWorkbench, displayGateSignature } from '../mountSolidWorkbench.solid.tsx'
+import { mountSolidWorkbench } from '../mountSolidWorkbench.solid.tsx'
 import { createPreviewWorkbenchServices } from '../__fixtures__/previewWorkbenchServices.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../domains/workbench/events/workbenchEventSchema.ts'
 import { projectWorkbench, type WorkbenchDocument } from '../../../domains/workbench/workbenchProjector.ts'
@@ -159,29 +159,6 @@ describe('mountSolidWorkbench display gate（P57 S2-R1d 第一步）', () => {
     } finally {
       lifecycle.destroy()
       host.remove()
-      services.destroy()
-    }
-  })
-
-  it('displayGateSignature：usage 对象引用变化但数值不变 → 签名全等；数值变化 → 签名不同', () => {
-    const base = projectWorkbench([
-      envelope(1, { type: 'message.completed', role: 'user', parts: [{ kind: 'text', text: '问题' }] }),
-    ]).document
-    const services = createPreviewWorkbenchServices()
-    const runtime = services.runtime
-    runtime.replaceDocument(base, { ownerKey: 'owner-preview', generation: 1 })
-    const frozenBase = runtime.getSnapshot().document!
-    try {
-      const before = { ...runtime.getSnapshot() }
-      const noisy = withNoiseUsage(frozenBase, 1)
-      runtime.applyDocument(noisy, { ownerKey: 'owner-preview', generation: 1 })
-      const afterNoise = { ...runtime.getSnapshot(), revision: before.revision }
-      expect(displayGateSignature(before)).toEqual(displayGateSignature(afterNoise))
-
-      runtime.applyDocument({ ...frozenBase, session: { ...frozenBase.session, usage: { inputTokens: 4, totalTokens: 512 } } }, { ownerKey: 'owner-preview', generation: 1 })
-      const afterValueChange = { ...runtime.getSnapshot(), revision: before.revision }
-      expect(displayGateSignature(before)).not.toEqual(displayGateSignature(afterValueChange))
-    } finally {
       services.destroy()
     }
   })

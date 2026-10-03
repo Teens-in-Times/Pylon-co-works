@@ -1,3 +1,9 @@
+/**
+ * 生产路径的外观命令处理器：`dispatchAppearanceCommand` 把命令透传 themeStore actions
+ * （clamp / settle 落在 themeStore / presetReducer 一侧）。
+ * 与 `workbenchAppearanceStore.reduceAppearanceCommand`（测试 / fixture 纯 reducer 路径）
+ * 的等价性由 `__tests__/appearanceCommandEquivalence.test.ts` 守卫。
+ */
 import { useThemeStore } from '../theme/themeStore.ts'
 import type { AppearanceCommand, WorkbenchAppearanceStore } from './appearance.ts'
 import { createVanillaWorkbenchAppearanceStore } from './workbenchAppearanceStore.ts'

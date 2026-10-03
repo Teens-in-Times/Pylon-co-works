@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildSettingsContributionSearchItems, canonicalEditableRecords, projectSettingsContributionCatalog, settingsContributionIdentity } from '../settingsContributionCatalog.ts'
+// #520 收口：canonicalEditableRecords 已删；buildSettingsContributionSearchItems 收进文件内，
+// 用例改经在役合成入口的 searchItems 输出断言同一行为。
+import { projectSettingsContributionCatalog, settingsContributionIdentity } from '../settingsContributionCatalog.ts'
 import type { RendererRegistrySnapshot } from '../../../plugin-runtime/renderers/rendererRegistry.ts'
 import type { RegistryEntry } from '../../../plugin-runtime/registry/types.ts'
 import type { PluginSettingsPageContribution } from '../../../plugin-runtime/settings/pluginSettingsTypes.ts'
@@ -88,15 +90,13 @@ describe('SettingsContributionCatalog', () => {
       ...entry({ id: 'tool.read', category: 'tool', priority: 1, fallbackKind: 'content.unknown', settingsSchemaVersion: 1, validateInput: () => true, settings: { schemaVersion: 1, groups: [{ id: 'g', label: 'G', fields: [{ key: 'density', type: 'boolean', deprecated: true }] }] } } as never),
     }] })
     const catalog = projectSettingsContributionCatalog({ rendererSnapshot: snapshot })
-    expect(buildSettingsContributionSearchItems(catalog).some(item => item.label === 'density' && item.kind === 'renderer-entry')).toBe(false)
+    expect(catalog.searchItems.some(item => item.label === 'density' && item.kind === 'renderer-entry')).toBe(false)
   })
 
-  it('emits consumer traces and excludes compatibility records from editable routes', () => {
+  it('emits consumer traces for canonical records', () => {
     const catalog = projectSettingsContributionCatalog()
     const accent = catalog.records.find(record => record.fieldKey === 'accent')!
     expect(accent.consumerTrace).toMatchObject({ settingsControl: 'themeFieldRenderer', productionConsumer: 'themeCssSnapshot' })
-    expect(canonicalEditableRecords(catalog).some(record => record.fieldKey === 'accent')).toBe(true)
-    expect(canonicalEditableRecords(catalog).some(record => record.ownerId === 'tool.read')).toBe(false)
   })
 
   it('publishes one renderer projection for navigation, panel and preview consumers', () => {
