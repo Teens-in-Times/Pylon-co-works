@@ -10,7 +10,7 @@ import { render } from 'solid-js/web'
 import { createSignal } from 'solid-js'
 import { SolidWorkbenchContext } from './SolidWorkbenchContext.solid.tsx'
 import { SolidControlCenter } from './input/ControlCenter.solid.tsx'
-import { createPreviewWorkbenchServices } from './__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from './preview/previewWorkbenchServices.ts'
 
 export function mountSettingsPreviewControlCenter(host: HTMLElement) {
   const services = createPreviewWorkbenchServices()
