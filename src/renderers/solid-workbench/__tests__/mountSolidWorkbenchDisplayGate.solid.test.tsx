@@ -2,7 +2,7 @@
 import { cleanup } from '@solidjs/testing-library'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountSolidWorkbench } from '../mountSolidWorkbench.solid.tsx'
-import { createPreviewWorkbenchServices } from '../__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../preview/previewWorkbenchServices.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../domains/workbench/events/workbenchEventSchema.ts'
 import { projectWorkbench, type WorkbenchDocument } from '../../../domains/workbench/workbenchProjector.ts'
 import type { WorkbenchRuntimeSnapshot } from '../../../domains/workbench/workbenchRuntime.ts'

@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 const REVEAL_BUDGET = { timeout: 4_000 }
 import { ReasoningBlock } from '../MessageRow.solid.tsx'
 import { mountSolidWorkbench } from '../../mountSolidWorkbench.solid.tsx'
-import { createPreviewWorkbenchServices } from '../../__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../../preview/previewWorkbenchServices.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../../domains/workbench/events/workbenchEventSchema.ts'
 import { createWorkbenchDocument, projectWorkbench } from '../../../../domains/workbench/workbenchProjector.ts'
 import { normalizeHermesEvent } from '../../../../domains/workbench/normalizers/hermesNormalizer.ts'

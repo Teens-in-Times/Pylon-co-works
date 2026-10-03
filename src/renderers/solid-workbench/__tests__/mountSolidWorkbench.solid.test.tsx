@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@solidjs/testing-library'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountSolidWorkbench, mountSolidWorkbenchFromHostPort } from '../mountSolidWorkbench.solid.tsx'
-import { createPreviewWorkbenchServices } from '../__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../preview/previewWorkbenchServices.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../domains/workbench/events/workbenchEventSchema.ts'
 import { createWorkbenchDocument, projectWorkbench, reduceWorkbenchEvent } from '../../../domains/workbench/workbenchProjector.ts'
 import { createSessionResponseEnvelope } from '../../../application/agent-workbench/sessionResponseProjection.ts'

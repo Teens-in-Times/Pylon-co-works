@@ -1,4 +1,9 @@
-import { WORKBENCH_MESSAGE_FIXTURE } from './workbenchFixtures.ts'
+/**
+ * 预览 fake facade：设置页渲染器预览（RendererSettingsPreview / settingsPreviewControlCenter）
+ * 与 Solid workbench 测试共用的假 workbench 服务装配。#520 结构收敛批自
+ * `__fixtures__/` 迁入 `preview/`——本文件被生产代码 import，不是测试资产。
+ */
+import { WORKBENCH_MESSAGE_FIXTURE } from '../__fixtures__/workbenchFixtures.ts'
 import { DEFAULTS } from '../../../domains/theme/themeDefaults.ts'
 import { createStaticWorkbenchAppearanceStore } from '../../../domains/appearance/workbenchAppearanceStore.ts'
 import { createSessionUiStore } from '../../../domains/workbench/sessionUiStore.ts'

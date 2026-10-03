@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import { appClients } from '../app/appClients.ts'
-import { listen } from '@tauri-apps/api/event'
+import { runtimeEventClient } from '../infrastructure/tauri/runtimeEventClient.ts'
 import { useRuntimeStore } from '../domains/runtime/runtimeStore'
 import { reportRuntimeError, resolveRuntimeErrors } from '../app/runtimeError'
 import { getDiagnosticErrors, getErrorHistory, subscribeErrorCenter, type ErrorEntry } from '../app/errorCenter.ts'
@@ -69,18 +69,19 @@ export default function RuntimeSheetView(props: RuntimeSheetViewProps) {
         source: 'runtime.sheet',
       })
     })
-    // B2：挂载时开 live 推送、卸载时关（ringbuffer pull 兜底不受影响）
+    // B2：挂载时开 live 推送、卸载时关（ringbuffer pull 兜底不受影响）。
+    // #520 S1-P1：事件订阅改经 infrastructure 传输层 runtimeEventClient（行为零变化）。
     const runtimeClient = appClients.runtime
     void runtimeClient.setRuntimeLogLive(true).catch(() => {})
-    const unlisten = listen<unknown>('pylon:runtime-log', event => {
+    const liveLog = runtimeEventClient.subscribe<unknown>('pylon:runtime-log', payload => {
       if (disposed) return
-      const entry = normalizeRuntimeLogEntry(event.payload)
+      const entry = normalizeRuntimeLogEntry(payload)
       if (entry) setEntries(previous => mergeRuntimeLogs(previous, [entry]))
     })
     onCleanup(() => {
       disposed = true
       void runtimeClient.setRuntimeLogLive(false).catch(() => {})
-      unlisten.then(stop => stop()).catch(() => {})
+      liveLog.dispose()
     })
   })
 

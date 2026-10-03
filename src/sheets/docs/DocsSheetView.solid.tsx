@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createSignal, onCleanup, onMount, Show, untrack } from 'solid-js'
-import { BookOpen, ChevronLeft, ChevronRight, House, RotateCw, type IconNode } from 'lucide'
 import { appClients } from '../../app/appClients.ts'
+import { LucideIcon } from '../../components/LucideIcon.solid.tsx'
 import type { DocsSheetSnapshot } from '../../infrastructure/tauri/docsClient'
 import { useModalOverlayStore } from '../../app/modalOverlayStore'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
@@ -33,50 +33,8 @@ interface DocsSheetViewProps {
   ctx: SheetContext
 }
 
-// ---- 内联图标（lucide 核心 IconNode 自绘，类名契约与 lucide-react/LucideIcon.solid
-// 逐类一致；映射表归各实体自持，不越域改 components/LucideIcon.solid 的表）。 ----
-const DOCS_ICONS: Readonly<Record<string, IconNode>> = {
-  BookOpen,
-  ChevronLeft,
-  ChevronRight,
-  House,
-  RotateCw,
-}
-
-function DocsIcon(props: { name: string; size?: number }) {
-  const kebab = props.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
-  const iconNode: IconNode = DOCS_ICONS[props.name] ?? BookOpen
-
-  const build = (host: SVGSVGElement) => {
-    const svgNamespace = 'http://www.w3.org/2000/svg'
-    host.setAttribute('xmlns', svgNamespace)
-    host.setAttribute('viewBox', '0 0 24 24')
-    host.setAttribute('fill', 'none')
-    host.setAttribute('stroke', 'currentColor')
-    host.setAttribute('stroke-width', '2')
-    host.setAttribute('stroke-linecap', 'round')
-    host.setAttribute('stroke-linejoin', 'round')
-    for (const [tag, attributes] of iconNode) {
-      if (tag === 'key') continue
-      const child = document.createElementNS(svgNamespace, tag)
-      for (const [name, value] of Object.entries(attributes)) {
-        if (name === 'key') continue
-        child.setAttribute(name, String(value))
-      }
-      host.appendChild(child)
-    }
-  }
-
-  return (
-    <svg
-      ref={element => build(element)}
-      class={`lucide lucide-${kebab}`}
-      width={props.size ?? 24}
-      height={props.size ?? 24}
-      aria-hidden="true"
-    />
-  )
-}
+// ---- #520 S3-P2-1：本地 DOCS_ICONS 表与 DocsIcon 自绘已退役，图标统一经共享 LucideIcon
+// （BookOpen/ChevronLeft/ChevronRight/House/RotateCw 均已登记其中）。 ----
 
 export default function DocsSheetView(props: DocsSheetViewProps) {
   const [snapshot, setSnapshot] = createSignal<DocsSheetSnapshot>(IDLE_SNAPSHOT)
@@ -182,17 +140,17 @@ export default function DocsSheetView(props: DocsSheetViewProps) {
   return (
     <div class="docs-sheet flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden text-text font-[family-name:var(--font)] bg-[var(--global-bg-color,var(--bg))]">
       <div class="docs-toolbar flex shrink-0 min-w-0 min-h-[40px] items-center gap-1 m-0 py-1 px-2 border-0 border-b border-border rounded-none bg-bg-panel" aria-label="文档工具栏">
-        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('home')} disabled={!ready()} aria-label="回首页" title="回首页"><DocsIcon name="House" size={16} /></button>
-        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('back')} disabled={!ready()} aria-label="后退"><DocsIcon name="ChevronLeft" size={18} /></button>
-        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('forward')} disabled={!ready()} aria-label="前进"><DocsIcon name="ChevronRight" size={18} /></button>
-        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('reload')} disabled={!ready()} aria-label="刷新"><DocsIcon name="RotateCw" size={15} /></button>
+        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('home')} disabled={!ready()} aria-label="回首页" title="回首页"><LucideIcon name="House" size={16} /></button>
+        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('back')} disabled={!ready()} aria-label="后退"><LucideIcon name="ChevronLeft" size={18} /></button>
+        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('forward')} disabled={!ready()} aria-label="前进"><LucideIcon name="ChevronRight" size={18} /></button>
+        <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('reload')} disabled={!ready()} aria-label="刷新"><LucideIcon name="RotateCw" size={15} /></button>
         <span class="docs-title min-w-0 flex-1 px-1 text-[12px] text-text-dim truncate">Pylon 文档</span>
         <span class={`docs-status inline-flex h-[24px] items-center justify-center px-[7px] border rounded-[4px] font-[family-name:var(--mono)] text-[10px] tracking-[.04em] uppercase ${ready() ? 'text-[var(--tool-ok)] border-[color-mix(in_srgb,var(--tool-ok)_38%,var(--border))]' : snapshot().phase === 'error' ? 'text-[var(--tool-err,var(--danger))] border-[color-mix(in_srgb,var(--tool-err,var(--danger))_38%,var(--border))]' : 'text-text-dim border-border'}`} data-phase={snapshot().phase}>{snapshot().phase}</span>
       </div>
       <div ref={element => { viewport = element }} class="docs-viewport relative flex flex-1 min-w-0 min-h-0 overflow-hidden">
         <Show when={!ready()}>
           <div class="docs-placeholder absolute inset-0 grid place-content-center justify-items-center gap-2 p-6 text-text-dim" data-phase={snapshot().phase}>
-            <DocsIcon name="BookOpen" size={28} />
+            <LucideIcon name="BookOpen" size={28} />
             <p class="m-0 text-[13px]">
               {snapshot().phase === 'error' ? (snapshot().error || '文档站加载失败') : snapshot().phase === 'idle' ? '文档站尚未启动' : '正在打开文档站…'}
             </p>

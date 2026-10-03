@@ -17,7 +17,7 @@ import { getContextPanelRegistry } from '../../../plugin-runtime/runtimeServices
 import { createPluginIdentity } from '../../../plugin-runtime/pluginIdentity.ts'
 import type { AsyncDisposable } from '../../../plugin-runtime/registry/types.ts'
 import type { SheetContext, SheetRecord } from '../../../workspace-sheets/sheetTypes.ts'
-import { createPreviewWorkbenchServices } from '../../../renderers/solid-workbench/__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../../../renderers/solid-workbench/preview/previewWorkbenchServices.ts'
 import { createWorkbenchHostPort } from '../../../plugin-runtime/renderers/workbenchHostPort.ts'
 import { publishActiveWorkbenchHostPort } from '../../../application/agent-workbench/activeWorkbenchHostPort.ts'
 import { useRightRailStore, RIGHT_RAIL_DEFAULT_WIDTH } from '../../../domains/workspace/layoutRailsStore.ts'
