@@ -59,16 +59,18 @@
 - 侦察称 `cohereDisplaySnapshot` 全仓零消费，复核发现同文件仍有 3 处存活调用——整删会破编译，降级为去 export，整删需先重设计调用点（见未解问题）。
 - 侦察建议 manifest 加 `runtime` 字段，核实后契约不存在，改为直接删除 reactVersion（见方案要点）。
 
-## 未解问题（供登记/裁决，均为语义或 API 决策，未擅动）
+## 未解问题 → 收口处置（2026-10-04 遗留收口批）
 
-1. `runtimeStore.resetAll` 的 `@deprecated` 方向标反：生产 4 处全走 `resetAll`（不清 agentStatuses），「推荐」的 `resetSessionRuntime` 仅测试消费——保留哪个语义需裁定（两种行为不同）。
-2. appearance 命令双实现：`themeProjectedWorkbenchAppearanceStore`（生产）与 `reduceAppearanceCommand`/`createStaticWorkbenchAppearanceStore`（fixture+测试）语义当前对齐但无单一真源，漂移温床。
-3. `streamingDisplayScheduler.cohereDisplaySnapshot` 已私有化但整删需重设计 3 处同文件调用点。
-4. settings 诊断导出簇（`probeSettingsRegistries`/`buildRendererSettingsCatalog` 等）生产零调用仅测试消费——是删是留作公共诊断 API 需裁定。
-5. `workspaceClient.ts:15` deprecated string 形态仅旧测试喂养（与 kernelBootstrap 同模式，本批只清了 kernel 一处）。
-6. contracts/plugin-runtime 三处零消费契约 Props（`RendererMountProps`/`FileViewRendererProps`/`IsolatedPluginSurfaceProps`）收窄属第三方 API 决策。
-7. vitest B 类 console.error 白名单 11 条的根因（canonicalEventFeed 环境守卫）按其既定计划清零后删机制；本轮全量跑未出现 0 命中死条目。
-8. `src/__tests__/replay/crossLayerComposition.test.ts:54` 的 `it.todo`（游标层聚合 gap）为已知缺口占位，建议登记 issue 跟踪。
+提交范围续：`5aea0d5c`（L.md 声明）→ `143308aa`（L1 语义收口）→ `4fe7ea49`（L2 外观等价守卫与死面手术）→ `0b42dc5d`（L3 feed 守卫与白名单摘录）。全量验证同日复跑：lint/tsc/check:solid/check:docs 绿，vitest 656 文件 / 5123 用例通过。
+
+1. ~~resetAll 废弃方向~~ → **已收口**（读码证伪「两种行为」：resetAll 是 resetSessionRuntime 的纯别名），收口单名，4 处生产调用点改写（143308aa）。
+2. ~~appearance 双实现~~ → **已收口**：新增 appearanceCommandEquivalence.test.ts（6 类命令双路径快照对账，突变验证守卫有效），实现零改动（4fe7ea49）。
+3. ~~cohereDisplaySnapshot~~ → **终态确认**：内部 3 处存活调用属实，私有化即正确终态，无进一步动作。
+4. ~~settings 诊断导出簇~~ → **已收口**：probeSettingsRegistries/SettingsRegistryProbeIssue/canonicalEditableRecords/searchPathFor 删除；build* 去 export 改测在役合成面；normalizeConfigOption 经核实有在役消费者，跳过（4fe7ea49）。
+5. ~~workspaceClient string 形态~~ → **已收口**：string 分支退役，六处签名单化，3 处 legacy 测试改真形态（143308aa）。
+6. ~~契约 Props 三处~~ → **已收口**：deprecated mount 链（RendererMountProps + resolveRendererMountProps）拆除、FileViewRendererProps 删除（核查不经 SDK 面发布）、IsolatedPluginSurfaceProps 去 export（143308aa）。
+7. vitest B 类白名单 → **部分收口**：canonicalEventFeed 兜底监听注册补 `typeof window` 守卫，node 组 10 条 + jsdom 死条目 1 条摘除（命中 17→3）；jsdom 组残留 2 条待测试宿主 Tauri 垫片，A/C 类按既定回收计划（0b42dc5d）。
+8. ~~crossLayer 游标层聚合 gap~~ → **已登记 [#535](https://github.com/Teens-in-Times/Pylon-co-works/issues/535)** 跟踪，it.todo 占位保留待修复。
 
 ## 并行交集
 
