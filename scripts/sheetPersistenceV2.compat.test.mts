@@ -1,7 +1,6 @@
 import '../src/plugin-runtime/pluginCompositionRoot.ts'
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_SHEET_LAYOUT,
   EMPTY_PERSISTED_SHEET_STATE,
   SHEET_SCHEMA_VERSION,
   SHEET_STORAGE_KEY,
@@ -14,8 +13,9 @@ import { useLegacyCompatRuntime } from './legacyCompatHarness.mts'
 
 useLegacyCompatRuntime()
 
-// W1-01：schema v2——layout 三字段、v1 清洗旧 kind、只输出 v2、损坏样本、showPet 反携带钉
-// （showPet 字段本体已随 #483 宠物链退役，见用例 7）
+// W1-01：schema v2——v1 清洗旧 kind、只输出 v2、损坏样本、showPet 反携带钉。
+// #538：布局真源收敛为 layoutRailsStore（pylon-workspace-layout-v3），信封不再
+// 读写 layout 键——旧信封的 layout 残留被静默忽略（防踩回，见用例 4）。
 
 class MemoryStorage {
   private values = new Map<string, string>()
@@ -37,28 +37,27 @@ function loadSheetStateV2Safe(storage: MemoryStorage) {
 }
 
 describe('sheet persistence v2 legacy compat', () => {
-  // 1. v2 roundtrip：state + layout 往返一致
-  it('v2 roundtrip：state + layout 往返一致', () => {
-    const layout = { sidebarWidth: 300, sidebarCollapsed: true, rightPanelCollapsed: false }
-    const serialized = serializeSheetStateV2(state, layout)
+  // 1. v2 roundtrip：state 往返一致（信封不携带布局）
+  it('v2 roundtrip：state 往返一致、信封无 layout 键', () => {
+    const serialized = serializeSheetStateV2(state)
     expect(JSON.parse(serialized).version).toBe(SHEET_SCHEMA_VERSION)
     expect(SHEET_SCHEMA_VERSION).toBe(2)
     const parsed = parseSheetStateV2(serialized)
     expect(parsed.migrated).toBe(false)
     expect(parsed.state).toEqual(state)
-    expect(parsed.layout).toEqual(layout)
+    expect(parsed, '#538：hydrate 结果不含 layout（真源在 layoutRailsStore）').not.toHaveProperty('layout')
   })
 
-  // 2. 只输出 v2：serialize 不再生成 v1
-  it('只输出 v2：serialize 不再生成 v1', () => {
-    const serialized = serializeSheetStateV2(state, { ...DEFAULT_SHEET_LAYOUT })
+  // 2. 只输出 v2：serialize 不再生成 v1、不再写 layout
+  it('只输出 v2：serialize 不再生成 v1 与 layout', () => {
+    const serialized = serializeSheetStateV2(state)
     const envelope = JSON.parse(serialized) as { version: number; layout?: unknown }
     expect(envelope.version).toBe(2)
-    expect(envelope.layout, 'v2 envelope 必须含 layout').toBeTruthy()
+    expect(envelope.layout, '#538：v2 envelope 不含 layout').toBeUndefined()
   })
 
-  // 3. v1→v2 迁移：旧 kind（diff/changes/git-history）清洗、layout 默认、migrated=true
-  it('v1→v2 迁移：旧 kind 清洗、layout 默认、migrated=true', () => {
+  // 3. v1→v2 迁移：旧 kind（diff/changes/git-history）清洗、migrated=true
+  it('v1→v2 迁移：旧 kind 清洗、migrated=true', () => {
     const v1 = JSON.stringify({
       version: 1,
       state: {
@@ -76,29 +75,25 @@ describe('sheet persistence v2 legacy compat', () => {
     const result = parseSheetStateV2(v1)
     expect(result.migrated, 'v1 输入必须标记 migrated').toBe(true)
     expect(result.state.sheets.map(sheet => sheet.kind), '旧 kind 必须被清洗').toEqual(['agent'])
-    expect(result.layout, 'v1 迁移 layout 取默认').toEqual({ ...DEFAULT_SHEET_LAYOUT })
   })
 
-  // 4. v2 layout 容错：宽度 clamp、collapsed 只接受 boolean
-  it('v2 layout 容错：宽度 clamp、collapsed 只接受 boolean', () => {
+  // 4. 旧信封 layout 残留：静默忽略（布局真源在 layoutRailsStore，不得被旧值踩回）
+  it('旧信封 layout 残留被静默忽略', () => {
     const parsed = parseSheetStateV2(JSON.stringify({
       version: 2,
       state,
       layout: { sidebarWidth: 9999, sidebarCollapsed: 'yes', rightPanelCollapsed: true },
     }))
-    expect(parsed.layout.sidebarWidth, '宽度必须 clamp 到上限').toBe(520)
-    expect(parsed.layout.sidebarCollapsed, '非 boolean collapsed 必须回退默认').toBe(false)
-    expect(parsed.layout.rightPanelCollapsed).toBe(true)
-    const small = parseSheetStateV2(JSON.stringify({ version: 2, state, layout: { sidebarWidth: 10, sidebarCollapsed: false, rightPanelCollapsed: false } }))
-    expect(small.layout.sidebarWidth, '宽度必须 clamp 到下限').toBe(160)
+    expect(parsed.state).toEqual(state)
+    expect(parsed, 'layout 残留不进结果').not.toHaveProperty('layout')
     const missing = parseSheetStateV2(JSON.stringify({ version: 2, state }))
-    expect(missing.layout, 'v2 缺 layout 回退默认').toEqual({ ...DEFAULT_SHEET_LAYOUT })
+    expect(missing.state).toEqual(state)
   })
 
   // 5. 损坏/未知版本样本
   it('损坏/未知版本样本：返回空状态不抛错', () => {
-    expect(parseSheetStateV2(null)).toEqual({ state: EMPTY_PERSISTED_SHEET_STATE, layout: { ...DEFAULT_SHEET_LAYOUT }, migrated: false })
-    expect(parseSheetStateV2('{not-json')).toEqual({ state: EMPTY_PERSISTED_SHEET_STATE, layout: { ...DEFAULT_SHEET_LAYOUT }, migrated: false })
+    expect(parseSheetStateV2(null)).toEqual({ state: EMPTY_PERSISTED_SHEET_STATE, migrated: false })
+    expect(parseSheetStateV2('{not-json')).toEqual({ state: EMPTY_PERSISTED_SHEET_STATE, migrated: false })
     const unknown = parseSheetStateV2(JSON.stringify({ version: 99, state }))
     expect(unknown.state.sheets.length, '未知版本返回空状态').toBe(0)
   })
@@ -106,11 +101,10 @@ describe('sheet persistence v2 legacy compat', () => {
   // 6. 迁移写回路径：persistSheetStateV2 写盘后 loadSheetStateV2 读回 v2 一致
   it('迁移写回路径：persist 写盘后读回 v2 一致', () => {
     const storage = new MemoryStorage()
-    persistSheetStateV2(storage, state, { sidebarWidth: 280, sidebarCollapsed: false, rightPanelCollapsed: false })
+    persistSheetStateV2(storage, state)
     expect(storage.getItem(SHEET_STORAGE_KEY)).toBeTruthy()
     const loaded = loadSheetStateV2Safe(storage)
     expect(loaded.migrated).toBe(false)
-    expect(loaded.layout.sidebarWidth).toBe(280)
     expect(loaded.state).toEqual(state)
   })
 
@@ -118,7 +112,7 @@ describe('sheet persistence v2 legacy compat', () => {
   //    此处保留 envelope 侧断言：v2 envelope 持久化不携带 showPet（防死而复生）。
   it('sheet envelope 不携带 showPet（字段已随宠物链退役）', () => {
     const storage = new MemoryStorage()
-    const serialized = serializeSheetStateV2(state, DEFAULT_SHEET_LAYOUT)
+    const serialized = serializeSheetStateV2(state)
     expect(serialized.includes("showPet")).toBe(false)
     expect(storage.getItem(SHEET_STORAGE_KEY)).toBeNull()
   })

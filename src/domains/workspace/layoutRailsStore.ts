@@ -7,8 +7,8 @@
  * 公开钩子名 useRightRailStore 暂保留以控本次扰动面。
  *
  * 历史：A-V12 曾把桌面宠物显隐（showPet）并入本 store（envelope v3→4）；
- * #483 宠物链整体删除后该字段退役。envelope version 维持 4（v3 migrate 仍服务
- * 布局字段）；旧 `pylon-workspace-show-pet` key 成为无害孤儿，不再主动清理。
+ * #483 宠物链整体删除后该字段与旧显隐 key 一并退役。envelope version 维持 4
+ * （v3 migrate 仍服务布局字段）。
  */
 import { attachSolidPersist, createSolidStoreKernel, resolveLocalStorage, type SolidStoreKernel } from '../../infrastructure/state/solidStoreKernel'
 import { readLegacyLayoutSnapshot } from '../../infrastructure/persistence/legacyKeyMigration.ts'

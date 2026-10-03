@@ -73,13 +73,13 @@ describe('F0.2 Sheet 持久化 v1 迁移源（compat 转正）', () => {
     expect(parseSheetStateV1(serializeSheetStateV1(duplicate)).sheets.length).toBe(1)
   })
 
-  it('v1 存储经 loadSheetStateV2 迁移：migrated=true、layout 取默认 250', () => {
+  it('v1 存储经 loadSheetStateV2 迁移：migrated=true（#538 起布局不随信封迁移）', () => {
     const serialized = serializeSheetStateV1(state)
     const storage = new MemoryStorage()
     storage.setItem('pylon-workspace-sheets', serialized)
     const migrated = loadSheetStateV2(storage, ['profile-a'])
     expect(migrated.migrated, 'v1 输入必须标记 migrated').toBe(true)
     expect(migrated.state).toEqual({ ...state, agentStates: { 'profile-a': state.agentStates['profile-a'] } })
-    expect(migrated.layout.sidebarWidth, 'v1 迁移 layout 取默认 250（主题值由 workspaceStore hydrate 搬家）').toBe(250)
+    expect(migrated, '#538：hydrate 结果不含 layout（真源在 layoutRailsStore 的 legacy 快照播种）').not.toHaveProperty('layout')
   })
 })

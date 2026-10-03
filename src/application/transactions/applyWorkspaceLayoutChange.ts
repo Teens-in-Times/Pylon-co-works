@@ -1,4 +1,3 @@
-import { useWorkspaceStore } from '../../domains/workspace/workspaceStore.ts'
 import { useRightRailStore } from '../../domains/workspace/layoutRailsStore.ts'
 import { reportRuntimeError } from '../../app/runtimeError.ts'
 
@@ -11,66 +10,44 @@ export interface WorkspaceLayoutPatch {
 }
 
 export interface WorkspaceLayoutPorts {
-  readonly workspace: {
-    getState: () => { sidebarWidth: number; sidebarCollapsed: boolean; rightPanelCollapsed: boolean; setSidebarWidth: (value: number) => void; setSidebarCollapsed: (value: boolean) => void; setRightPanelCollapsed: (value: boolean) => void }
-  }
   readonly rightRail: {
     getState: () => { width: number; leftRailWidth: number; leftRailCollapsed: boolean; collapsed: boolean; setWidth: (value: number) => void; setLeftRailWidth: (value: number) => void; setLeftRailCollapsed: (value: boolean) => void; setCollapsed: (value: boolean) => void }
   }
 }
 
-const defaults: WorkspaceLayoutPorts = { workspace: useWorkspaceStore, rightRail: useRightRailStore }
+const defaults: WorkspaceLayoutPorts = { rightRail: useRightRailStore }
 
-export type WorkspaceLayoutResult = { ok: true } | { ok: false; message: string }
+export type WorkspaceLayoutResult = { ok: true } | { ok: false, message: string }
 
-/** Single owner for the workspace/right-rail layout bridge. */
+/**
+ * Single owner for workspace layout writes. #538：布局三字段双真源退役后不再存在
+ * workspace↔rail 桥——sidebar* 语义全部落 rail 的左/右栏字段，注入 ports 供测试
+ * 与独立投影使用。
+ */
 export function applyWorkspaceLayoutChange(
   patch: WorkspaceLayoutPatch,
   ports: WorkspaceLayoutPorts = defaults,
 ): WorkspaceLayoutResult {
-  const workspace = ports.workspace.getState()
   const rail = ports.rightRail.getState()
-  // The default workspace action retains the compatibility bridge to the rail;
-  // injected ports are independent projections and therefore receive both writes.
-  // Compare the store identities rather than the wrapper object so callers can
-  // construct an equivalent ports object without reintroducing duplicate writes.
-  const workspaceOwnsRailBridge = ports.workspace === useWorkspaceStore && ports.rightRail === useRightRailStore
   const previous = {
-    sidebarWidth: workspace.sidebarWidth,
-    sidebarCollapsed: workspace.sidebarCollapsed,
-    rightPanelCollapsed: workspace.rightPanelCollapsed,
     width: rail.width,
     leftRailWidth: rail.leftRailWidth,
     leftRailCollapsed: rail.leftRailCollapsed,
     collapsed: rail.collapsed,
   }
   try {
-    if (patch.sidebarWidth !== undefined) {
-      if (!workspaceOwnsRailBridge) rail.setLeftRailWidth(patch.sidebarWidth)
-      workspace.setSidebarWidth(patch.sidebarWidth)
-    }
-    if (patch.sidebarCollapsed !== undefined) {
-      if (!workspaceOwnsRailBridge) rail.setLeftRailCollapsed(patch.sidebarCollapsed)
-      workspace.setSidebarCollapsed(patch.sidebarCollapsed)
-    }
-    if (patch.rightPanelCollapsed !== undefined) {
-      if (!workspaceOwnsRailBridge) rail.setCollapsed(patch.rightPanelCollapsed)
-      workspace.setRightPanelCollapsed(patch.rightPanelCollapsed)
-    }
+    if (patch.sidebarWidth !== undefined) rail.setLeftRailWidth(patch.sidebarWidth)
+    if (patch.sidebarCollapsed !== undefined) rail.setLeftRailCollapsed(patch.sidebarCollapsed)
+    if (patch.rightPanelCollapsed !== undefined) rail.setCollapsed(patch.rightPanelCollapsed)
     if (patch.rightRailWidth !== undefined) rail.setWidth(patch.rightRailWidth)
     if (patch.rightRailCollapsed !== undefined) rail.setCollapsed(patch.rightRailCollapsed)
     return { ok: true }
   } catch (error) {
     try {
-      if (!workspaceOwnsRailBridge) {
-        rail.setWidth(previous.width)
-        rail.setLeftRailWidth(previous.leftRailWidth)
-        rail.setLeftRailCollapsed(previous.leftRailCollapsed)
-        rail.setCollapsed(previous.collapsed)
-      }
-      workspace.setSidebarWidth(previous.sidebarWidth)
-      workspace.setSidebarCollapsed(previous.sidebarCollapsed)
-      workspace.setRightPanelCollapsed(previous.rightPanelCollapsed)
+      rail.setWidth(previous.width)
+      rail.setLeftRailWidth(previous.leftRailWidth)
+      rail.setLeftRailCollapsed(previous.leftRailCollapsed)
+      rail.setCollapsed(previous.collapsed)
     } catch (rollbackError) {
       reportRuntimeError('回滚 Workspace 布局事务', rollbackError)
     }
