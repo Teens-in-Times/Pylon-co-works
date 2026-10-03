@@ -40,6 +40,8 @@ interface RightRailState {
   activePanelId: string | null
   background: RightRailBackgroundPresentation | null
   setCollapsed: (collapsed: boolean) => void
+  /** #538 升级缝：v3 键缺席时从 legacy 快照一次性补种（setState 经 writeBack 物化 v3 键）。 */
+  hydrateLegacyLayout: (snapshot: { rightWidth?: number, leftWidth?: number, rightCollapsed?: boolean, leftCollapsed?: boolean }) => void
   setLeftRailWidth: (width: number) => void
   setLeftRailCollapsed: (collapsed: boolean) => void
   setWidth: (width: number) => void
@@ -70,6 +72,12 @@ const rightRailKernel = createSolidStoreKernel<RightRailState>({
   activePanelId: null,
   background: null,
   setCollapsed: collapsed => rightRailKernel.setState({ collapsed }),
+  hydrateLegacyLayout: snapshot => rightRailKernel.setState({
+    collapsed: snapshot.rightCollapsed ?? rightRailKernel.getState().collapsed,
+    leftRailWidth: snapshot.leftWidth !== undefined ? clampLeftRailWidth(snapshot.leftWidth) : rightRailKernel.getState().leftRailWidth,
+    leftRailCollapsed: snapshot.leftCollapsed ?? rightRailKernel.getState().leftRailCollapsed,
+    width: snapshot.rightWidth !== undefined ? clampRightRailWidth(snapshot.rightWidth) : rightRailKernel.getState().width,
+  }),
   setLeftRailWidth: width => rightRailKernel.setState({ leftRailWidth: clampLeftRailWidth(width) }),
   setLeftRailCollapsed: leftRailCollapsed => rightRailKernel.setState({ leftRailCollapsed }),
   setWidth: width => rightRailKernel.setState({ width: clampRightRailWidth(width) }),
@@ -77,10 +85,24 @@ const rightRailKernel = createSolidStoreKernel<RightRailState>({
   setBackground: background => rightRailKernel.setState({ background }),
 })
 
+// #538 升级缝：persist 与「v3 是否已物化」的检测必须同源（各自 resolve 会在测试
+// 替换全局 localStorage 时分裂成两把钥匙，重新引入双真源）。
+export const railPersistStorage = resolveLocalStorage()
+export const RAIL_PERSIST_KEY = 'pylon-workspace-layout-v3'
+
+/** v3 布局键是否已物化（与 rail persist 同源存储）；存储不可读时保守视为已物化。 */
+export function railPersistLayoutMaterialized(): boolean {
+  try {
+    return railPersistStorage?.getItem(RAIL_PERSIST_KEY) != null
+  } catch {
+    return true
+  }
+}
+
 attachSolidPersist(rightRailKernel, {
-  name: 'pylon-workspace-layout-v3',
+  name: RAIL_PERSIST_KEY,
   version: 4,
-  storage: resolveLocalStorage(),
+  storage: railPersistStorage,
   migrate: (persisted: unknown) => {
     const state = (persisted && typeof persisted === 'object' && 'state' in persisted)
       ? (persisted as { state?: Record<string, unknown> }).state

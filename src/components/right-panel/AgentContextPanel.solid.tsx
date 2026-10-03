@@ -77,8 +77,8 @@ function createHostDocument(hostPort: () => WorkbenchHostPort | undefined): Acce
  * AgentContextPanel — agent 右栏（W2-12，F2-F）。
  *
  * 搜索模式：Renderer Suite 存在时消费当前 Sheet 发布的 Workbench Host Port，
- * 从 canonical document 计算命中并写 namespaced SessionUiPort；legacy ChatView
- * 仍通过原 sessionUiState/controller 回退，切换渲染模式不丢现有搜索能力。
+ * 从 canonical document 计算命中并写 namespaced SessionUiPort；legacy 值统一住
+ * workbench/sessionUiStore（chat/sessionUiState 已随 #520 S2-P1-1 归一退役）。
  * 关联模式：touchedFiles 正向（会话→文件）。
  */
 export default function AgentContextPanel(props: AgentContextPanelProps) {

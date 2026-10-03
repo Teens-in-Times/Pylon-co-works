@@ -450,8 +450,17 @@ if (audit.errors.length > 0) {
   console.error(`import 环门禁失败：${audit.errors.length} 处（基线 ${BASELINE_CYCLES.length} 环，生产文件 ${productionFiles.length} 个）`)
   for (const e of audit.errors) console.error('  ' + e)
 }
-if (testAssetHits.length > 0 || audit.errors.length > 0) {
-  console.error(`测试资产例外边 ${exemptKeys.length} 条（均须有对应违规边，陈旧即删）`)
+// 复查 P1：例外边强制陈旧检测——豁免条目对应的违规边消失后必须删除条目（对齐 layer 门禁纪律）。
+const consumedExemptions = new Set<string>()
+for (const key of Object.keys(TEST_ASSET_EDGE_EXEMPT)) {
+  if (!testAssetHits.some(hit => hit.startsWith(key))) consumedExemptions.add(key)
+}
+const staleExemptions = exemptKeys.filter(k => !consumedExemptions.has(k) && !testAssetHits.length)
+if (testAssetHits.length > 0 || audit.errors.length > 0 || staleExemptions.length > 0) {
+  if (staleExemptions.length > 0) {
+    console.error(`测试资产例外边陈旧 ${staleExemptions.length} 条（对应违规边已消失，删除条目）：`)
+    for (const k of staleExemptions) console.error('  ' + k)
+  }
   process.exit(1)
 }
 console.log(`import 环门禁通过：生产文件 ${productionFiles.length} 个、边 ${[...graph.values()].reduce((n, es) => n + es.length, 0)} 条；基线 ${BASELINE_CYCLES.length} 环（RUNTIME 闭合 ${BASELINE_CYCLES.filter(b => b.runtimeClosed).length} 环）零外逃；生产禁入测试资产条款通过（例外边 ${exemptKeys.length} 条）`)

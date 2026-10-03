@@ -73,7 +73,8 @@ export function validateRendererSuiteContribution(
   }
   validateSettingsNamespace(suite.settings, 'suite', suite.id)
   if (suite.settingsPlacement) normalizeRendererSettingsPlacement(suite.settingsPlacement)
-  if (typeof suite.factory !== 'function' && (!suite.factory || typeof suite.factory.prepare !== 'function')) fail(`Suite factory 缺失：${suite.id}`)
+  // 函数臂已随 #520 结构收敛塌缩（host 直调 prepare）：裸函数在此刻拒绝，而非推迟到 prepare 阶段 TypeError。
+  if (!suite.factory || typeof suite.factory.prepare !== 'function') fail(`Suite factory 缺失或缺 prepare：${suite.id}`)
   return Object.freeze({
     ...suite,
     requiredKinds: Object.freeze([...suite.requiredKinds]),

@@ -36,7 +36,7 @@ Pylon 是通过 ACP 连接多个本地 Agent runtime 的桌面工作台。它以
 - `src/plugins/product` 是七个第一方 Product Plugin 的激活和依赖定义。
 - `src/plugins/core` 是第一方 Product Plugin 使用的 implementation；虽然叫 `core`，但它不是 Kernel。
 - Session、ACP、持久化与恢复的概念 Kernel implementation 目前跨越 TypeScript(Solid) 和 Rust/Tauri 多个目录。
-- `App.solid.tsx` 仍承担大量 bootstrap、hydration、listener 和关闭收敛职责，因此当前 Product Shell 与概念 Kernel 之间并未完全分离。
+- `App.solid.tsx` 已收敛为组合根（bootstrap 事务、skin 接线、窗口生命周期分别住 `app/bootstrap/`、`app/skinWiring.solid.ts`、`app/windowLifecycle.solid.ts`，#520 结构收敛批落位），Product Shell 与概念 Kernel 的装配关系经 `src/app/` 显式接线。
 
 ## 4. 当前总体拓扑
 

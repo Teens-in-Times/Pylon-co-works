@@ -21,6 +21,8 @@ export const CONFIG_ENVELOPE_VERSION = 1
 export const CONFIG_STORAGE_KEYS = [
   'pylon-theme',
   'pylon-workspace-sheets',
+  // #538 起布局真源在本键（不再随 workspace 信封迁移），纳入备份恢复布局
+  'pylon-workspace-layout-v3',
   'pylon-window-size',
   'pylon-sessions',
   'pylon-profiles',

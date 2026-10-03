@@ -10,6 +10,8 @@ import { pushTouchedFile, type TouchedFile } from '../../infrastructure/acp/touc
 import type { SheetInput, SheetId } from '../../contracts/sheets.ts'
 import type { AgentContext, AgentContextKey } from '../agent/agentContext.ts'
 import { toAgentContextKey } from '../agent/agentContext.ts'
+import { readLegacyLayoutSnapshot } from '../../infrastructure/persistence/legacyKeyMigration.ts'
+import { railPersistLayoutMaterialized, useRightRailStore } from './layoutRailsStore.ts'
 import { normalizeFilePath } from '../file/fileRelations.ts'
 import { resolveWorkspace } from '../../plugin-runtime/workspaces/workspaceRegistry.ts'
 
@@ -86,6 +88,19 @@ const workspaceKernel = createSolidStoreKernel<WorkspaceStoreState>({
     // #538：hydrate 不再回灌 layoutRailsStore——布局真源只在 rail 自己的持久化面
     // （pylon-workspace-layout-v3 + 模块加载期的一次性 legacy 快照读），workspace
     // 快照里旧信封的 layout 键已被解析层忽略，回灌只会踩掉 rail 上的新值。
+    // 例外（复查 R1-P1-2）：跨版本升级用户（上次运行早于 v3 键存在、迁移标记却已在）
+    // 的 legacy 快照只被模块加载期消费过一次且未落 v3 键——此处检测 v3 缺席则重播种
+    // 一次并经 writeBack 物化，否则第二次启动布局回落默认。v3 键在场时绝不触碰 rail。
+    try {
+      if (!railPersistLayoutMaterialized()) {
+        const legacy = readLegacyLayoutSnapshot(localStorage, { ignoreMarker: true })
+        if (legacy.leftWidth !== undefined || legacy.leftCollapsed !== undefined || legacy.rightWidth !== undefined || legacy.rightCollapsed !== undefined) {
+          useRightRailStore.getState().hydrateLegacyLayout(legacy)
+        }
+      }
+    } catch {
+      // 布局播种失败不阻塞工作区 hydrate
+    }
     // 迁移写回失败不能让 hydrate 抛错；内存仍返回迁移后的 v2 状态
     try {
       if (result.migrated) persistSheetStateV2(localStorage, result.state)

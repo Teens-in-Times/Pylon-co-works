@@ -44,6 +44,7 @@ for (const m of snapshot.matchAll(/'((?:--[a-z0-9-]+))':/g)) injected.add(m[1])
 // ── F：Skin 基线订阅集 = THEME_SETTING_KEYS 全量白名单（缺订阅 = var 不注入 →
 //    主题值落 fallback；基线必须覆盖全部注入字段）──
 const skinServices = read(join(ROOT, 'infrastructure/skin/skinRuntimeServices.ts'))
+assert.equal(app.includes('createAppSkinWiring('), true, 'App 组合根必须实际调用 createAppSkinWiring（拆分后防断线，复查 P1）')
 assert.equal(skinWiring.includes('pickThemeBaseline'), true, 'Skin 接线（app/skinWiring）必须经 pickThemeBaseline 读 Theme Store')
 assert.equal(skinWiring.includes('createSkinSurface<HTMLDivElement>('), true, 'Skin 接线必须经 createSkinSurface 投影 CSS 变量（#515：useSkinSurface.solid 实体形态）')
 assert.equal(skinServices.includes('for (const key of THEME_SETTING_KEYS)'), true, 'Skin 基线必须遍历 THEME_SETTING_KEYS')

@@ -12,17 +12,17 @@ import { PluginContributionBoundary } from './PluginContributionBoundary.solid.t
  * 臂持 surfaceId。宿主把各自的 value 直接传入 `contribution`，本实体按判别式分发，
  * 宿主侧不再出现 `as Component` 断言。
  */
-export interface FirstPartyContributionRef<P extends Record<any, any>> {
+interface FirstPartyContributionRef<P extends Record<any, any>> {
   readonly renderKind: 'first-party-solid'
   readonly component: Component<P>
 }
 
-export interface IsolatedSurfaceContributionRef {
+interface IsolatedSurfaceContributionRef {
   readonly renderKind: 'isolated-surface'
   readonly surfaceId: string
 }
 
-export type PluginContributionRef<P extends Record<any, any>> = FirstPartyContributionRef<P> | IsolatedSurfaceContributionRef
+type PluginContributionRef<P extends Record<any, any>> = FirstPartyContributionRef<P> | IsolatedSurfaceContributionRef
 
 /**
  * PluginContributionBodyProps — 插件贡献体挂载面。
@@ -92,9 +92,12 @@ export function PluginContributionBody<P extends Record<any, any>>(props: Plugin
       )
     }
     // first-party 贡献必须提供 props 工厂；缺省视为宿主装配错误，渲染空而不是拿
-    // 空 props 硬挂组件（组件多半会当场抛错，那该在开发期暴露，而不是生产静默错渲染）。
+    // 空 props 硬挂组件。装配错误必须在开发期可见（复查 P1：静默空白不可接受）。
     const componentProps = props.componentProps
-    if (!componentProps) return null
+    if (!componentProps) {
+      console.warn(`[PluginContributionBody] first-party 贡献缺少 componentProps 工厂：${props.contributionId}（宿主装配错误，渲染为空）`)
+      return null
+    }
     const Contribution: Component<P> = contribution.component
     return (
       <Suspense fallback={props.suspenseFallback}>

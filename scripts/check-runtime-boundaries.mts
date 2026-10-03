@@ -119,6 +119,8 @@ export const GLOBAL_STORE_ALLOWLIST = new Set([  'src/plugins/core/browser/built
   'src/plugins/core/shell/builtinShellCommands.ts',
   'src/plugins/product/builtinPylonAgentAdapters.ts',
   'src/renderers/solid-workbench/input/ControlCenter.solid.tsx',
+  // #520 C 域拆分随迁：直连 store 读取自 ControlCenter 迁入 createCcSources（清偿方向：注入）
+  'src/renderers/solid-workbench/input/createCcSources.ts',
 ])
 
 /**
@@ -129,6 +131,8 @@ export const GLOBAL_STORE_ALLOWLIST = new Set([  'src/plugins/core/browser/built
 export const RENDERER_CUSTOM_EVENT_ALLOWLIST = new Set([
   'src/renderers/solid-workbench/input/ControlCenter.solid.tsx',
   'src/renderers/solid-workbench/input/WorkbenchWidgets.solid.tsx',
+  // #520 C 域拆分随迁：workspace 选择器直发自 ControlCenter 迁入（清偿方向：semantic command）
+  'src/renderers/solid-workbench/input/CcWorkspacePicker.solid.tsx',
 ])
 
 /**

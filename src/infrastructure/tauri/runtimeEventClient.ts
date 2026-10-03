@@ -31,11 +31,15 @@ export function createRuntimeEventClient(listen: typeof tauriListen = tauriListe
       const registration = listen<T>(event, event => {
         if (!disposed) onPayload(event.payload)
       })
-      void registration.then(stop => {
-        // dispose 跑在注册 settle 之前：settle 后补注销。
-        if (disposed) stop()
-        else unlisten = stop
-      })
+      registration
+        .then(stop => {
+          // dispose 跑在注册 settle 之前：settle 后补注销。
+          if (disposed) stop()
+          else unlisten = stop
+        })
+        // 注册失败的拒绝在 dispose 处吸收（下方 registration.catch 只救原始 promise）；
+        // 派生链必须自带 handler，否则非 Tauri 环境产生 unhandledrejection（复查 P1）。
+        .catch(() => {})
       return {
         dispose() {
           if (disposed) return
