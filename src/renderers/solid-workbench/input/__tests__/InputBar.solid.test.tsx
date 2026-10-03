@@ -3,7 +3,7 @@ import { createSignal, onCleanup } from 'solid-js'
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULTS } from '../../../../domains/theme/themeDefaults.ts'
-import { createPreviewWorkbenchServices } from '../../__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../../preview/previewWorkbenchServices.ts'
 import { SolidWorkbenchContext, type SolidWorkbenchContextValue } from '../../SolidWorkbenchContext.solid.tsx'
 import { SolidInputBar } from '../InputBar.solid.tsx'
 import { getCommandRegistry } from '../../../../plugin-runtime/runtimeServices.ts'
@@ -610,9 +610,16 @@ describe('Agent 原生预测（#394）', () => {
     await screen.findByText('先帮我看看这个仓库的结构')
 
     // 越过 scheduler 的 400ms 去抖窗口：原生在场时请求根本不该排上。
-    await new Promise(resolve => setTimeout(resolve, 600))
-    expect(provider.predict).not.toHaveBeenCalled()
-    expect(screen.queryByText('本地模型建议')).toBeNull()
+    // fake timers 只劫持 setTimeout/clearTimeout（scheduler 的去抖就是 setTimeout）：
+    // advance 600ms 会真实触发任何被错误排上的去抖，负断言仍跨过了完整时间窗。
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await vi.advanceTimersByTimeAsync(600)
+      expect(provider.predict).not.toHaveBeenCalled()
+      expect(screen.queryByText('本地模型建议')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('#395：文档 source 不匹配时不用它（原生预测与文档历史都不参与）', async () => {
@@ -622,8 +629,15 @@ describe('Agent 原生预测（#394）', () => {
       { ownerKey: 'owner-a' },
     )
     fireEvent.input(textarea, { target: { value: '继续' } })
-    await new Promise(resolve => setTimeout(resolve, 50))
-    expect(screen.queryByText('先帮我看看这个仓库的结构')).toBeNull()
+    // fake timers 推进 50ms（到期定时器与微任务链全部跑完）再负断言：source 不匹配时
+    // 文档历史 ghost 不参与，任何定时器驱动的迟到落地都逃不过这个窗口。
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await vi.advanceTimersByTimeAsync(50)
+      expect(screen.queryByText('先帮我看看这个仓库的结构')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('#395：source 匹配时文档历史参与 ghost 补全', async () => {

@@ -2,8 +2,9 @@
  * settingsChromeStore — 设置页 chrome 态真值源（A-V12 持久化收敛）。
  *
  * 原 components/settings/settingsChromeState.ts 的四个手写 localStorage key
- * （密度档 / 预览栏折叠 / 折叠记忆 / 收藏置顶）收敛为**域内 zustand persist 单一机制**
- * （结构审查 A-V12：手写 localStorage / zustand persist / 域 envelope 三机制并存，
+ * （密度档 / 预览栏折叠 / 折叠记忆 / 收藏置顶）收敛为**域内 persist 单一机制**
+ * （初为 zustand persist，#515 批0 起为 Solid 内核 attachSolidPersist；结构审查
+ * A-V12：手写 localStorage / zustand persist / 域 envelope 三机制并存，
  * 新偏好字段没有统一落点）。设计约束不变（施工书 09 §K-1）：chrome 态是显示方式
  * 不是设置项，不进 defs/schema/theme store。
  *

@@ -4,11 +4,11 @@ import type { DispatchSelection } from '../../domains/file/dispatchMessage.ts'
 import { createFileCodeMirrorKernel, type FileCodeEditorApi, type FileCodeMirrorKernel, type KernelSummary } from './fileCodeMirrorKernel.ts'
 
 /**
- * FileCodeEditorProps — 与 React 桥（FileCodeEditor.tsx）内声明的同名接口逐字段一致。
- * 命名差异是刻意的历史契约：React 壳面叫 `editable`（桥内映射为 `writable`），
- * Solid 面（FileTabView.solid 消费）自 #279 起叫 `writable`。
+ * FileCodeEditorProps — 名字承自历史 React 契约（FileCodeEditor.tsx，已退役）；本实体
+ * 即唯一真源。命名差异是刻意的历史契约：原 React 壳面叫 `editable`（桥内映射为
+ * `writable`），Solid 面（FileTabView.solid 消费）自 #279 起叫 `writable`。
  */
-export interface FileCodeEditorProps {
+interface FileCodeEditorProps {
   path: string
   initialContent: string
   baseline: string

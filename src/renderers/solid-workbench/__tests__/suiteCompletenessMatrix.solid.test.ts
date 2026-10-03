@@ -29,7 +29,7 @@ describe('A17 suite completeness matrix', () => {
     expect(suite.compatibility).toEqual({ documentSchema: 'workbench.v1', renderCatalogSchema: 1 })
     expect(suite.requiredKinds!.length).toBeGreaterThan(0)
     expect(suite.optionalKinds!.length).toBeGreaterThan(0)
-    // factory 是联合类型（函数 | PreparedWorkbenchRendererFactory）——builtin Solid 走对象形态
+    // factory 已塌缩为 PreparedWorkbenchRendererFactory 对象形态（函数臂随 #520 结构收敛删除）
     const factory = suite.factory as { prepare?: unknown }
     expect(typeof factory.prepare).toBe('function')
   })

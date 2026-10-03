@@ -9,9 +9,9 @@ import { buildDispatchMessage, type DispatchSelection } from '../../domains/file
 import { resolveDispatchOwnerSession } from './dispatchOwnerSession.ts'
 
 /**
- * DispatchBarProps — 与 React 桥（DispatchBar.tsx）内声明的同名接口逐字段一致。
+ * DispatchBarProps — 名字承自历史 React 契约（DispatchBar.tsx，已退役）；本实体即唯一真源。
  */
-export interface DispatchBarProps {
+interface DispatchBarProps {
   targetSource: string | null
   targetSessionId?: string | null
   context?: { agentId: string; source: string } | null

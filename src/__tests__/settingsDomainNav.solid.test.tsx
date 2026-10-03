@@ -104,7 +104,7 @@ describe('ISSUE-13 W2 当前域内 section 导航', () => {
       expect(navButton(section)).toBeInTheDocument()
     }
     fireEvent.click(navButton('Agent'))
-    // Agent 分区主区经 React 岛（AgentSettingsSection）挂载，岛首渲异步
+    // Agent 分区主区经 AgentSettingsSection（Solid 直连）挂载，渲染提交异步
     await waitFor(() => expect(screen.getByText('当前 Agent')).toBeInTheDocument())
   })
 

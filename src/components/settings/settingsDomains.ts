@@ -193,11 +193,6 @@ export function sectionZone(section: SettingsSectionId): ZoneName | undefined {
   return SECTION_ZONES[section]
 }
 
-/** section 搜索路径（T13-1：搜索命中隐藏字段时显示所属路径） */
-export function searchPathFor(section: SettingsSectionId): string {
-  return `${SETTINGS_DOMAIN_BY_ID[domainOfSection(section)].label} › ${SETTINGS_SECTION_LABELS[section]}`
-}
-
 /**
  * S5 Owner 正式化（设计书 v2 §v2.1/v2.2）：section → 归属组件 id。
  * 主题 zone 的 owner 语义升格；renderers section 由渲染器 catalog 自身充当 owner。

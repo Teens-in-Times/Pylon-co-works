@@ -412,7 +412,7 @@ impl BrowserManager {
             }
         }
         // add_child 创建的 WebView 默认可见；keep-alive 的非活动 Browser
-        // 需要在原生层同步隐藏，不能只依赖 React 父节点的 display:none。
+        // 需要在原生层同步隐藏，不能只依赖宿主父节点的 display:none。
         // 后台标签无论 Sheet 可见性如何都保持隐藏。
         if !inner.visible || !activate {
             let _ = webview.hide();
@@ -907,7 +907,7 @@ impl BrowserManager {
     }
 
     /// 将所有标签切换到活动/隐藏状态。这个命令专门服务于 Browser Sheet
-    /// keep-alive：原生子 WebView 不会随 React 的 display:none 自动隐藏。
+    /// keep-alive：原生子 WebView 不会随宿主 DOM 的 display:none 自动隐藏。
     pub(crate) fn set_visible(&self, visible: bool) -> Result<BrowserSnapshot, String> {
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
         inner.visible = visible;

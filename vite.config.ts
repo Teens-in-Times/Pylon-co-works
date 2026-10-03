@@ -143,12 +143,10 @@ export default defineConfig({
           if (/src\/plugins\/product\/(productPluginIds|firstPartyProductPackage|sharedLogicalActivation)\.ts$/.test(normalizedId)) {
             return 'first-party-pylon-shared'
           }
-          // 首屏必需的大依赖拆独立 vendor chunk，让应用主 chunk 保持轻量（< 600 kB）
           // Match the normalized path as well as first-party packages.  Vite
           // can hand Rollup Windows-style ids; testing the raw `id` made the
-          // vendor split platform-dependent and silently inflated the app
+          // split platform-dependent and silently inflated the app
           // chunk on Windows builds.
-          if (/node_modules\/(motion|motion-dom|framer-motion)\//.test(normalizedId)) return 'vendor-motion'
         },
       },
     },

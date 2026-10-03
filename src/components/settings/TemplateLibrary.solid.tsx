@@ -23,7 +23,7 @@ import SettingsPreviewSolid from '../SettingsPreview.solid.tsx'
  * 重应用当前模板 delta（清手调字段）。
  */
 
-export interface TemplateLibraryProps {
+interface TemplateLibraryProps {
   onApply: (presetName: string) => void | Promise<void>
   onRestore: (presetName: string) => void | Promise<void>
   onCustomApply?: (presetId: string) => Promise<PresetApplyResult>

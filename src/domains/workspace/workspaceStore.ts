@@ -1,21 +1,19 @@
 import { createSolidStoreKernel, type SolidStoreKernel } from '../../infrastructure/state/solidStoreKernel'
 import { createSheetState, sheetReducer } from './sheetState.ts'
 import {
-  DEFAULT_SHEET_LAYOUT,
   loadSheetStateV2,
   persistSheetStateV2,
   type PersistedSheetState,
-  type SheetLayoutState,
   type SheetWorkspaceState,
 } from './sheetPersistence.ts'
 import { pushTouchedFile, type TouchedFile } from '../../infrastructure/acp/touchedFiles.ts'
 import type { SheetInput, SheetId } from '../../contracts/sheets.ts'
 import type { AgentContext, AgentContextKey } from '../agent/agentContext.ts'
 import { toAgentContextKey } from '../agent/agentContext.ts'
+import { readLegacyLayoutSnapshot } from '../../infrastructure/persistence/legacyKeyMigration.ts'
+import { railPersistLayoutMaterialized, useRightRailStore } from './layoutRailsStore.ts'
 import { normalizeFilePath } from '../file/fileRelations.ts'
 import { resolveWorkspace } from '../../plugin-runtime/workspaces/workspaceRegistry.ts'
-import { useRightRailStore } from './layoutRailsStore.ts'
-import { readLegacyLayoutSnapshot } from '../../infrastructure/persistence/legacyKeyMigration.ts'
 
 /** I01-W3：touchedFiles 刷新版本戳 key——context key + normalized path 二元（禁止冒号 split）。 */
 export function touchedFileVersionKey(context: AgentContext, path: string): string {
@@ -25,20 +23,15 @@ export function touchedFileVersionKey(context: AgentContext, path: string): stri
 /**
  * workspaceStore — Workspace Sheet 状态域。
  *
- * 承载：workspaceSheets / sheetAgentStates / 布局三字段（sidebarWidth/sidebarCollapsed/
- * rightPanelCollapsed，W1-01 F2-B 从主题迁出——预设不覆盖布局状态）。全部独立 versioned 持久化
- * （桌面宠物显隐已随 A-V12 并入 layoutRailsStore 的壳层偏好持久化面）
- * `pylon-workspace-sheets`（schema v2）。
+ * 承载：workspaceSheets / sheetAgentStates，持久化于 `pylon-workspace-sheets`（schema v2）。
+ * 布局三字段（sidebarWidth/sidebarCollapsed/rightPanelCollapsed）曾在此镜像双写并随信封
+ * 持久化（W1-01 F2-B 从主题迁出），#538 起退役：壳层布局真源收敛为 layoutRailsStore
+ * （`pylon-workspace-layout-v3`），信封不再承载 layout。
  */
-
-const legacyLayout = readLegacyLayoutSnapshot()
 
 interface WorkspaceStoreState {
   workspaceSheets: ReturnType<typeof createSheetState>
   sheetAgentStates: Record<string, SheetWorkspaceState>
-  sidebarWidth: number
-  sidebarCollapsed: boolean
-  rightPanelCollapsed: boolean
   /** FE-AUD-001：最近一次工作区写盘失败的可见状态（null = 无失败） */
   lastPersistError: string | null
   hydrateWorkspaceSheets: (agentIds?: readonly string[]) => void
@@ -63,17 +56,6 @@ interface WorkspaceStoreState {
   pruneAgentSheets: (agentIds: readonly string[]) => void
   patchSheetAgentState: (agentId: string, partial: Partial<SheetWorkspaceState>) => void
   patchSheetAgentStates: (agentStates: Record<string, SheetWorkspaceState>) => void
-  setSidebarWidth: (width: number) => void
-  setSidebarCollapsed: (collapsed: boolean) => void
-  setRightPanelCollapsed: (collapsed: boolean) => void
-}
-
-function layoutOf(state: WorkspaceStoreState): SheetLayoutState {
-  return {
-    sidebarWidth: state.sidebarWidth,
-    sidebarCollapsed: state.sidebarCollapsed,
-    rightPanelCollapsed: state.rightPanelCollapsed,
-  }
 }
 
 /** FE-AUD-001：唯一 Workspace 持久化快照构造（action 禁止自拼 envelope） */
@@ -88,51 +70,49 @@ function buildWorkspaceSnapshot(state: WorkspaceStoreState): PersistedSheetState
 function commitWorkspaceMutation(state: WorkspaceStoreState, patch: Partial<WorkspaceStoreState>): Partial<WorkspaceStoreState> {
   const next = { ...state, ...patch }
 
-  const ok = persistSheetStateV2(localStorage, buildWorkspaceSnapshot(next), layoutOf(next))
+  const ok = persistSheetStateV2(localStorage, buildWorkspaceSnapshot(next))
   if (!ok) return { ...patch, lastPersistError: '工作区状态未能保存到本地存储' }
   // 写盘恢复成功：清掉旧错误提示
   return state.lastPersistError ? { ...patch, lastPersistError: null } : patch
 }
 
-// #515 批0：zustand → Solid 内核置换（对外签名不变；hook shim 待 React 面退役时拆除）。
+// #515 批0：zustand → Solid 内核置换（对外签名不变；hook shim 已随 R4 收口拆除）。
 const workspaceKernel = createSolidStoreKernel<WorkspaceStoreState>({
   workspaceSheets: createSheetState(),
   sheetAgentStates: {},
   touchedFiles: {},
   touchVersions: {},
-  sidebarWidth: legacyLayout.leftWidth ?? DEFAULT_SHEET_LAYOUT.sidebarWidth,
-  sidebarCollapsed: legacyLayout.leftCollapsed ?? DEFAULT_SHEET_LAYOUT.sidebarCollapsed,
-  rightPanelCollapsed: legacyLayout.rightCollapsed ?? DEFAULT_SHEET_LAYOUT.rightPanelCollapsed,
   lastPersistError: null,
   hydrateWorkspaceSheets: (agentIds) => workspaceKernel.setState(() => {
     const result = loadSheetStateV2(localStorage, agentIds)
-    // v1→v2 迁移：sidebarWidth 从旧主题一次性搬家（读失败回退默认 250）
-    let sidebarWidth = result.layout.sidebarWidth
-    if (result.migrated) {
-      sidebarWidth = legacyLayout.leftWidth ?? sidebarWidth
+    // #538：hydrate 不再回灌 layoutRailsStore——布局真源只在 rail 自己的持久化面
+    // （pylon-workspace-layout-v3 + 模块加载期的一次性 legacy 快照读），workspace
+    // 快照里旧信封的 layout 键已被解析层忽略，回灌只会踩掉 rail 上的新值。
+    // 例外（复查 R1-P1-2）：跨版本升级用户（上次运行早于 v3 键存在、迁移标记却已在）
+    // 的 legacy 快照只被模块加载期消费过一次且未落 v3 键——此处检测 v3 缺席则重播种
+    // 一次并经 writeBack 物化，否则第二次启动布局回落默认。v3 键在场时绝不触碰 rail。
+    try {
+      if (!railPersistLayoutMaterialized()) {
+        const legacy = readLegacyLayoutSnapshot(localStorage, { ignoreMarker: true })
+        if (legacy.leftWidth !== undefined || legacy.leftCollapsed !== undefined || legacy.rightWidth !== undefined || legacy.rightCollapsed !== undefined) {
+          useRightRailStore.getState().hydrateLegacyLayout(legacy)
+        }
+      }
+    } catch {
+      // 布局播种失败不阻塞工作区 hydrate
     }
-    const layout: SheetLayoutState = { ...result.layout, sidebarWidth }
-    // Keep the v3 application layout store in lockstep while old workspace
-    // snapshots are hydrated.  This is a one-way compatibility bridge; new
-    // UI writes go directly to useRightRailStore.
-    useRightRailStore.getState().setLeftRailWidth(layout.sidebarWidth)
-    useRightRailStore.getState().setLeftRailCollapsed(layout.sidebarCollapsed)
-    useRightRailStore.getState().setCollapsed(layout.rightPanelCollapsed)
     // 迁移写回失败不能让 hydrate 抛错；内存仍返回迁移后的 v2 状态
     try {
-      if (result.migrated) persistSheetStateV2(localStorage, { ...result.state, agentStates: result.state.agentStates }, layout)
+      if (result.migrated) persistSheetStateV2(localStorage, result.state)
     } catch {
       // 可忽略：写回失败只是延迟持久化——内存已是迁移后 v2 状态（下方立即返回），
       // 后续任意 commitWorkspaceMutation 会重新写盘，失败时经 lastPersistError 可见；
       // persistSheetStateV2 自身已把存储异常收敛为 false 返回，此 catch 仅兜底
-      // 其余意外异常，避免 zustand set（hydrate）中途抛错。
+      // 其余意外异常，避免内核 setState（hydrate）中途抛错。
     }
     return {
       workspaceSheets: result.state,
       sheetAgentStates: result.state.agentStates,
-      sidebarWidth: layout.sidebarWidth,
-      sidebarCollapsed: layout.sidebarCollapsed,
-      rightPanelCollapsed: layout.rightPanelCollapsed,
     }
   }),
   openSheet: (sheet) => {
@@ -218,21 +198,6 @@ const workspaceKernel = createSolidStoreKernel<WorkspaceStoreState>({
     return commitWorkspaceMutation(state, { sheetAgentStates })
   }),
   patchSheetAgentStates: (agentStates) => workspaceKernel.setState(state => commitWorkspaceMutation(state, { sheetAgentStates: agentStates })),
-  setSidebarWidth: (sidebarWidth) => {
-    // 兼容旧调用方：布局真值已迁移到 rightRailStore，workspace 字段仅保留
-    // versioned snapshot/旧插件读取桥，不能再让两套状态分叉。
-    useRightRailStore.getState().setLeftRailWidth(sidebarWidth)
-    workspaceKernel.setState(state => commitWorkspaceMutation(state, { sidebarWidth }))
-  },
-  // 左栏是应用布局，而不是 Sheet 内容。所有 Sheet 共享这一份持久化状态。
-  setSidebarCollapsed: (sidebarCollapsed) => {
-    useRightRailStore.getState().setLeftRailCollapsed(sidebarCollapsed)
-    workspaceKernel.setState(state => commitWorkspaceMutation(state, { sidebarCollapsed }))
-  },
-  setRightPanelCollapsed: (rightPanelCollapsed) => {
-    useRightRailStore.getState().setCollapsed(rightPanelCollapsed)
-    workspaceKernel.setState(state => commitWorkspaceMutation(state, { rightPanelCollapsed }))
-  },
 })
 
 export const useWorkspaceStore: SolidStoreKernel<WorkspaceStoreState> = workspaceKernel

@@ -185,7 +185,7 @@ impl DocsSheetManager {
             .map_err(|e| format!("调整文档区域失败: {e}"))
     }
 
-    /// 同步 keep-alive / 模态覆盖层的原生可见性（子 WebView 不随 React display:none 隐藏）。
+    /// 同步 keep-alive / 模态覆盖层的原生可见性（子 WebView 不随宿主 DOM display:none 隐藏）。
     pub(crate) fn set_visible(&self, visible: bool) -> Result<DocsSheetSnapshot, String> {
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
         inner.visible = visible;

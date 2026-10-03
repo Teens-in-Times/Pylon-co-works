@@ -4,7 +4,7 @@ import type { NormalizedConfigOption } from './configOptionState'
 import { parseConfigNumberInput } from './configOptionState'
 import Select from '../ui/Select.solid.tsx'
 
-export interface ConfigOptionFieldProps {
+interface ConfigOptionFieldProps {
   option: NormalizedConfigOption
   disabled?: boolean
   onChange: (value: unknown) => void

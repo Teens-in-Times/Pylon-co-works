@@ -7,7 +7,7 @@
  * 3. Agent 未连接时 InputBar 必须 disabled，并显示 owner Agent 状态。
  * 4. （OWNER-04）重连后 generation 变化，旧 binding 必须 Invalidated，不能继续发送旧 remote id。
  *
- * 纯函数域：零 React 依赖，node 可测。
+ * 纯函数域：零框架依赖，node 可测。
  *
  * 状态机：
  * - idle              无可绑定目标（无激活 agent sheet / 无激活会话）——InputBar 本就不挂载

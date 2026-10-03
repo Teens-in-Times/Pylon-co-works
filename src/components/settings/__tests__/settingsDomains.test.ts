@@ -12,7 +12,6 @@ import {
   SETTINGS_DOMAINS,
   SETTINGS_SECTION_LABELS,
   domainOfSection,
-  searchPathFor,
   sectionZone,
   type SettingsSectionId,
   SECTION_OWNERS,
@@ -84,14 +83,6 @@ describe('ISSUE-13 W1 domain config 完整性', () => {
 })
 
 describe('ISSUE-13 W1 搜索路径', () => {
-  it('每个 section 生成 domain › section 路径且唯一', () => {
-    const paths = allSections().map(searchPathFor)
-    expect(new Set(paths)).toHaveLength(paths.length)
-    expect(searchPathFor('global')).toBe('外观 › 全局')
-    expect(searchPathFor('history')).toBe('工作区 › 历史保留')
-    expect(searchPathFor('agent')).toBe('Agent 与连接 › Agent')
-  })
-
   it('SETTINGS_DOMAIN_BY_ID 与 SETTINGS_DOMAINS 一致', () => {
     for (const domain of SETTINGS_DOMAINS) {
       expect(SETTINGS_DOMAIN_BY_ID[domain.id]).toBe(domain)

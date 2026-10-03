@@ -7,7 +7,7 @@ import {
   updateArgument,
 } from '../../domains/agent/invocationDraft.ts'
 
-export interface ArgumentListEditorProps {
+interface ArgumentListEditorProps {
   args: readonly string[]
   label: string
   onChange: (args: string[]) => void

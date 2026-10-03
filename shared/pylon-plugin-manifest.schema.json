@@ -67,7 +67,7 @@
         "drainTimeoutMs": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
-    "reactVersion": { "type": "string" },
+    "reactVersion": { "type": "string", "description": "@deprecated 别名（仅为第三方/历史 manifest 保留）：第一方宿主是 Solid，UI 运行时元数据的正规形态是 PluginUiSurface 的 runtime: { framework, version }；第一方 manifest 不应携带本字段" },
     "capabilities": {
       "type": "array",
       "uniqueItems": true,

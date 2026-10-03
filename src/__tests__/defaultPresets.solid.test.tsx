@@ -11,7 +11,7 @@
 // - RTL 导入改 @solidjs/testing-library；显式 afterEach(cleanup)；文件随 solid 测试惯例
 //   改名 .solid.test.tsx。
 // - React act 包装（withInterfaceMode）改直调 setState；「区域行」断言等 ZonePresetSection
-//   React 岛落地（岛首渲异步）再跑。断言集不缩减。
+//   渲染落地（Solid effect 提交异步）再跑。断言集不缩减。
 import { cleanup, screen, within } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -108,7 +108,7 @@ describe('刀7 · 两条默认预设不显示（#214）', () => {
 
   it('区域行里也没有它们（候选仍是该格 5 条出厂条目）', async () => {
     mountSettingsSheet({ domain: 'appearance', section: 'sidebar' })
-    // 局部预设组由 ZonePresetSection React 岛承载，岛首渲异步——先等组标题落地
+    // 局部预设组由 ZonePresetSection（Solid 直连）承载，渲染提交异步——先等组标题落地
     await vi.waitFor(() => {
       expect(screen.getByText('局部预设')).toBeInTheDocument()
     })

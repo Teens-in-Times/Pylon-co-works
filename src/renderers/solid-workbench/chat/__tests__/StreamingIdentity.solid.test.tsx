@@ -79,13 +79,21 @@ describe('C00 streaming root identity (1000 chunks)', () => {
     await waitFor(() => expect(result.container.querySelector('ul')).not.toBeNull(), FLUSH_BUDGET)
     expect(result.container.querySelector('[data-md-settle]')).toBeNull()
 
-    setState({ text: '# 已稳定\n\n- 第一项', streaming: false })
-    expect(result.container.querySelector('ul')).toHaveAttribute('data-md-settle', 'true')
-    expect(result.container.querySelector('h1')).toBe(heading)
-    await new Promise(resolve => setTimeout(resolve, 650))
-    expect(result.container.querySelector('[data-md-settle]')).toBeNull()
-    setState({ text: '# 已稳定\n\n- 第一项修订', streaming: false })
-    expect(result.container.querySelector('[data-md-settle]')).toBeNull()
+    // settle 标记由 620ms setTimeout 清除（MarkdownContent createStreamingBlockRow.pulseSettle）。
+    // 必须在触发 settle 的 setState **之前**切 fake timers，清除定时器才会落在假时钟上；
+    // advance 650ms 越过清除窗（650 > 620），负断言依旧真实推进了时间窗。
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      setState({ text: '# 已稳定\n\n- 第一项', streaming: false })
+      expect(result.container.querySelector('ul')).toHaveAttribute('data-md-settle', 'true')
+      expect(result.container.querySelector('h1')).toBe(heading)
+      await vi.advanceTimersByTimeAsync(650)
+      expect(result.container.querySelector('[data-md-settle]')).toBeNull()
+      setState({ text: '# 已稳定\n\n- 第一项修订', streaming: false })
+      expect(result.container.querySelector('[data-md-settle]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('marks a code fence when its closing delimiter appears', async () => {

@@ -51,7 +51,13 @@ function resolveSuite(
   return fallback
 }
 
-function kindChain(kindId: string, kinds: readonly RegistryEntry<RenderKindDefinition>[]): readonly string[] {
+/**
+ * Kind fallback 链的唯一实现（#520 S4-P1：rendererRegistry.resolveSurface 的内联
+ * walk 已收编于此，settings 预览与生产共用同一顺序）。链中断/成环截断时强制补
+ * `content.unknown` 兜底——catalog 校验保证所有链终点本就是 content.unknown，
+ * 补全只影响 shadow 期的退化态。
+ */
+export function kindChain(kindId: string, kinds: readonly RegistryEntry<RenderKindDefinition>[]): readonly string[] {
   const result: string[] = []
   let current = kinds.find(entry => entry.value.id === kindId)?.value
   while (current && !result.includes(current.id)) {

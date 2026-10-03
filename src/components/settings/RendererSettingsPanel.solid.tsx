@@ -35,7 +35,7 @@ export interface RendererSettingsSchemaEntry {
   readonly placement?: RendererSettingsPlacement
 }
 
-export interface RendererSettingsPanelProps {
+interface RendererSettingsPanelProps {
   readonly schemas?: readonly RendererSettingsSchemaEntry[]
   readonly store?: RendererSettingsStore
   readonly search?: string

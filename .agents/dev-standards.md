@@ -1,6 +1,6 @@
 # Pylon 开发规范
 
-适用 TypeScript/Solid/React 与 Rust/Tauri。领域名词以 [CONTEXT](../CONTEXT.md) 为准；模块责任边界见 [模块维护地图](../docs/说明书/Pylon-模块维护地图.md)，历史架构说明见 [项目架构参考](../docs/说明书/Pylon-项目架构参考.md)。规则服务于行为保持和可维护性，不要求为统一外观重写未涉及的代码。
+适用 TypeScript/Solid 与 Rust/Tauri。领域名词以 [CONTEXT](../CONTEXT.md) 为准；模块责任边界见 [模块维护地图](../docs/说明书/Pylon-模块维护地图.md)，历史架构说明见 [项目架构参考](../docs/说明书/Pylon-项目架构参考.md)。规则服务于行为保持和可维护性，不要求为统一外观重写未涉及的代码。
 
 协作流程见仓库根 [`AGENTS.md`](../AGENTS.md)。
 
@@ -17,7 +17,7 @@
 | 对象 | 约定 | 示例 |
 | --- | --- | --- |
 | TS 内部变量、参数、普通函数 | camelCase，名字表达数据或动作 | `sessionResponse`、`loadGeneration`、`resolveModelChoices` |
-| TS 类型、类、React/Solid 组件 | PascalCase；组件文件保留既有 `.solid.tsx` 后缀 | `WorkbenchDocument`、`SolidControlCenter` |
+| TS 类型、类、Solid 组件 | PascalCase；组件文件保留既有 `.solid.tsx` 后缀 | `WorkbenchDocument`、`SolidControlCenter` |
 | 固定常量 | SCREAMING_SNAKE_CASE；普通不可变局部值仍用 camelCase | `MAX_PENDING_EVENTS`、`ownerKey` |
 | Rust 变量、函数、模块 | snake_case；类型/trait/variant PascalCase；常量大写下划线 | `owner_key`、`SessionInfo`、`MAX_INSTANCES` |
 | 布尔值 | 优先 `is/has/can/should`，也保留清楚的状态形容词 | `isCurrent`、`hasReplay`、`destroyed` |
@@ -97,11 +97,11 @@ Rust 侧性能反模式按「clippy 能否机械判定」分两半。执行语�
 
 1. **显式生命周期**：`install*()` 返回解订/销毁函数，配对 `uninstall*()` 用生产语义命名（例：`installCanonicalHookProjection`）。禁止新增 `*ForTests` 导出——测试隔离复用生产 uninstall 口（存量 registry 类钩子 `clearToolRegistryForTests` 等保持现状，不强制回改）。
 2. **create/get 分离**：工厂 `createXxx(deps)` + 进程级 `getXxx()`（例：`runtimeServices`）。测试传自建实例，不劫持全局。
-3. **zustand store**：`create` 返回的 store 本身可测试（`setState/getInitialState`），不需要任何清理钩子。
+3. **Solid 内核 store（zustand 门面）**：状态本体是 `solid-js/store`（`solidStoreKernel.ts`），对外保 zustand 门面签名（`getState`/`setState(partial, replace?)`/`subscribe`/`getInitialState`），store 本身可测试（`setState`/`getInitialState`），不需要任何清理钩子。
 
 配套约束：
 
-- **持久化偏好只有一个落点**：域内 zustand persist（A-V12）。新偏好字段禁止新增手写 localStorage 读写器；sheet envelope（`pylon-workspace-sheets` 等带版本 schema 的迁移面）与契约钉住的存量键（ADR-0009）是登记过的例外。
+- **持久化偏好只有一个落点**：域内 persist（Solid 内核复刻 zustand persist 语义，A-V12）。新偏好字段禁止新增手写 localStorage 读写器；sheet envelope（`pylon-workspace-sheets` 等带版本 schema 的迁移面）与契约钉住的存量键（ADR-0009）是登记过的例外。
 - **typed client 只从组装层取**：视图/宿主模块从 `app/appClients` 取 client（A-V2），禁止在视图层调用 `createXxxClient(transport)` 或裸 `invoke`。有状态 client（CAS revision、cold-mount 快照缓存）用工厂成员按消费方会话新建，不跨会话共享。
 - 进程级开关优先做成参数（例：projector 的 `WorkbenchReduceOptions` 显式选项 + 宿主默认），确需全局默认时以可注入常量承载并在文件头登记。
 

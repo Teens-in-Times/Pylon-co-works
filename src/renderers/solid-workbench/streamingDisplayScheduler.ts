@@ -146,7 +146,7 @@ export interface StreamingDisplayScheduler {
 }
 
 /** Renderer safety net: never publish an impossible terminal combination. */
-export function cohereDisplaySnapshot(snapshot: WorkbenchRuntimeSnapshot): WorkbenchRuntimeSnapshot {
+function cohereDisplaySnapshot(snapshot: WorkbenchRuntimeSnapshot): WorkbenchRuntimeSnapshot {
   if (snapshot.summary === null && snapshot.terminalFence === undefined) return snapshot
   if (!snapshot.generating && snapshot.generationStart === 0 && snapshot.generationPhase === undefined && snapshot.generationActivity === undefined && snapshot.thinkingStart === undefined) return snapshot
   return {

@@ -13,7 +13,7 @@ import {
   getPluginRuntime,
 } from '../../../plugin-runtime/pluginCompositionRoot.ts'
 
-// Solid 侧自动 cleanup 未接全局（vitest.setup.ts 只清 React）：显式回收。
+// 全局 afterEach(cleanup) 已由 vitest.setup.ts 统一接通（@solidjs/testing-library）；此处显式注册为冗余保险。
 afterEach(cleanup)
 
 /**

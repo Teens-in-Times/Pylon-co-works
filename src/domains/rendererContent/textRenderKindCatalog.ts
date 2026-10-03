@@ -1,8 +1,8 @@
 /**
  * C00：文本族 render kind catalog——message.user/assistant、content.text/markdown/code/ansi。
  *
- * kind 是内容契约（A07 catalog），不等同 renderer 实现；Solid surface 与 React
- * generic fallback 都是这些 kind 的 Slot。ensureBuiltinTextRenderKinds 幂等注册，
+ * kind 是内容契约（A07 catalog），不等同 renderer 实现；Solid surface 与第三方
+ * react 兼容 kind 都是这些 kind 的 Slot。ensureBuiltinTextRenderKinds 幂等注册，
  * 供内置 Suite 组装与设置页 schema 生成消费。
  */
 import type { RenderKindDefinition } from '../../plugin-runtime/renderers/rendererTypes.ts'

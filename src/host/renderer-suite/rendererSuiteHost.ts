@@ -124,7 +124,7 @@ export class RendererSuiteHost {
     try {
       const activationHost = this.options.hostPortForActivation?.(activation) ?? this.options.hostPort
       const candidateHost = Object.freeze({ ...activationHost, commands: gate.bind(activationHost.commands) })
-      prepared = await this.prepare(activation, activation.suite.value, activation.suite.value.factory, candidateHost)
+      prepared = await this.prepare(activation, activation.suite.value.factory, candidateHost)
       if (request !== this.requestId || this.destroyed) throw new StaleSuiteRequest()
       this.publish(createRendererSuiteHostState('mounting-candidate', { suiteId: activation.suite.value.id, previousSuiteId: old?.activation.suite.value.id, registryRevision: activation.revision, documentRevision: this.options.hostPort.document.getSnapshot()?.revision }))
       failurePhase = 'mount'
@@ -201,9 +201,10 @@ export class RendererSuiteHost {
     }
   }
 
-  private async prepare(activation: RendererActivationSnapshot, suite: RendererSuiteContribution, factory: RendererSuiteContribution['factory'], host: WorkbenchHostPort): Promise<PreparedWorkbenchRenderer> {
-    if (typeof factory === 'function') throw new Error(`Renderer Suite ${suite.id} factory 未实现 prepare`)
-    return factory.prepare({ suiteId: suite.id, host, activation })
+  // #520 S4-P2：Suite factory 只剩 prepare 工厂形态（rendererSuiteTypes 函数臂已塌缩），
+  // 历史「函数形态未实现」throw 分支随之删除。
+  private prepare(activation: RendererActivationSnapshot, factory: RendererSuiteContribution['factory'], host: WorkbenchHostPort): Promise<PreparedWorkbenchRenderer> {
+    return factory.prepare({ suiteId: activation.suite.value.id, host, activation })
   }
 
   private waitReady(instance: WorkbenchRendererInstance, timeoutMs: number): Promise<void> {

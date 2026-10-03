@@ -15,9 +15,10 @@
  * #515：迁移自 sheetLayoutSidebarCollapsedReactive.test.tsx（React RTL → @solidjs/testing-library）。
  * 改写点登记：
  * - `render(<SheetLayout/>)` → `render(() => <SheetLayout/>)`，实体直连 SheetLayout.solid.tsx；
- * - `act(() => setSidebarCollapsed(...)/focusSheet(...))` → 直接调用 store action
+ * - `act(() => setLeftRailCollapsed(...)/focusSheet(...))` → 直接调用 store action
  *   （Solid 无 act；布局状态经 createZustandSignal 订阅同步落 DOM——本测试的被测点
- *   恰是「立即响应」，同步落盘即断言即见）；
+ *   恰是「立即响应」，同步落盘即断言即见；#538 起折叠真源在 layoutRailsStore，
+ *   workspaceStore 侧的镜像 setter 已退役）；
  * - 补显式 `afterEach(cleanup)`（vitest globals 未开）；
  * - 几何/DOM 断言逐字保留（data-sidebar 值、.left-rail-resize-handle 存在性、
  *   .sidebar/.file-sidebar 跨 Sheet 共享同一折叠状态）。
@@ -27,6 +28,7 @@ import '../../plugin-runtime/testing/productPluginTestBootstrap.ts'
 import { cleanup, render, waitFor } from '@solidjs/testing-library'
 import SheetLayout from '../SheetLayout.solid.tsx'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore'
+import { useRightRailStore } from '../../domains/workspace/layoutRailsStore'
 import { resetStores } from '../../test/resetStores'
 
 // vitest globals 未开，solid testing-library 不自动 cleanup。
@@ -61,11 +63,11 @@ describe('I09-A-FE-01 / #154 SheetLayout sidebarCollapsed 响应式订阅', () =
     expect(layoutOf(container)).toHaveAttribute('data-sidebar', 'expanded')
 
     // 折叠：若 SheetLayout 仅 getState() 快照（不订阅），此处不重渲染 → 状态不翻转
-    useWorkspaceStore.getState().setSidebarCollapsed(true)
+    useRightRailStore.getState().setLeftRailCollapsed(true)
     expect(layoutOf(container)).toHaveAttribute('data-sidebar', 'collapsed')
 
     // 展开：响应式订阅同样立即可见
-    useWorkspaceStore.getState().setSidebarCollapsed(false)
+    useRightRailStore.getState().setLeftRailCollapsed(false)
     expect(layoutOf(container)).toHaveAttribute('data-sidebar', 'expanded')
   })
 
@@ -75,7 +77,7 @@ describe('I09-A-FE-01 / #154 SheetLayout sidebarCollapsed 响应式订阅', () =
     const { container } = renderLayout()
 
     await waitFor(() => expect(container.querySelector('.left-rail-resize-handle')).toBeTruthy(), { timeout: 10_000 })
-    useWorkspaceStore.getState().setSidebarCollapsed(true)
+    useRightRailStore.getState().setLeftRailCollapsed(true)
     expect(container.querySelector('.left-rail-resize-handle')).toBeNull()
   })
 
@@ -88,14 +90,14 @@ describe('I09-A-FE-01 / #154 SheetLayout sidebarCollapsed 响应式订阅', () =
     const { container } = renderLayout()
 
     await waitFor(() => expect(container.querySelector('.file-sidebar')).toBeTruthy(), { timeout: 10_000 })
-    useWorkspaceStore.getState().setSidebarCollapsed(true)
+    useRightRailStore.getState().setLeftRailCollapsed(true)
     expect(layoutOf(container)).toHaveAttribute('data-sidebar', 'collapsed')
 
     useWorkspaceStore.getState().focusSheet(agentId!)
     await waitFor(() => expect(container.querySelector('.sidebar')).toBeTruthy(), { timeout: 10_000 })
     expect(layoutOf(container)).toHaveAttribute('data-sidebar', 'collapsed')
 
-    useWorkspaceStore.getState().setSidebarCollapsed(false)
+    useRightRailStore.getState().setLeftRailCollapsed(false)
     expect(layoutOf(container)).toHaveAttribute('data-sidebar', 'expanded')
 
     useWorkspaceStore.getState().focusSheet(fileId!)

@@ -2,11 +2,11 @@
  * 右栏上下文面板（`ContextPanelContribution`）**隔离面**的 wire 协议
  * （`renderKind: 'isolated-surface'`）。
  *
- * 真源纪律：宿主渲染器（`ContextPanelHost.tsx`）以 `satisfies` 挂本类型，经
+ * 真源纪律：宿主渲染器（`ContextPanelHost.solid.tsx`）以 `satisfies` 挂本类型，经
  * `IsolatedPluginSurface` 的 `host:input` 通道推送（每次 input 变化重放一次，因此
  * settings 值回流天然走同一通道）；插件侧从 SDK 引用同一类型解析 input，按
  * `CONTEXT_PANEL_SURFACE_EVENTS` 词表回传事件。字段全部是**跨隔离边界可序列化的
- * 投影**——一方 React 变体的完整 props 见 `ContextPanelContributionProps`。
+ * 投影**——第一方（first-party-solid）实体的完整 props 见 `ContextPanelContributionProps`。
  */
 
 /** 当前 Sheet 的投影（wire 最小面；完整 SheetRecord 含持久化/状态机字段，不跨边界）。 */

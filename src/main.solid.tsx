@@ -30,7 +30,7 @@ const DEV_TRIGGER_INSTALLERS = [
   { id: 'obs05-cold-start-snapshot', load: () => import('./devtools/obs/coldStartTrigger').then(module => module.installObs05DevTrigger()) },
   { id: 'obs06-delete-forensics', load: () => import('./devtools/obs/deleteForensicsTrigger').then(module => module.installObs06DevTrigger()) },
   { id: 'obs07-stderr-samples', load: () => import('./devtools/obs/stderrSamplesTrigger').then(module => module.installObs07DevTrigger()) },
-  { id: 'css01-typography-baseline', load: () => import('./css01/devTrigger').then(module => module.installCss01DevTrigger()) },
+  { id: 'css01-typography-baseline', load: () => import('./devtools/obs/typographyBaselineTrigger').then(module => module.installCss01DevTrigger()) },
 ] as const
 
 if (import.meta.env.DEV) {

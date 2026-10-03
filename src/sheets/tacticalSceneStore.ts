@@ -21,7 +21,11 @@ const kernel = createSolidStoreKernel<TacticalSceneState>({
 
 attachSolidPersist(kernel, {
   name: 'pylon-tactical-scene-v1',
+  version: 1,
   storage: resolveLocalStorage(),
+  // #520 S2：与其余 persist 面对齐——信封带版本；migrate 恒等占位（旧值合法性由
+  // merge 统一兜底），后续 schema 变更在此落地版本迁移，避免版本错位整包丢弃。
+  migrate: (persisted: unknown) => persisted as Partial<TacticalSceneState>,
   partialize: ({ artwork, opacity, motion }) => ({ artwork, opacity, motion }),
   merge: (saved, current) => {
     const value = saved as Partial<TacticalSceneState> | null

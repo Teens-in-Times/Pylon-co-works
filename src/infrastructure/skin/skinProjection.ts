@@ -1,7 +1,7 @@
 /**
  * skinProjection — 把 ResolvedSkin 投影到真实 DOM（阶段 5 S5-C）。
  *
- * - CSS variable 由调用方（React hook）用 resolved.cssVariables 统一写入，本模块只提供可测试的投影原语；
+ * - CSS variable 由调用方（useSkinSurface.solid）用 resolved.cssVariables 统一写入，本模块只提供可测试的投影原语；
  * - scoped CSS 安装在传入容器内（默认 App root），不注入 document.head；
  * - 返回 dispose，保证 stylesheet handle 与 inline variable 可回收、不累积。
  */

@@ -8,7 +8,7 @@ import type { createAgentClient } from '../../infrastructure/acp/agentClient'
 import { errorCode as wireErrorCode } from '../../infrastructure/tauri/errorPayload.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore'
 
-export interface AgentConfigEditorProps {
+interface AgentConfigEditorProps {
   agentId: string
 }
 

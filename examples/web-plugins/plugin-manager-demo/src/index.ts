@@ -6,7 +6,8 @@
  * 双形态要求）；差异只在装配方式：
  *   - manifest 声明 api 1.2 + capabilities: ['plugin.management']；
  *   - 设置页走 isolated-surface（surfaceId + SDK surface 协议）而非
- *     first-party React 薄壳——外置包不能 import 宿主 React 树；
+ *     第一方薄壳——宿主第一方面是 first-party-solid（仅主构建内置），
+ *     外置包用 isolated-surface / webcomponent 自带运行时；
  *   - 面板数据全部经 context.management（capability-gated；未授权时
  *     context.management 不存在，挂载授权引导）。
  */

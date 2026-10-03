@@ -260,29 +260,39 @@ describe('PluginRuntime 静态内置插件 Harness', () => {
       },
       deactivate: deactivated,
     })
-    const invocation = getHookRuntime().invoke('turn.started', { value: 'old' })
-    await started
+    // fake timers 在 invoke 之前就位：hook watchdog（timeoutMs 5000）与 drain 的
+    // 10s 超时全部落在假时钟上，负断言推进 20ms 真实时间窗后由 finally 还原，
+    // 不会有 watchdog 泄漏到真实时钟。hook 派发是纯微任务（hookRuntime 的
+    // Promise.resolve().then），await started / release 后的排空不依赖定时器。
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const invocation = getHookRuntime().invoke('turn.started', { value: 'old' })
+      await started
 
-    let completed = false
-    const updating = runtime.update({
-      id: 'phase9.drain',
-      activate: ({ hooks }) => {
-        hooks.register('turn.started', {
-          id: 'lease', mode: 'pipeline', execution: 'blocking',
-          handler: () => ({ action: 'continue' }),
-        })
-      },
-    }).then(result => { completed = true; return result })
+      let completed = false
+      const updating = runtime.update({
+        id: 'phase9.drain',
+        activate: ({ hooks }) => {
+          hooks.register('turn.started', {
+            id: 'lease', mode: 'pipeline', execution: 'blocking',
+            handler: () => ({ action: 'continue' }),
+          })
+        },
+      }).then(result => { completed = true; return result })
 
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(completed).toBe(false)
-    expect(deactivated).not.toHaveBeenCalled()
-    release()
-    await invocation
-    const result = await updating
-    expect(deactivated).toHaveBeenCalledOnce()
-    expect(result.previousRuntimeInstanceId).toBe(old.identity.key)
-    await runtime.deactivate(result.runtimeInstanceId)
+      // 时间窗负断言：lease 未排空时，20ms 内更新不得完成、旧实例不得停用。
+      await vi.advanceTimersByTimeAsync(20)
+      expect(completed).toBe(false)
+      expect(deactivated).not.toHaveBeenCalled()
+      release()
+      await invocation
+      const result = await updating
+      expect(deactivated).toHaveBeenCalledOnce()
+      expect(result.previousRuntimeInstanceId).toBe(old.identity.key)
+      await runtime.deactivate(result.runtimeInstanceId)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('soft-remount 调用 Kernel 边界并在 snapshot 中显示 declared/adopted', async () => {

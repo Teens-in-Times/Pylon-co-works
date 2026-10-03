@@ -8,10 +8,10 @@ import { workspaceTargetKey, type WorkspaceTarget } from '../../domains/workspac
 import type { FileProvider } from '../../plugin-runtime/file-workbench/fileWorkbenchTypes.ts'
 
 /**
- * WorkspaceSearchPanelProps — 与 React 桥（WorkspaceSearchPanel.tsx）内声明的同名接口
- * 逐字段一致。
+ * WorkspaceSearchPanelProps — 名字承自历史 React 契约（WorkspaceSearchPanel.tsx，
+ * 已退役）；本实体即唯一真源。
  */
-export interface WorkspaceSearchPanelProps {
+interface WorkspaceSearchPanelProps {
   target: WorkspaceTarget | null
   provider: FileProvider | null
   onOpenResult: (path: string, line: number) => void

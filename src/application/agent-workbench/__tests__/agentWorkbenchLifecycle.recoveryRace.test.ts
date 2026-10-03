@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../../../domains/identity/identityStore.ts'
+import { flushTask } from '../../../test/solidTestHelpers.ts'
 
 const store = vi.hoisted(() => {
   const listeners = new Set<() => void>()
@@ -156,9 +157,6 @@ async function importLifecycle() {
   return module
 }
 
-/** 让已排程的微任务/宏任务跑完（不依赖 fake timers）。 */
-const flush = async () => { await new Promise(resolve => setTimeout(resolve, 0)) }
-
 describe('#110 F1 恢复等待 owner runtime 就绪', () => {
   it('runtime 未就绪时恢复排队；就绪后即发出恢复请求（不等固定时长）', async () => {
     store.setStatus('owner', { status: 'disconnected' })
@@ -166,7 +164,7 @@ describe('#110 F1 恢复等待 owner runtime 就绪', () => {
     const { AgentWorkbenchLifecycle } = await importLifecycle()
 
     const pending = new AgentWorkbenchLifecycle().activate(session, { isCurrent: () => true })
-    await flush()
+    await flushTask()
     expect(calls).not.toContain('load_persisted_session')
     expect(store.listenerCount()).toBe(1)
 
@@ -223,7 +221,7 @@ describe('#110 F1 恢复等待 owner runtime 就绪', () => {
     const { AgentWorkbenchLifecycle } = await importLifecycle()
     let current = true
     const pending = new AgentWorkbenchLifecycle().activate(session, { isCurrent: () => current })
-    await flush()
+    await flushTask()
     expect(calls).not.toContain('load_persisted_session')
 
     current = false

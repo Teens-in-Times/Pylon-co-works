@@ -1,6 +1,5 @@
 /** @jsxImportSource solid-js */
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
-import { Activity, ArrowUpRight, Bot, Folder, LayoutDashboard, MessageSquare, Settings2, Sparkles, type IconNode } from 'lucide'
 import { appClients } from '../app/appClients.ts'
 import { IS_TAURI } from '../infrastructure/tauri/env'
 import { useIdentityStore, type AgentEntry, type Session } from '../domains/identity/identityStore'
@@ -9,10 +8,11 @@ import { reportRuntimeError, resolveRuntimeErrors } from '../app/runtimeError'
 import { switchAgentTransaction } from '../application/transactions/switchAgentTransaction'
 import { createStandardSwitchAgent, openOwnedSessionTransaction } from '../application/transactions/openOwnedSessionTransaction'
 import PylonMark from '../components/PylonMark.solid.tsx'
+import { LucideIcon } from '../components/LucideIcon.solid.tsx'
 import { statusLabel } from '../contracts/agentTypes.ts'
 import { recentPersistedSessions, type PersistedSessionSummary } from '../domains/overview/persistedSessions.ts'
 import type { SheetContext, SheetRecord } from '../workspace-sheets/sheetTypes'
-import { useWorkspaceEntityStore } from '../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../domains/workspace/workspaceEntityStore.ts'
 import { isAgentInvocationConfigured } from '../contracts/agentEntry.ts'
 import { INTERFACE_MODE_CAPABILITY_OVERVIEW_DECK } from '../plugin-runtime/interface-mode/interfaceModeTypes.ts'
 import { createActiveInterfaceModeContribution } from '../infrastructure/state/solidSheetSupport.solid.tsx'
@@ -52,57 +52,10 @@ interface TacticalCommandDeckProps {
 
 
 
-// ---- 内联图标（lucide 核心 IconNode 自绘，类名契约与 lucide-react/LucideIcon.solid
-// 逐类一致）。不直接复用 components/LucideIcon.solid：其映射表归他人施工域，本文件
-// 需要的 ArrowUpRight/Folder/Settings2/Sparkles 尚未登记，不越域改表。 ----
-const OVERVIEW_ICONS: Readonly<Record<string, IconNode>> = {
-  Activity,
-  ArrowUpRight,
-  Bot,
-  Folder,
-  LayoutDashboard,
-  MessageSquare,
-  Settings2,
-  Sparkles,
-}
+// ---- #520 S3-P2-1：本地 OVERVIEW_ICONS 表与 OverviewIcon 自绘已退役，图标统一经
+// 共享 LucideIcon（ArrowUpRight/Folder/Settings2/Sparkles 等均已登记其中）。 ----
 
-function OverviewIcon(props: { name: string; size?: number; class?: string }) {
-  // Invariance 豁免（显式）：props.name 挂载后不变——调用点均随 For 行重挂，name 变化即换
-  // 实例；kebab/iconNode 顶层捕获（非响应式读）是有意为之，不按响应式访问器改写。
-  const kebab = props.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
-  const iconNode: IconNode = OVERVIEW_ICONS[props.name] ?? Sparkles
-
-  const build = (host: SVGSVGElement) => {
-    const svgNamespace = 'http://www.w3.org/2000/svg'
-    host.setAttribute('xmlns', svgNamespace)
-    host.setAttribute('viewBox', '0 0 24 24')
-    host.setAttribute('fill', 'none')
-    host.setAttribute('stroke', 'currentColor')
-    host.setAttribute('stroke-width', '2')
-    host.setAttribute('stroke-linecap', 'round')
-    host.setAttribute('stroke-linejoin', 'round')
-    for (const [tag, attributes] of iconNode) {
-      const child = document.createElementNS(svgNamespace, tag)
-      for (const [name, value] of Object.entries(attributes)) {
-        if (name === 'key') continue
-        child.setAttribute(name, String(value))
-      }
-      host.appendChild(child)
-    }
-  }
-
-  return (
-    <svg
-      ref={element => build(element)}
-      class={`lucide lucide-${kebab} ${props.class ?? ''}`}
-      width={props.size ?? 24}
-      height={props.size ?? 24}
-      aria-hidden="true"
-    />
-  )
-}
-
-export interface OverviewSheetViewProps {
+interface OverviewSheetViewProps {
   sheet: SheetRecord
   ctx: SheetContext
 }
@@ -116,7 +69,8 @@ export interface OverviewSheetViewProps {
  * 最近 5 个 → 找/建 identity row → selectSession + open agent sheet；load 由 agentWorkbenchLifecycle
  * 挂载后的 controller lifecycle 承担——listener 就绪后才 load）。
  * #515：实体自 React 版逐行为同构迁移——store 消费经 createZustandSignal，能力位经
- * createActiveInterfaceModeContribution；战术指挥台与高级配置编辑器是 React 面，经岛挂载。
+ * createActiveInterfaceModeContribution；战术指挥台与高级配置编辑器已 Solid 实体化
+ * （批7 岛退役直连，见 TacticalCommandDeck.solid 等）。
  */
 export default function OverviewSheetView(props: OverviewSheetViewProps) {
   // A-V9：指挥台 UI 按 contribution 能力位挂载，不再特判模式 id——
@@ -163,7 +117,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
     const agentClient = appClients.agent()
     const result = await switchAgentTransaction(agent.id, agent.name, {
       switchAgent: () => agentClient.switchAgent(agent.id),
-      resetRuntime: () => useRuntimeStore.getState().resetAll(),
+      resetRuntime: () => useRuntimeStore.getState().resetSessionRuntime(),
       setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
       fetchAgentStatus: () => agentClient.agentStatus(),
       applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),
@@ -252,7 +206,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
 
   const navigateTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-  // 指挥台 React 岛的 props 工厂：effect 追踪本 memo，任一依赖变化即原位重渲。
+  // 指挥台（TacticalCommandDeck.solid 直连）的 props 工厂：effect 追踪本 memo，任一依赖变化即原位重渲。
   const deckProps = createMemo<TacticalCommandDeckProps>(() => ({
     agents: agents().length,
     connected: connectedCount(),
@@ -289,13 +243,13 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
           <strong>工作台导航</strong>
         </div>
         <nav>
-          <button type="button" onClick={() => navigateTo('overview-home')}><OverviewIcon name="LayoutDashboard" size={15} /><span>概览</span></button>
-          <button type="button" onClick={() => navigateTo('overview-agents')}><OverviewIcon name="Bot" size={15} /><span>Agent</span><small>{agents().length}</small></button>
-          <button type="button" onClick={() => navigateTo('overview-recent')}><OverviewIcon name="MessageSquare" size={15} /><span>最近会话</span><small>{localRecent().length + persistedRecent().length}</small></button>
-          <button type="button" onClick={() => navigateTo('overview-workspaces')}><OverviewIcon name="Folder" size={15} /><span>工作区</span><small>{workspaces().length}</small></button>
-          <button type="button" onClick={() => navigateTo('overview-advanced')}><OverviewIcon name="Settings2" size={15} /><span>高级配置</span></button>
+          <button type="button" onClick={() => navigateTo('overview-home')}><LucideIcon name="LayoutDashboard" size={15} /><span>概览</span></button>
+          <button type="button" onClick={() => navigateTo('overview-agents')}><LucideIcon name="Bot" size={15} /><span>Agent</span><small>{agents().length}</small></button>
+          <button type="button" onClick={() => navigateTo('overview-recent')}><LucideIcon name="MessageSquare" size={15} /><span>最近会话</span><small>{localRecent().length + persistedRecent().length}</small></button>
+          <button type="button" onClick={() => navigateTo('overview-workspaces')}><LucideIcon name="Folder" size={15} /><span>工作区</span><small>{workspaces().length}</small></button>
+          <button type="button" onClick={() => navigateTo('overview-advanced')}><LucideIcon name="Settings2" size={15} /><span>高级配置</span></button>
         </nav>
-        <div class="overview-sidebar-foot"><OverviewIcon name="Activity" size={14} />{connectedCount()} 个 Agent 在线</div>
+        <div class="overview-sidebar-foot"><LucideIcon name="Activity" size={14} />{connectedCount()} 个 Agent 在线</div>
       </aside>
       <main class="overview-main">
         <div class="overview-shell">
@@ -304,7 +258,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
               <nav class="tactical-breadcrumb" aria-label="战术页面导航">
                 <button onClick={() => setTacticalPanel('home')}>← 返回指挥台</button>
                 <span>/</span><strong>{TACTICAL_PANEL_LABELS[tacticalPanel() as Exclude<TacticalPanel, 'home'>]}</strong>
-                <button onClick={openAgentSettings}>配置 Agent <OverviewIcon name="ArrowUpRight" size={14} /></button>
+                <button onClick={openAgentSettings}>配置 Agent <LucideIcon name="ArrowUpRight" size={14} /></button>
               </nav>
             }>
               <TacticalCommandDeck {...deckProps()} />
@@ -316,35 +270,35 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                 <PylonMark size={58} className="overview-brand-mark" title="Pylon" />
               </div>
               <div class="overview-hero-copy">
-                <div class="overview-kicker"><OverviewIcon name="Sparkles" size={12} /> PYLON WORKSPACE</div>
+                <div class="overview-kicker"><LucideIcon name="Sparkles" size={12} /> PYLON WORKSPACE</div>
                 <h1 class="overview-title" id="overview-title">欢迎回到工作台</h1>
                 <p class="overview-lede">从最近的上下文继续，或选择一位 Agent 开始新的工作。你的 Workspace、Sheet 与运行状态都在这里汇合。</p>
                 <div class="overview-hero-actions">
                   <Show when={localRecent()[0]} fallback={
                     <Show when={activeAgentEntry() && activeAgentConfigured()} fallback={
                       <button type="button" class="overview-primary-action" onClick={openAgentSettings}>
-                        配置 Agent <OverviewIcon name="ArrowUpRight" size={15} />
+                        配置 Agent <LucideIcon name="ArrowUpRight" size={15} />
                       </button>
                     }>
                       <button type="button" class="overview-primary-action" onClick={() => void selectAgent(activeAgentEntry()!)}>
-                        打开 {activeAgentEntry()!.name} <OverviewIcon name="ArrowUpRight" size={15} />
+                        打开 {activeAgentEntry()!.name} <LucideIcon name="ArrowUpRight" size={15} />
                       </button>
                     </Show>
                   }>
                     {latest => (
                       <button type="button" class="overview-primary-action" onClick={() => void openKnownSession(latest())}>
-                        继续「{latest().name}」 <OverviewIcon name="ArrowUpRight" size={15} />
+                        继续「{latest().name}」 <LucideIcon name="ArrowUpRight" size={15} />
                       </button>
                     )}
                   </Show>
                   <button type="button" class="overview-secondary-action" onClick={openAgentSettings}>
-                    <OverviewIcon name="Settings2" size={14} /> Agent 设置
+                    <LucideIcon name="Settings2" size={14} /> Agent 设置
                   </button>
                 </div>
               </div>
             </div>
             <div class="overview-pulse" aria-label={`${connectedCount()} 个 Agent 已连接，${workspaces().length} 个工作区`}>
-              <OverviewIcon name="Activity" size={16} />
+              <LucideIcon name="Activity" size={16} />
               <div><strong>{connectedCount()}/{agents().length || 0}</strong><span>Agent 在线</span></div>
               <i aria-hidden="true" />
               <div><strong>{workspaces().length}</strong><span>工作区</span></div>
@@ -381,14 +335,14 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                         <span>{agent.id} · {sessionCount()} 个会话</span>
                       </span>
                       <span class="overview-agent-state"><i aria-hidden="true" />{switchingId() === agent.id ? '切换中' : statusLabel(status())}</span>
-                      <OverviewIcon name="ArrowUpRight" class="overview-card-arrow" size={14} />
+                      <LucideIcon name="ArrowUpRight" class="overview-card-arrow" size={14} />
                     </button>
                   )
                 }}</For>
               </div>
             }>
               <div class="overview-empty-agents">
-                <OverviewIcon name="Bot" size={24} />
+                <LucideIcon name="Bot" size={24} />
                 <div><strong>还没有 Agent</strong><p>配置一个 ACP Agent 后即可开始工作。</p></div>
                 <button type="button" class="overview-secondary-action" onClick={openAgentSettings}>新建 Agent</button>
               </div>
@@ -402,7 +356,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                   <span class="overview-section-eyebrow">RECENT CONTEXT</span>
                   <h2>最近会话</h2>
                 </div>
-                <OverviewIcon name="MessageSquare" size={17} />
+                <LucideIcon name="MessageSquare" size={17} />
               </div>
               <Show when={localRecent().length === 0 && persistedRecent().length === 0} fallback={
                 <div class="overview-session-list">
@@ -411,24 +365,24 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                     const workspace = () => workspaces().find(item => item.id === session.workspaceId)
                     return (
                       <button type="button" class="overview-session-row" onClick={() => void openKnownSession(session)}>
-                        <span class="overview-session-icon"><OverviewIcon name="MessageSquare" size={14} /></span>
+                        <span class="overview-session-icon"><LucideIcon name="MessageSquare" size={14} /></span>
                         <span class="overview-session-copy"><strong>{session.name}</strong><span>{(workspace()?.name ?? session.workdir) || '未绑定工作区'} · {agent()?.name ?? session.agentId}</span></span>
                         <time>{relativeTime(session.lastActiveAt)}</time>
-                        <OverviewIcon name="ArrowUpRight" size={14} />
+                        <LucideIcon name="ArrowUpRight" size={14} />
                       </button>
                     )
                   }}</For>
                   <For each={persistedRecent()}>{item => (
                     <button type="button" class="overview-session-row" onClick={() => void resumeSession(item)}>
-                      <span class="overview-session-icon"><OverviewIcon name="MessageSquare" size={14} /></span>
+                      <span class="overview-session-icon"><LucideIcon name="MessageSquare" size={14} /></span>
                       <span class="overview-session-copy"><strong>{item.title || item.source || item.id}</strong><span>持久化会话</span></span>
                       <time>{relativeTime(item.updatedAt)}</time>
-                      <OverviewIcon name="ArrowUpRight" size={14} />
+                      <LucideIcon name="ArrowUpRight" size={14} />
                     </button>
                   )}</For>
                 </div>
               }>
-                <div class="overview-list-empty"><OverviewIcon name="MessageSquare" size={20} /><span>还没有可继续的会话</span></div>
+                <div class="overview-list-empty"><LucideIcon name="MessageSquare" size={20} /><span>还没有可继续的会话</span></div>
               </Show>
             </section>
 
@@ -438,7 +392,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                   <span class="overview-section-eyebrow">WORKSPACES</span>
                   <h2>工作区</h2>
                 </div>
-                <OverviewIcon name="Folder" size={17} />
+                <LucideIcon name="Folder" size={17} />
               </div>
               <Show when={workspaces().length === 0} fallback={
                 <div class="overview-workspace-list">
@@ -455,19 +409,19 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                       : `${linkedSessions().length} 关联 · ${currentCount()} 当前`)
                     return (
                       <button type="button" class="overview-workspace-row" onClick={() => openWorkspace(workspace.id, workspace.agentId)}>
-                        <span class="overview-folder-icon"><OverviewIcon name="Folder" size={15} /></span>
+                        <span class="overview-folder-icon"><LucideIcon name="Folder" size={15} /></span>
                         <span class="overview-workspace-copy"><strong>{workspace.name}</strong><span title={workspace.rootPath}>{workspace.rootPath}</span></span>
                         <span
                           class="overview-workspace-count"
                           title={`关联 ${linkedSessions().length} 个会话（全部 Profile/Agent，含归档）；当前 Profile/Agent 下可见 ${currentCount()} 个（与左栏树一致）`}
                         >{countLabel()}</span>
-                        <OverviewIcon name="ArrowUpRight" size={14} />
+                        <LucideIcon name="ArrowUpRight" size={14} />
                       </button>
                     )
                   }}</For>
                 </div>
               }>
-                <div class="overview-list-empty"><OverviewIcon name="Folder" size={20} /><span>{commandDeck() ? '请先进入 Agent 工作台，在左栏创建第一个工作区。' : '从左栏创建第一个工作区'}</span></div>
+                <div class="overview-list-empty"><LucideIcon name="Folder" size={20} /><span>{commandDeck() ? '请先进入 Agent 工作台，在左栏创建第一个工作区。' : '从左栏创建第一个工作区'}</span></div>
               </Show>
             </section>
           </div>
@@ -479,7 +433,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
               <span>需要直接检查底层配置时再展开 YAML 编辑器。</span>
             </div>
             <button type="button" class="overview-secondary-action" onClick={() => setShowConfigEditor(value => !value)}>
-              <OverviewIcon name="Settings2" size={14} /> {showConfigEditor() ? '收起编辑器' : '编辑高级配置'}
+              <LucideIcon name="Settings2" size={14} /> {showConfigEditor() ? '收起编辑器' : '编辑高级配置'}
             </button>
           </section>
           <Show when={showConfigEditor()}>

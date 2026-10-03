@@ -6,7 +6,7 @@ import { useIdentityStore } from '../../domains/identity/identityStore'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
 import { createStandardSwitchAgent, openOwnedSessionTransaction } from '../../application/transactions/openOwnedSessionTransaction'
 import PylonMark from '../../components/PylonMark.solid.tsx'
-import { sessionUiStateSet } from '../../domains/chat/sessionUiState'
+import { sessionUiStore } from '../../domains/workbench/sessionUiStore.ts'
 import { searchAllMessages, type SearchHitUi } from '../../domains/search/searchService'
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes'
 
@@ -97,8 +97,8 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
     const session = sessions().find(item => item.id === result.sessionId)
     if (!session) return
     // FE-AUD-003：持久导航意图（按 sessionId+messageId），workbench 消息恢复后消费并清除——
-    // 不依赖瞬时 CustomEvent（先发事件后挂载消费方会丢）
-    sessionUiStateSet(result.sessionId, 'pendingMessageLocation', { sessionId: result.sessionId, messageId: result.messageId })
+    // 不依赖瞬时 CustomEvent（先发事件后挂载消费方会丢）。#520 S2-P1-1：统一 sessionUiStore。
+    sessionUiStore.set(result.sessionId, 'pendingMessageLocation', { sessionId: result.sessionId, messageId: result.messageId })
     // I01-W4：owner-aware 打开（Session owner 而非 active Agent）；切换失败保持原页面
     const opened = await openOwnedSessionTransaction(
       { targetId: session.id },

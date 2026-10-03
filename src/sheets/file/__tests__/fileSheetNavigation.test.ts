@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import '../../../plugin-runtime/testing/productPluginTestBootstrap.ts'
 import { useIdentityStore } from '../../../domains/identity/identityStore.ts'
-import { useWorkspaceEntityStore } from '../../../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../../../domains/workspace/workspaceEntityStore.ts'
 import { useWorkspaceStore } from '../../../domains/workspace/workspaceStore.ts'
 import { createSheetState } from '../../../domains/workspace/sheetState.ts'
 import {

@@ -29,7 +29,7 @@ export interface AgentCreateDraftInput {
 
 const EMPTY_CREATE_DRAFT: AgentCreateDraftInput = { id: '', name: '', exe: '', provider: 'custom', args: ['acp'] }
 
-export interface AgentCreateFormProps {
+interface AgentCreateFormProps {
   busy: boolean
   onCreate: (draft: AgentCreateDraftInput) => Promise<void>
 }

@@ -4,7 +4,7 @@ import type { RendererActivationSnapshot } from '../../../plugin-runtime/rendere
 
 const activation = (id: string, fallbackSuiteId?: string): RendererActivationSnapshot => ({
   revision: 1,
-  suite: { value: { id, label: id, apiVersion: 1, runtime: { framework: 'solid', version: '1' }, compatibility: { documentSchema: 'workbench.v1', renderCatalogSchema: 1 }, requiredKinds: ['content.unknown'], fallbackSuiteId, factory: () => ({}) }, ownerPluginId: id, ownerRuntimeInstanceId: `${id}@r`, contributionId: id, layer: 'feature', priority: 1 },
+  suite: { value: { id, label: id, apiVersion: 1, runtime: { framework: 'solid', version: '1' }, compatibility: { documentSchema: 'workbench.v1', renderCatalogSchema: 1 }, requiredKinds: ['content.unknown'], fallbackSuiteId, factory: { prepare: async () => { throw new Error('not mounted in test') } } }, ownerPluginId: id, ownerRuntimeInstanceId: `${id}@r`, contributionId: id, layer: 'feature', priority: 1 },
   kinds: new Map(), slots: new Map(), diagnostics: [],
 })
 

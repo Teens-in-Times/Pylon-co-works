@@ -17,6 +17,7 @@ import type {
 } from './rendererTypes.ts'
 import { notifyRegistryListener } from '../registry/registryBatch.ts'
 import { normalizeRendererSettingsPlacement, normalizeRendererSettingsSchema } from './rendererSettingsTypes.ts'
+import { kindChain } from './rendererActivationResolver.ts'
 import type { RendererSlotContribution, RendererSuiteContribution } from './rendererSuiteTypes.ts'
 import { validateRenderKindSettingsNamespace, validateRendererContributionGraph, validateRendererSlotContribution, validateRendererSuiteContribution } from './rendererSuiteValidation.ts'
 export type { RendererActivationSnapshot, RendererDiagnostic, RendererSlotContribution, RendererSuiteContribution } from './rendererSuiteTypes.ts'
@@ -52,13 +53,24 @@ export interface RendererRegistryTransaction {
 export interface RendererRegistrySnapshot {
   readonly revision: number
   readonly renderKinds: readonly RegistryEntry<RenderKindDefinition>[]
-  /** @deprecated compatibility adapters; new consumers resolve Suite/Slot. */
+  /**
+   * 双轨正名（#520 S4-P1）：message/content/tool/highlighter 四个定义面是
+   * **在役生产路径**，不是待删代码。Renderer Registry 里的双轨各自在役——
+   * - **kind 语义面**（`renderKinds`）：fallback 链、`validateInput`、fixture 与
+   *   settings schema 的判定真源；
+   * - **suite 实现面**（`rendererSuites`/`rendererSlots`）：Workbench 实现的装配单位。
+   * 本组四个兼容面是 `RendererApi.registerMessage/Content/Tool/CodeHighlighter`
+   * 的 catalog 投影：`resolveSurface` 按 kind 语义面解析后在其中挑选具体渲染器
+   * （content/tool 臂），message/highlighter 臂由 `resolveMessageRenderer` /
+   * `resolveCodeHighlighter` 消费（chat 面）。退役前提是 Suite/Slot 面全量承接
+   * 这两类消费，另行公告，见说明书 §6.4。
+   */
   readonly messageRenderers: readonly RegistryEntry<MessageRendererDefinition>[]
-  /** @deprecated compatibility adapters; new consumers resolve Suite/Slot. */
+  /** 在役兼容面（双轨声明见上）：content 臂，由 `resolveSurface` 消费。 */
   readonly contentRenderers: readonly RegistryEntry<ContentRendererDefinition>[]
-  /** @deprecated compatibility adapters; new consumers resolve Suite/Slot. */
+  /** 在役兼容面（双轨声明见上）：tool 臂，由 `resolveSurface` 消费。 */
   readonly toolRenderers: readonly RegistryEntry<ToolRendererDefinition>[]
-  /** @deprecated compatibility adapters; new consumers resolve Suite/Slot. */
+  /** 在役兼容面（双轨声明见上）：highlighter 臂，由 `resolveCodeHighlighter` 消费。 */
   readonly codeHighlighters: readonly RegistryEntry<CodeHighlighterDefinition>[]
   /** Atomic Suite contributions. */
   readonly rendererSuites: readonly RegistryEntry<RendererSuiteContribution>[]
@@ -484,14 +496,9 @@ export class RendererRegistry {
       diagnostics.push(diagnostic)
       context.diagnostic?.(diagnostic)
     }
-    const candidateKinds: string[] = []
-    let current = kindEntry?.value ?? kinds.find(entry => entry.value.id === 'content.unknown')?.value
-    while (current) {
-      if (candidateKinds.includes(current.id)) break
-      candidateKinds.push(current.id)
-      current = current.fallbackKind ? kinds.find(entry => entry.value.id === current?.fallbackKind)?.value : undefined
-    }
-    if (candidateKinds.length === 0) candidateKinds.push('content.unknown')
+    // #520 S4-P1：fallback 链走 rendererActivationResolver.kindChain 单一实现
+    // （强制补 content.unknown 兜底语义一致），预览与生产不再各持一份 walk。
+    const candidateKinds = kindChain(kindEntry?.value.id ?? 'content.unknown', kinds)
     const rendererId = context.rendererId ?? node.rendererId
     const find = (kind: string) => {
       const input = { kind, payload: node.payload }

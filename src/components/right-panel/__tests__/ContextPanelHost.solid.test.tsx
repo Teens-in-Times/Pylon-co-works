@@ -17,7 +17,7 @@ import { getContextPanelRegistry } from '../../../plugin-runtime/runtimeServices
 import { createPluginIdentity } from '../../../plugin-runtime/pluginIdentity.ts'
 import type { AsyncDisposable } from '../../../plugin-runtime/registry/types.ts'
 import type { SheetContext, SheetRecord } from '../../../workspace-sheets/sheetTypes.ts'
-import { createPreviewWorkbenchServices } from '../../../renderers/solid-workbench/__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../../../renderers/solid-workbench/preview/previewWorkbenchServices.ts'
 import { createWorkbenchHostPort } from '../../../plugin-runtime/renderers/workbenchHostPort.ts'
 import { publishActiveWorkbenchHostPort } from '../../../application/agent-workbench/activeWorkbenchHostPort.ts'
 import { useRightRailStore, RIGHT_RAIL_DEFAULT_WIDTH } from '../../../domains/workspace/layoutRailsStore.ts'
@@ -53,7 +53,6 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-/** React 贡献组件桩（无 JSX：本文件是 Solid 编译面，React 面在岛内渲染）。 */
 /** Solid 贡献桩（#515 岛退役：注册表组件是 Solid 组件）。 */
 const panelStub = (text: string) => () => <div>{text}</div>
 

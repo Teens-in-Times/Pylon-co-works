@@ -15,7 +15,6 @@ import { getHookRuntime } from '../../plugin-runtime/runtimeServices.ts'
  * 「锚点没触发 / 为什么被拦截」类问题的第一诊断入口（#37 类问题回溯面）。
  */
 
-export interface HookDiagnosticsPanelProps {}
 
 const OUTCOME_LABELS: Record<string, string> = {
   continued: '放行',

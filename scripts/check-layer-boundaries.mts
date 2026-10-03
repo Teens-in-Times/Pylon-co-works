@@ -18,17 +18,27 @@
  * 每条豁免必须带理由注释（who/why），新增豁免 = 显式评审动作；豁免表带陈旧检测——
  * 条目对应的违规边消失后（改道/搬迁）必须同步删条，防止死豁免长期占位。
  *
+ * #520 结构收敛批 H 域纳入（2026-10-03，审查 §1「门禁缺口」条款 2，先豁免后清偿）：
+ * 4. infrastructure → plugin-runtime（存量 20 边全豁免）；
+ * 5. domains → plugin-runtime 运行时值边（type-only 豁免；存量 17 边）；
+ * 6. infrastructure → app（存量 7 边；plugin-runtime → app/runtimeError 仍按下行清单不设防）；
+ * 7. plugins → 视图层（core 除外；存量 1 边）——src/plugins/core/** 的反向边
+ *    （core 焊死视图组件）由 check-product-contribution-boundary.mts 按符号级划线
+ *    体系管辖（#485 同源），不在此重复登记。
+ *
  * 负向验证：新增本文件时曾以临时违规 fixture 验证能红，后删除；#489 三条规则同法复验。
  *
  * 刻意不管清单（本脚本明示不设防的方向，出现漂移先在此表态再考虑立规）：
- * - src/plugins/、src/sdk/、src/utils/、src/devtools/、src/demo/、src/test-utils/ 与 src/test/、
- *   src/wasm/、src/assets|styles|css01 作为「源侧」不受管辖（插件/演示/测试/产物层）。
+ * - src/sdk/、src/utils/、src/devtools/、src/demo/、src/test-utils/ 与 src/test/、
+ *   src/wasm/、src/assets|styles|css01 作为「源侧」不受管辖（SDK/演示/测试/产物层；
+ *   src/plugins/ 源侧已随 #520 条款 7 部分纳管）。
  * - 根入口 src/main.solid.tsx、src/App.solid.tsx 是组合根，不设独立规则（#515 批7 改名）。
  * - 视图层 → src/app/**（视图消费 app 客户端/错误中心，现存约 77 边）、视图层 → src/host/**
  *   （renderer-suite 渲染套件消费面；SolidMount 挂载桥已随 #520 终局批删除，
  *   solidStoreBridge 已迁 infrastructure/state 作在役读取原语——视图层 → infrastructure 同不设防）、
  *   host → domains（renderer-suite 读域事件/预测语义）、
- *   infrastructure/plugin-runtime → src/app/runtimeError（错误上报口）。
+ *   plugin-runtime → src/app/runtimeError（错误上报口；infrastructure → app 已随 #520 纳管，
+ *   plugin-runtime 侧仍不设防）。
  * - kernel → 视图层（KernelRoot.tsx 引 ErrorBoundary/SkinPreviewBar，2 边）与
  *   kernel → plugins（productPluginIds 常量，2 边）：#489 批准条文未含，暂不设防。
  * - plugin-runtime → kernel（pluginManagementWiring.ts 的 KernelBootstrap type-only 1 边）：
@@ -82,6 +92,8 @@ function statSyncShim(p: string): import('node:fs').Stats { return statSync(p) }
 interface LayerRule {
   label: string
   scopeRoots: string[]
+  /** scope 内再剔除的前缀（如 plugins/core 反向划线由 check-product-contribution-boundary 管辖）。 */
+  scopeExcludes?: string[]
   forbiddenPathIncludes: string[]
   allowlist: Record<string, string> // 文件级豁免：file（相对路径, '/' 分隔）→ 理由（豁免该文件全部违规边）
   allowEdges?: Record<string, string> // 边级豁免：`${file} -> ${target}` → 理由
@@ -142,14 +154,12 @@ const RULES: LayerRule[] = [
       'src/infrastructure/events/canonicalEventRepository.ts -> src/domains/events/canonicalEventRow.ts': '事件仓储消费行构造（下沉待清偿）',
       // —— 仓储实现消费域侧持久化契约/store（#448 写穿链落位形态；端口化待清偿）
       'src/infrastructure/persistence/customPresetRepository.ts -> src/domains/theme/customPresetStore.ts': '预设仓储消费主题预设 store 语义（端口化待清偿）',
-      'src/infrastructure/persistence/identityBackendSync.ts -> src/domains/identity/profilePersistence.ts': 'identity 后端同步消费域持久化契约（端口化待清偿）',
-      'src/infrastructure/persistence/identityBackendSync.ts -> src/domains/identity/sessionPersistence.ts': 'identity 后端同步消费域持久化契约（端口化待清偿）',
-      'src/infrastructure/persistence/identityBackendSync.ts -> src/domains/identity/identityPersistence.ts': 'identity 后端同步消费域持久化契约（端口化待清偿）',
       'src/infrastructure/persistence/inputPredictionSettingsRepository.ts -> src/domains/inputPrediction/inputPredictionSettingsCache.ts': '预测设置仓储消费域缓存（#463 写穿链落位形态）',
       'src/infrastructure/persistence/inputPredictionSettingsRepository.ts -> src/domains/inputPrediction/inputPredictionSettings.ts': '预测设置仓储消费域设置语义（端口化待清偿）',
       'src/infrastructure/persistence/retentionPolicyRepository.ts -> src/domains/overview/retentionPolicy.ts': '保留策略仓储消费域策略语义（端口化待清偿）',
-      'src/infrastructure/persistence/workspaceEntityStore.ts -> src/domains/identity/identityStore.ts': '工作区实体仓储读 identity store（端口化待清偿）',
-      'src/infrastructure/persistence/workspaceEntityStore.ts -> src/domains/workspace/workspaceEntities.ts': '工作区实体仓储消费实体契约（端口化待清偿）',
+      // identityBackendSync/workspaceEntityStore 的条目已随 #520 G 域端口化/迁域清偿删除
+      // （identityBackendSync 改经 identityBackendSyncPort 装配注入契约；workspaceEntityStore
+      // 迁 domains/workspace 并经 workspaceActiveAgentPort 注入 activeAgent）。
       // —— 其余散点
       'src/infrastructure/state/solidSheetSupport.solid.tsx -> src/domains/interface/interfaceModeStore.ts': 'Solid 界面模式回退读 interfaceModeStore（#520 R3 自 sheets 迁入的既有依赖，非新引；回退表单源在 domains/interface）',
       'src/infrastructure/hooks/hookBridgeDispatcher.ts -> src/domains/identity/identityStore.ts': 'hook 调度桥读 identity store 运行时实例（结构全修批前既有形态）',
@@ -157,6 +167,104 @@ const RULES: LayerRule[] = [
       'src/infrastructure/skin/skinRuntimeServices.ts -> src/domains/theme/themeDefaults.ts': '皮肤运行时读主题出厂表（数据单源在 theme 域）',
       'src/infrastructure/skin/skinRuntimeServices.ts -> src/domains/theme/themeFieldDefs.ts': '皮肤运行时读主题字段表（数据单源在 theme 域）',
       'src/infrastructure/tauri/workspaceClient.ts -> src/domains/workspace/workspaceEntities.ts': 'workspace IPC 客户端消费实体契约（值混于类型面，拆分待清偿）',
+    },
+  },
+  {
+    // #520 H 域条款 7：plugins → 视图层。src/plugins/core/** 的反向边（core 焊死视图
+    // 组件，审查 S1-P1 点名 10 边）由 check-product-contribution-boundary.mts 按 #485
+    // 划线体系管辖，此处 scope 剔除以免双重登记；本条管 core 以外的插件源侧。
+    label: 'plugins → 视图层（core 除外）',
+    scopeRoots: ['src/plugins/'],
+    scopeExcludes: ['src/plugins/core/'],
+    forbiddenPathIncludes: VIEW_DIRS,
+    allowlist: {},
+    allowEdges: {
+      'src/plugins/product/builtinPylonRenderers.ts -> src/renderers/solid-workbench/builtinSolidRendererSuite.ts': '产品渲染器声明直连 solid 渲染套件入口（#520 H 实扫 1 边；改经注册表消费待清偿）',
+    },
+  },
+  {
+    // #520 H 域条款 6：infrastructure → app（审查 S1-P1「7 条运行时边无规则管辖」）。
+    // 6 条经 app/runtimeError 上报错误（错误口下沉待清偿）+ solidSheetSupport 读界面模式回退表。
+    label: 'infrastructure → app',
+    scopeRoots: ['src/infrastructure/'],
+    forbiddenPathIncludes: ['src/app/'],
+    allowlist: {},
+    allowEdges: {
+      'src/infrastructure/acp/interactionRejectionController.ts -> src/app/runtimeError.ts': '错误上报口现居 app（错误口下沉待清偿）',
+      'src/infrastructure/acp/permissionController.ts -> src/app/runtimeError.ts': '错误上报口现居 app（错误口下沉待清偿）',
+      'src/infrastructure/events/canonicalEventFeed.ts -> src/app/runtimeError.ts': '错误上报口现居 app（错误口下沉待清偿）',
+      'src/infrastructure/persistence/customPresetRepository.ts -> src/app/runtimeError.ts': '错误上报口现居 app（错误口下沉待清偿）',
+      'src/infrastructure/persistence/identityBackendSync.ts -> src/app/runtimeError.ts': '错误上报口现居 app（错误口下沉待清偿）',
+      'src/infrastructure/persistence/inputPredictionSettingsRepository.ts -> src/app/runtimeError.ts': '错误上报口现居 app（错误口下沉待清偿）',
+      'src/infrastructure/state/solidSheetSupport.solid.tsx -> src/app/interfaceModeLookup.ts': '界面模式回退表现居 app（#520 R3 随 solidSheetSupport 迁入形态；下沉待清偿）',
+    },
+  },
+  {
+    // #520 H 域条款 5：domains → plugin-runtime 运行时值边（审查 S1-P1 实录 19 条，
+    // identity 域端口化清偿后实存 17）。type-only 边按 #489 规则 1 同款条文豁免。
+    label: 'domains → plugin-runtime（运行时值）',
+    scopeRoots: ['src/domains/'],
+    forbiddenPathIncludes: ['src/plugin-runtime/'],
+    typeOnlyExempt: true,
+    allowlist: {},
+    allowEdges: {
+      // —— 服务定位器直连（runtimeServices；端口注入改道待清偿，范本
+      //    domains/workbench/workbenchCommandFacade.ts:265 注入式）
+      'src/domains/events/messageProjection.ts -> src/plugin-runtime/runtimeServices.ts': '事件投影经服务定位器读渲染注册面（端口注入待清偿）',
+      'src/domains/export/threeSourceExport.ts -> src/plugin-runtime/runtimeServices.ts': 'three 导出经服务定位器读渲染注册面（端口注入待清偿）',
+      'src/domains/identity/identitySessionActions.ts -> src/plugin-runtime/runtimeServices.ts': 'identity 会话动作经服务定位器读会话创建面（#520 G 域端口化残留；装配上移待清偿）',
+      'src/domains/rendererContent/rendererContentRegistry.ts -> src/plugin-runtime/runtimeServices.ts': '渲染内容注册表经服务定位器读渲染注册面（端口注入待清偿）',
+      'src/domains/rendererContent/textRenderKindCatalog.ts -> src/plugin-runtime/runtimeServices.ts': '文本渲染种类目录经服务定位器读渲染注册面（端口注入待清偿）',
+      'src/domains/rendererContent/textRenderKindCatalog.ts -> src/plugin-runtime/pluginIdentity.ts': '文本渲染种类目录读插件身份常量（常量下沉待清偿）',
+      'src/domains/search/searchService.ts -> src/plugin-runtime/runtimeServices.ts': '搜索服务经服务定位器读渲染注册面（端口注入待清偿）',
+      'src/domains/session/sessionStateSync.ts -> src/plugin-runtime/runtimeServices.ts': '会话状态同步经服务定位器读注册面（端口注入待清偿）',
+      'src/domains/theme/presetActions.ts -> src/plugin-runtime/runtimeServices.ts': '主题预设动作经服务定位器读皮肤注册面（端口注入待清偿）',
+      'src/domains/tool/toolPresentation.ts -> src/plugin-runtime/runtimeServices.ts': '工具演示面经服务定位器读渲染注册面（端口注入待清偿）',
+      // —— 会话创建快照编译（#520 G 域 identity 端口化落位形态：域侧直读 plugin-runtime 实现）
+      'src/domains/identity/identitySessionActions.ts -> src/plugin-runtime/session-creation/compileSessionCreationSnapshot.ts': 'identity 端口化残留：直读会话创建快照编译（装配上移 app 待清偿）',
+      'src/domains/identity/sessionPersistence.ts -> src/plugin-runtime/session-creation/compileSessionCreationSnapshot.ts': 'identity 端口化残留：直读会话创建快照编译（装配上移 app 待清偿）',
+      'src/domains/identity/identityPluginDataPort.ts -> src/plugin-runtime/sessionData/sessionDataPort.ts': 'identity 插件数据端口直读 plugin-runtime 端口实现（#520 G 域落位形态；TODO 装配上移待清偿）',
+      // —— workspace 注册表直连（sheet 三件套 + store；端口注入待清偿）
+      'src/domains/workspace/sheetPersistence.ts -> src/plugin-runtime/workspaces/workspaceRegistry.ts': 'sheet 持久化直读 workspace 注册表（端口注入待清偿）',
+      'src/domains/workspace/sheetRegistry.ts -> src/plugin-runtime/workspaces/workspaceRegistry.ts': 'sheet 注册表互读 workspace 注册表（端口注入待清偿）',
+      'src/domains/workspace/sheetState.ts -> src/plugin-runtime/workspaces/workspaceRegistry.ts': 'sheet 状态直读 workspace 注册表（端口注入待清偿）',
+      'src/domains/workspace/workspaceStore.ts -> src/plugin-runtime/workspaces/workspaceRegistry.ts': 'workspace store 直读 workspace 注册表（端口注入待清偿）',
+    },
+  },
+  {
+    // #520 H 域条款 4：infrastructure → plugin-runtime（审查 S1-P1 实录「反向 21 边」，
+    // 去重后 20 边：pluginEventBusHost/fonts/hooks/skin 群 + solidSheetSupport）。
+    label: 'infrastructure → plugin-runtime',
+    scopeRoots: ['src/infrastructure/'],
+    forbiddenPathIncludes: ['src/plugin-runtime/'],
+    allowlist: {},
+    allowEdges: {
+      // —— 插件事件总线（事件总线的插件侧挂接；端口化待清偿）
+      'src/infrastructure/events/pluginEventBusHost.ts -> src/plugin-runtime/pluginIdentity.ts': '插件事件总线读插件身份标识（端口化待清偿）',
+      'src/infrastructure/events/pluginEventBusHost.ts -> src/plugin-runtime/runtimeServices.ts': '插件事件总线经服务定位器取注册面（端口化待清偿）',
+      // —— 字体投影
+      'src/infrastructure/fonts/fontProjection.ts -> src/plugin-runtime/registry/types.ts': '字体投影读贡献注册类型面（type 边；注册面收敛待清偿）',
+      'src/infrastructure/fonts/fontProjection.ts -> src/plugin-runtime/fonts/fontContributionRegistry.ts': '字体投影直读字体贡献注册表（端口化待清偿）',
+      // —— hook 桥
+      'src/infrastructure/hooks/hookBridgeDispatcher.ts -> src/plugin-runtime/runtimeServices.ts': 'hook 桥经服务定位器取 hook 注册面（端口化待清偿）',
+      'src/infrastructure/hooks/hookBridgeDispatcher.ts -> src/plugin-runtime/hooks/hookTypes.ts': 'hook 桥读 hook 贡献契约类型（契约下沉待清偿）',
+      // —— 插件包客户端
+      'src/infrastructure/plugins/pluginPackageClient.ts -> src/plugin-runtime/packageManifest.ts': '插件包客户端读包清单类型（type 边；管理域收敛待清偿）',
+      // —— skin 群（skin 子域契约/校验/运行时被 infra 直读；skin 管理域收敛待清偿）
+      'src/infrastructure/skin/skinHostPorts.ts -> src/plugin-runtime/skin/skinCommandApi.ts': '皮肤宿主端口读 skin 命令 API 类型（type 边）',
+      'src/infrastructure/skin/skinHostPorts.ts -> src/plugin-runtime/skin/skinTypes.ts': '皮肤宿主端口读 skin 契约类型（type 边）',
+      'src/infrastructure/skin/skinHostPorts.ts -> src/plugin-runtime/skin/skinRuntime.ts': '皮肤宿主端口读 skin 运行时类型（type 边）',
+      'src/infrastructure/skin/skinPersistence.ts -> src/plugin-runtime/skin/skinValidation.ts': '皮肤持久化直连 skin 校验（下沉待清偿）',
+      'src/infrastructure/skin/skinPersistence.ts -> src/plugin-runtime/skin/skinRuntime.ts': '皮肤持久化直连 skin 运行时（端口化待清偿）',
+      'src/infrastructure/skin/skinPersistence.ts -> src/plugin-runtime/skin/skinTypes.ts': '皮肤持久化读 skin 契约类型（type 边）',
+      'src/infrastructure/skin/skinProjection.ts -> src/plugin-runtime/skin/skinTypes.ts': '皮肤投影读 skin 契约类型（type 边）',
+      'src/infrastructure/skin/skinRuntimeServices.ts -> src/plugin-runtime/skin/skinRuntime.ts': '皮肤运行时服务直连 skin 运行时实现（端口化待清偿）',
+      'src/infrastructure/skin/useSkinSurface.solid.ts -> src/plugin-runtime/skin/skinRuntime.ts': '皮肤表面 hook 读 skin 运行时类型（type 边）',
+      'src/infrastructure/skin/useSkinSurface.solid.ts -> src/plugin-runtime/skin/skinTypes.ts': '皮肤表面 hook 读 skin 契约类型（type 边）',
+      'src/infrastructure/skin/useSkinSurface.solid.ts -> src/plugin-runtime/skin/skinResolver.ts': '皮肤表面 hook 读 skin 解析器类型（type 边）',
+      // —— solidSheetSupport（UI 件住 infra、三层向上 import，审查 S1-P1 点名；搬迁待清偿）
+      'src/infrastructure/state/solidSheetSupport.solid.tsx -> src/plugin-runtime/runtimeServices.ts': 'Solid sheet 支撑件经服务定位器读注册面（UI 件住 infra，#520 R3 迁入形态；搬迁待清偿）',
+      'src/infrastructure/state/solidSheetSupport.solid.tsx -> src/plugin-runtime/interface-mode/interfaceModeTypes.ts': 'Solid sheet 支撑件读界面模式类型（type 边）',
     },
   },
   {
@@ -221,7 +329,8 @@ const RULES: LayerRule[] = [
       'src/domains/identity/identityStore.ts -> src/app/ports/identityCrossDomainPort.ts': 'identity 跨域端口现居 app/ports（#351 形态；迁移待清偿）',
       'src/domains/identity/identityStoreShape.ts -> src/app/ports/identityCrossDomainPort.ts': 'identity 跨域端口现居 app/ports（#351 形态；迁移待清偿）',
       // 事务/装配件现居 app/bootstrap（事务层下沉待清偿）
-      'src/domains/identity/identitySessionActions.ts -> src/app/bootstrap/resolveUnresolvedSessionTransaction.ts': '会话恢复事务现居 app/bootstrap（事务层下沉待清偿）',
+      // #520 G 域：identitySessionActions -> app/bootstrap/resolveUnresolvedSessionTransaction
+      // 条目已清偿（会话恢复事务装配移回 identitySessionRecoveryWiring，域侧经端口触发）。
       'src/domains/theme/themeStore.ts -> src/app/bootstrap/hydrateIdentityAndWorkspace.ts': '主题 store 消费 hydrate 装配件（装配现居 app/bootstrap）',
     },
   },
@@ -310,6 +419,7 @@ for (const file of files) {
   const relFile = relative(projectRoot, file).replaceAll('\\', '/')
   for (const rule of RULES) {
     if (!rule.scopeRoots.some(root => relFile.startsWith(root))) continue
+    if (rule.scopeExcludes?.some(root => relFile.startsWith(root))) continue
     const text = await readFile(file, 'utf8')
     const specs = [...text.matchAll(/(?:from\s*|import\s*\(?\s*)(['"])(\.[^'"]+)\1/g)].map(m => ({ spec: m[2]!, start: m.index ?? 0, end: (m.index ?? 0) + m[0]!.length }))
     for (const { spec, start, end } of specs) {

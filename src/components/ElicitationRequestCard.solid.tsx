@@ -2,10 +2,7 @@
 import { createSignal, For, Show } from 'solid-js'
 import { collectElicitationValues, parseElicitationFields, type ElicitationValues } from './elicitationSchema.ts'
 
-// #515：解析/收集纯函数住 elicitationSchema.ts（React/Solid 共用）；实体侧按原文件
-// 导出面等价透传，React 薄桥（ElicitationRequestCard.tsx）同源 re-export。
-export { parseElicitationFields, collectElicitationValues } from './elicitationSchema.ts'
-export type { ElicitationField, ParsedElicitationSchema, ElicitationValues } from './elicitationSchema.ts'
+// 解析/收集纯函数与相关类型住 elicitationSchema.ts（框架无关模块），消费方直连原模块。
 
 const FIELD_ROW = 'flex items-center gap-2 mb-2'
 const LABEL = 'flex-[0_0_110px] text-[12px] text-text-dim break-all'

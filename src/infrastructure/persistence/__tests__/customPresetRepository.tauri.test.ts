@@ -8,6 +8,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeInvoke } from '../../../test/fakeInvoke'
+import { flushTask } from '../../../test/solidTestHelpers.ts'
 
 const { invokeRef } = vi.hoisted(() => ({
   invokeRef: { current: null as null | ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) },
@@ -88,7 +89,7 @@ describe('Tauri 模式（IS_TAURI=true）', () => {
     // 桥已装：本地变更写穿
     fakeInvoke.calls.length = 0
     useCustomPresetStore.getState().removeCustomPreset('custom-a')
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     const saveCalls = fakeInvoke.calls.filter(call => call.cmd === 'user_data_save')
     expect(saveCalls.length).toBeGreaterThanOrEqual(1)
     const last = saveCalls.at(-1)!
@@ -165,11 +166,11 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     useCustomPresetStore.setState({ customPresets: [], zonePresetEntries: [] })
     await hydrateCustomPresetsFromBackend() // 本地空：迁移腿不触发 save，仅装桥
     useCustomPresetStore.setState({ customPresets: [PRESET_A as never], zonePresetEntries: [] })
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(localStorage.getItem(FLAG_KEY)).toBe('1')
     fail = false
     useCustomPresetStore.setState({ customPresets: [PRESET_A as never, PRESET_B as never], zonePresetEntries: [] })
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(localStorage.getItem(FLAG_KEY)).toBeNull()
   })
 
@@ -196,7 +197,7 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     localStorage.setItem(FLAG_KEY, '1')
     const hydrating = hydrateCustomPresetsFromBackend()
     // 重发已入飞（10ms 延迟窗口），此刻用户改本地 → 桥把新变更排到链上
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(fakeInvoke.calls.some(call => call.cmd === 'user_data_save')).toBe(true)
     useCustomPresetStore.setState({ customPresets: [PRESET_A as never, PRESET_B as never], zonePresetEntries: [] })
     await hydrating

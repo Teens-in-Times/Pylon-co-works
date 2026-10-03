@@ -350,7 +350,7 @@
 
 /* CSS-02：Markdown heading 显式 class contract（方案书 §5.15 step 3/5——规则限定
    .term-assistant 内防全局 heading 污染；字号按 §5.15 建议比例且沿用既有设计层级：
-   h2=1.1em/h3=1em 600。React/Solid 双 renderer 均输出 term-h1~term-h6 类）。 */
+   h2=1.1em/h3=1em 600。Solid renderer 输出 term-h1~term-h6 类）。 */
 .term-assistant .term-h1 { font-size:1.25em; font-weight:700; margin:10px 0 4px; }
 .term-assistant .term-h2 { font-size:1.1em; font-weight:600; margin:6px 0 2px; }
 .term-assistant .term-h3 { font-size:1em; font-weight:600; margin:4px 0 2px; }

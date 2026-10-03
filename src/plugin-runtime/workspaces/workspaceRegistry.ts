@@ -2,7 +2,7 @@
  * workspaceRegistry — Workspace 元数据响应式注册表（阶段 6 首个切片）。
  *
  * 单一真值：完整 WorkspaceTypeDefinition（metadata + component + state codec）。
- * v2 plugin 经 PluginScope 注册/注销；revision 驱动 React 响应式消费。
+ * v2 plugin 经 PluginScope 注册/注销；revision 驱动 Solid 信号消费。
  */
 import type { PluginIdentity } from '../pluginIdentity.ts'
 import type { AsyncDisposable } from '../registry/types.ts'

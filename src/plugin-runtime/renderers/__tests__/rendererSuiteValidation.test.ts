@@ -31,7 +31,8 @@ const suite = (id = 'suite.base', requiredKinds = ['plugin.note']): RendererSuit
   runtime: { framework: 'solid', version: '1.0.0' },
   compatibility: { documentSchema: 'workbench.v1', renderCatalogSchema: 1 },
   requiredKinds,
-  factory: () => ({}),
+  // factory 只剩 prepare 工厂形态（#520 S4-P2 函数臂塌缩）；本测试不挂载实现。
+  factory: { prepare: async () => { throw new Error('not mounted in test') } },
 })
 
 const slot = (id: string, targetSuites: readonly (string | '*')[], kinds: readonly string[], fallback = false): RendererSlotContribution => ({

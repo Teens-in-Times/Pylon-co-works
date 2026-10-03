@@ -1,5 +1,5 @@
 /**
- * C03：media source 解析契约（纯 domain，Solid 与 React fallback 共用）。
+ * C03：media source 解析契约（纯 domain，Solid surface 与第三方 react 兼容 kind 共用）。
  *
  * 卡面规则：
  * - URL 经协议白名单（https/http + media-mime data:/blob:）；javascript: 等一律拒绝；

@@ -9,9 +9,9 @@ import type { GitProvider } from '../../plugin-runtime/file-workbench/fileWorkbe
 import { FileTypeIconSolid, WorkbenchIcon } from './fileIcons.solid.tsx'
 
 /**
- * GitPanelProps — 与 React 桥（GitPanel.tsx）内声明的同名接口逐字段一致。
+ * GitPanelProps — 名字承自历史 React 契约（GitPanel.tsx，已退役）；本实体即唯一真源。
  */
-export interface GitPanelProps {
+interface GitPanelProps {
   target: WorkspaceTarget | null
   provider: GitProvider | null
   onOpenDiff: (path: string, staged: boolean) => void

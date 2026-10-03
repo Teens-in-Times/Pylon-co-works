@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
 import OverviewSheetView from '../OverviewSheetView.solid.tsx'
 import { useIdentityStore } from '../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../domains/runtime/runtimeStore.ts'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore.ts'
 import { resetStores } from '../../test/resetStores.ts'
 import { FakeInvoke } from '../../test/fakeInvoke'
 import { useInterfaceModeStore } from '../../domains/interface/interfaceModeStore.ts'
@@ -67,8 +67,8 @@ beforeEach(() => {
 })
 
 describe('Overview visual workbench', () => {
-  // 改写点登记：指挥台是 React 岛（异步提交），岛内交互一律经 findBy 等待岛落 DOM；
-  // 断言集与 React 版逐条一致，不缩减。
+  // 改写点登记：指挥台是 Solid 直连（TacticalCommandDeck.solid），交互一律经 findBy
+  // 等待渲染落 DOM；断言集与 React 版逐条一致，不缩减。
   it('战术导航进入现有分区、返回，并通过 Sheet host 打开诊断', async () => {
     useInterfaceModeStore.setState({ interfaceMode: 'tactical-blue' })
     const ctx = { openSheet: vi.fn(), selectSession: vi.fn() } as unknown as SheetContext

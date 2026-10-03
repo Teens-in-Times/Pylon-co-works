@@ -8,9 +8,9 @@ import { workspaceTargetKey, type WorkspaceTarget } from '../../domains/workspac
 import type { GitProvider } from '../../plugin-runtime/file-workbench/fileWorkbenchTypes.ts'
 
 /**
- * DiffViewProps — 与 React 桥（DiffView.tsx）内声明的同名接口逐字段一致。
+ * DiffViewProps — 名字承自历史 React 契约（DiffView.tsx，已退役）；本实体即唯一真源。
  */
-export interface DiffViewProps {
+interface DiffViewProps {
   target: WorkspaceTarget | null
   provider: GitProvider | null
   path: string

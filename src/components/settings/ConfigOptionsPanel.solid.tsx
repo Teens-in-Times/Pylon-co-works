@@ -10,7 +10,7 @@ import type { AgentContext } from '../../domains/agent/agentContext'
 import { toAgentContextKey } from '../../domains/agent/agentContext'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
-export interface ConfigOptionsPanelProps {
+interface ConfigOptionsPanelProps {
   context?: AgentContext
 }
 

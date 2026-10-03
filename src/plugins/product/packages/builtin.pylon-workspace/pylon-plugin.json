@@ -11,6 +11,5 @@
   "optionalDependencies": {},
   "conflicts": [],
   "activation": { "events": ["kernel.ready"] },
-  "hotSwap": { "mode": "parallel", "drainTimeoutMs": 10000 },
-  "reactVersion": "19"
+  "hotSwap": { "mode": "parallel", "drainTimeoutMs": 10000 }
 }

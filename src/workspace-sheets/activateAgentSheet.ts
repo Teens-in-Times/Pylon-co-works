@@ -17,7 +17,7 @@ export async function activateAgentSheet(
   const agentClient = appClients.agent()
   const result = await switchAgentTransaction(agentId, agentName, {
     switchAgent: () => agentClient.switchAgent(agentId),
-    resetRuntime: () => useRuntimeStore.getState().resetAll(),
+    resetRuntime: () => useRuntimeStore.getState().resetSessionRuntime(),
     setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
     fetchAgentStatus: () => agentClient.agentStatus(),
     applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),

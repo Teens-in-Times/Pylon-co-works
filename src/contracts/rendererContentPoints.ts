@@ -1,7 +1,7 @@
 /**
  * 渲染内容管线 P1 契约（施工方案书 v3 §M8）：六个第一类渲染内容扩展点。
  *
- * 契约层不 import React/Solid，也不 import components/domains；
+ * 契约层不 import 任何 UI 框架，也不 import components/domains；
  * 第一版以「类型 + 宿主可查询」为准，默认视觉不变。
  * 运行时单一真值由 plugin-runtime Renderer Registry 持有；本文件仅保留
  * Renderer Registry 使用的内容渲染类型。

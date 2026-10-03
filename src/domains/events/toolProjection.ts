@@ -6,7 +6,7 @@
  *   toolCallId / toolName(title) / kind / rawInput / rawOutput / status / contentBlocks /
  *   owner / clientGeneration
  *
- * 本模块是唯一投影路径（纯域，零 React/零 store，node 可测）：
+ * 本模块是唯一投影路径（纯域，零框架/零 store，node 可测）：
  * - `toolFieldsFromCanonical`：工具字段一律自 canonical `typedPayload.tool` 提取——live/replay
  *   工具 dispatch 共用同一组字段（§5.11 禁止项"normalizer 能识别的字段 commit 路径识别不了"，
  *   以及禁止项"live/replay 各自读字段"）。caller 不得再读 wire 别名。

@@ -9,7 +9,6 @@ import { getRendererRegistry } from '../../plugin-runtime/runtimeServices.ts'
 import Select from '../ui/Select.solid.tsx'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
-export interface RendererSuitePickerProps {}
 
 /** Suite-level choice UI; message renderer ids are intentionally not exposed here. */
 export default function RendererSuitePicker() {

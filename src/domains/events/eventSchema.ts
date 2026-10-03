@@ -1,7 +1,7 @@
 /**
  * EVT-01：CanonicalConversationEvent schema（方案书 §5.10）。
  *
- * append-only 事件模型 —— 纯域模块，零 React/零 store 依赖，node 可测。
+ * append-only 事件模型 —— 纯域模块，零框架/零 store 依赖，node 可测。
  *
  * 施工注意（§5.10）落点：
  * 1. 禁止以 content 哈希作为唯一 event identity → eventId 由 owner key + sequence

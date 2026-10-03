@@ -17,7 +17,13 @@ import type { InterfaceModeContribution } from '../../plugin-runtime/interface-m
  * React 面清零退役，本文件不再依赖 react / react-dom。）
  */
 
-/** 外部 store（subscribe/getSnapshot 快照语义）→ Solid 信号（快照引用等值）。 */
+/**
+ * 外部 store（subscribe/getSnapshot 快照语义）→ Solid 信号（快照引用等值）。
+ *
+ * ⚠️ #536：getSnapshot 必须返回**跨写入变更的值**（如内核 `getVersion()` 的通知计数）。
+ * 对 solidStoreKernel 系 store 传 `getState()` 会因引用恒定（就地改写同一裸对象）而
+ * 按引用判等失败，信号冻结在首帧、下游 memo 永不重算。
+ */
 export function createRegistrySignal<T>(
   store: { subscribe(listener: () => void): () => void },
   getSnapshot: () => T,

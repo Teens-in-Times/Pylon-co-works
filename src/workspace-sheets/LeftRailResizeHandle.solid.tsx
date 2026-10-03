@@ -70,7 +70,9 @@ export default function LeftRailResizeHandle() {
     const next = widthFromPointer(drag, event.clientX)
     endDrag(event.currentTarget)
     drag = null
-    useRightRailStore.getState().setWidth(next)
+    // #537：左栏手柄只准写左栏字段——此前误写 setWidth（右栏宽度，clamp 220/560），
+    // 左栏窄于 220 的拖拽被右栏 clamp 吞掉，右栏宽度还被意外改写。
+    useRightRailStore.getState().setLeftRailWidth(next)
   }
 
   const cancelDrag = (event: PointerEvent) => {
@@ -80,15 +82,16 @@ export default function LeftRailResizeHandle() {
   }
 
   const onKeyDown = (event: KeyboardEvent & { currentTarget: HTMLDivElement }) => {
+    // 键盘步进/边界与拖拽同写左栏字段（#537 同源缺陷：此前走右栏 setWidth）。
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault()
-      useRightRailStore.getState().setWidth(width() + (event.key === 'ArrowRight' ? 8 : -8))
+      useRightRailStore.getState().setLeftRailWidth(width() + (event.key === 'ArrowRight' ? 8 : -8))
     } else if (event.key === 'Home') {
       event.preventDefault()
-      useRightRailStore.getState().setWidth(LEFT_RAIL_MIN_WIDTH)
+      useRightRailStore.getState().setLeftRailWidth(LEFT_RAIL_MIN_WIDTH)
     } else if (event.key === 'End') {
       event.preventDefault()
-      useRightRailStore.getState().setWidth(LEFT_RAIL_MAX_WIDTH)
+      useRightRailStore.getState().setLeftRailWidth(LEFT_RAIL_MAX_WIDTH)
     }
   }
 
@@ -113,7 +116,7 @@ export default function LeftRailResizeHandle() {
   )
 }
 
-/** zustand rightRailStore → Solid 信号（宽度渲染值；落库走 getState().setWidth）。 */
+/** rightRailStore（Solid 内核）订阅 → 信号（宽度渲染值；落库走 getState().setLeftRailWidth）。 */
 function createSignalWidth(): () => number {
   const [value, setValue] = createSignal(useRightRailStore.getState().leftRailWidth)
   onCleanup(useRightRailStore.subscribe(state => setValue(state.leftRailWidth)))

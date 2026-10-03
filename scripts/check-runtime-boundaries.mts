@@ -6,6 +6,12 @@
  * reviewed) before the checker can pass.  CustomEvent names are stricter: a
  * pylon DOM event must be present in the typed registry.
  *
+ * #520 H 域纳管事件面：`@tauri-apps/api/event` 的 listen/emit 直连按
+ * DIRECT_INVOKE_ALLOWLIST 同款模式管辖（存量登记仅报告，新增须显式评审）。
+ * 视图层经 infrastructure/tauri/runtimeEventClient 传输层订阅（#520 S1-P1 收口，
+ * RuntimeSheetView/BrowserSheetView 直订边已清零，视图直订即违规、无遗留清单）；
+ * src/plugins/core/** 作为插件贡献面禁入 Tauri 事件 API（净规则，无豁免）。
+ *
  * 检查集合 = git 跟踪的 src 源码。工作区里未跟踪的在制品（个人草稿/实验目录）不属于
  * 仓库，跳过并汇总提示：否则本地草稿会把门禁顶红，仓库里又会留下指向不存在文件的
  * 白名单死条目。非 git 环境（导出源码包等）自动退回全量扫描，行为同旧版。
@@ -68,7 +74,7 @@ export const DIRECT_INVOKE_ALLOWLIST = new Set([
   // #351 根目录归类：三件随代码迁移自 src 根（原条目路径见 git 历史），直发面不变。
   'src/infrastructure/persistence/retentionPolicyRepository.ts',
   'src/infrastructure/persistence/userDataRepository.ts',
-  'src/infrastructure/persistence/workspaceEntityStore.ts',    // #177 选择器空态探测：一次性 session client 读 Agent 广告的 configOptions 后即弃，
+  'src/domains/workspace/workspaceEntityStore.ts',    // #177 选择器空态探测：一次性 session client 读 Agent 广告的 configOptions 后即弃，
   // 与 agentWorkbenchSessionCreation.ts 同形态（UI 侧装配 session client 直发）。
   'src/sheets/agent-workbench/AgentRendererSuiteWorkbench.tsx',
         'src/sheets/file/legacyFileProvider.ts',
@@ -80,9 +86,30 @@ export const DIRECT_INVOKE_ALLOWLIST = new Set([
   'src/infrastructure/acp/tauriTransport.ts',
 ])
 
+/**
+ * #520 H 域：`@tauri-apps/api/event` 直连（listen/emit）存量清单，仅报告。
+ * 视图层须经 infrastructure/tauri/runtimeEventClient 传输层订阅（直订即违规）；
+ * src/plugins/core/** 禁入（见 runRuntimeBoundaryCheck 净规则），不在本清单效力范围。
+ * 新增条目 = 显式评审动作；改道/收口后须删条。
+ */
+export const TAURI_EVENT_ALLOWLIST = new Set([
+  // 组合根与 bootstrap 装配（App 启动接线、装配事务监听）
+  'src/App.solid.tsx',
+  'src/app/bootstrap/appBootstrapTransaction.solid.ts',
+  // CLI 桥（Rust 锚点缝 ↔ CLI 运行时，与 hookBridgeDispatcher 同形态）
+  'src/cli/pylonCliBridge.ts',
+  // 事件传输层本体（canonical event feed 的 Tauri 订阅端）
+  'src/infrastructure/events/canonicalEventFeed.ts',
+  // 内核 hook 桥（同 DIRECT_INVOKE_ALLOWLIST 登记理由：基础设施级 IPC 缝）
+  'src/infrastructure/hooks/hookBridgeDispatcher.ts',
+  // #520 S1-P1 事件订阅收口正身：全仓唯一合法直连点，视图一律经此订阅
+  'src/infrastructure/tauri/runtimeEventClient.ts',
+  // 插件进程运行时服务（process 生命周期事件订阅）
+  'src/plugin-runtime/process/processRuntimeServices.ts',
+])
+
 /** Solid/plugin legacy imports; these are the next migration inventory. */
-export const GLOBAL_STORE_ALLOWLIST = new Set([
-  'src/plugins/core/browser/builtinBrowserCommands.ts',
+export const GLOBAL_STORE_ALLOWLIST = new Set([  'src/plugins/core/browser/builtinBrowserCommands.ts',
   'src/plugins/core/commandSet/builtinCommandExecutors.ts',
   'src/plugins/core/file/builtinFileCommands.ts',
   'src/plugins/core/renderer/builtinPresentationCommands.ts',
@@ -92,6 +119,8 @@ export const GLOBAL_STORE_ALLOWLIST = new Set([
   'src/plugins/core/shell/builtinShellCommands.ts',
   'src/plugins/product/builtinPylonAgentAdapters.ts',
   'src/renderers/solid-workbench/input/ControlCenter.solid.tsx',
+  // #520 C 域拆分随迁：直连 store 读取自 ControlCenter 迁入 createCcSources（清偿方向：注入）
+  'src/renderers/solid-workbench/input/createCcSources.ts',
 ])
 
 /**
@@ -102,6 +131,8 @@ export const GLOBAL_STORE_ALLOWLIST = new Set([
 export const RENDERER_CUSTOM_EVENT_ALLOWLIST = new Set([
   'src/renderers/solid-workbench/input/ControlCenter.solid.tsx',
   'src/renderers/solid-workbench/input/WorkbenchWidgets.solid.tsx',
+  // #520 C 域拆分随迁：workspace 选择器直发自 ControlCenter 迁入（清偿方向：semantic command）
+  'src/renderers/solid-workbench/input/CcWorkspacePicker.solid.tsx',
 ])
 
 /**
@@ -143,6 +174,16 @@ function hasDirectInvoke(source: string): boolean {
   // by browser/portable fallbacks.  Type-only Channel imports do not match.
   return /\b(?:import|export)\s*\{[^}]*\binvoke\b[^}]*\}\s*from\s*['"]@tauri-apps\/api\/core['"]/.test(source)
     || (/\bimport\s*\(\s*['"]@tauri-apps\/api\/core['"]\s*\)/.test(source) && /\binvoke\b/.test(source))
+}
+
+/** `@tauri-apps/api/event` 的 listen/emit 值导入（含 `listen as x` 改名与动态 import 包装）。 */
+export function hasDirectEventAccess(source: string): { listen: boolean; emit: boolean } {
+  if (!source.includes('@tauri-apps/api/event')) return { listen: false, emit: false }
+  const staticImport = (fn: 'listen' | 'emit'): boolean =>
+    new RegExp(`\\b(?:import|export)\\s*\\{[^}]*\\b${fn}\\b[^}]*\\}\\s*from\\s*['"]@tauri-apps/api/event['"]`).test(source)
+  const dynamicImport = (fn: 'listen' | 'emit'): boolean =>
+    /\bimport\s*\(\s*['"]@tauri-apps\/api\/event['"]\s*\)/.test(source) && new RegExp(`\\b${fn}\\b`).test(source)
+  return { listen: staticImport('listen') || dynamicImport('listen'), emit: staticImport('emit') || dynamicImport('emit') }
 }
 
 function hasGlobalStoreImport(path: string, source: string): boolean {
@@ -197,6 +238,18 @@ export async function runRuntimeBoundaryCheck(): Promise<{ violations: string[];
       if (DIRECT_INVOKE_ALLOWLIST.has(path)) reports.push(`${path}: direct invoke（legacy allowlist，仅报告）`)
       else violations.push(`${path}: direct invoke 未登记 allowlist`)
     }
+    // #520 H 域：@tauri-apps/api/event 纳管。core 禁入（净规则）；视图/域须经
+    // runtimeEventClient 传输层；其余存量直连按 TAURI_EVENT_ALLOWLIST 仅报告。
+    const eventAccess = hasDirectEventAccess(source)
+    if (eventAccess.listen || eventAccess.emit) {
+      if (path.startsWith('src/plugins/core/')) {
+        violations.push(`${path}: plugins/core 直连 @tauri-apps/api/event（${[eventAccess.listen ? 'listen' : '', eventAccess.emit ? 'emit' : ''].filter(Boolean).join('/')}）——插件贡献面禁入 Tauri 事件 API，须走插件 API 或传输层`)
+      } else if (TAURI_EVENT_ALLOWLIST.has(path)) {
+        reports.push(`${path}: direct tauri event listen/emit（legacy allowlist，仅报告）`)
+      } else {
+        violations.push(`${path}: direct tauri event listen/emit 未登记 allowlist（视图/域层须经 infrastructure/tauri/runtimeEventClient 订阅；基础设施缝按 TAURI_EVENT_ALLOWLIST 先例登记）`)
+      }
+    }
     if (hasGlobalStoreImport(path, source)) {
       if (GLOBAL_STORE_ALLOWLIST.has(path)) reports.push(`${path}: global store import（legacy allowlist，仅报告）`)
       else violations.push(`${path}: global store import 未登记 allowlist`)
@@ -222,4 +275,17 @@ if (result.violations.length > 0) {
   console.error(`运行时边界门禁失败：\n${result.violations.map(item => `- ${item}`).join('\n')}`)
   process.exit(1)
 }
-console.log(`运行时边界门禁通过：${result.reports.length} 条遗留白名单仅报告；无新增 invoke/store/CustomEvent 越界`)
+console.log(`运行时边界门禁通过：${result.reports.length} 条遗留白名单仅报告（invoke/store/tauri event）；无新增 invoke/store/tauri event/CustomEvent 越界`)
+
+// guard the guard：@tauri-apps/api/event 检测口径（#520 H 域）。
+import assert from 'node:assert/strict'
+{
+  assert.deepEqual(hasDirectEventAccess("import { listen } from '@tauri-apps/api/event'"), { listen: true, emit: false })
+  assert.deepEqual(hasDirectEventAccess("import { listen as tauriListen } from '@tauri-apps/api/event'"), { listen: true, emit: false })
+  assert.deepEqual(hasDirectEventAccess("import { emit } from '@tauri-apps/api/event'"), { listen: false, emit: true })
+  // 动态 import 包装（browser/portable 降级形态）同样命中。
+  assert.deepEqual(hasDirectEventAccess("const { listen } = await import('@tauri-apps/api/event')"), { listen: true, emit: false })
+  // 类型-only / 注释内字符串不命中。
+  assert.deepEqual(hasDirectEventAccess("import type { Event } from '@tauri-apps/api/event'"), { listen: false, emit: false })
+  assert.deepEqual(hasDirectEventAccess("import { invoke } from '@tauri-apps/api/core'"), { listen: false, emit: false })
+}

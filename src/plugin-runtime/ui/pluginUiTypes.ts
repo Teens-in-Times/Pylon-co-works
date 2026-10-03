@@ -20,8 +20,10 @@ export interface PluginUiRuntimeResolution {
 }
 
 /**
- * The mount function belongs to the plugin bundle. It may close over any React
- * version bundled by that plugin; the host never receives a React component.
+ * The mount function belongs to the plugin bundle. It declares its UI runtime
+ * via `runtime: { framework: 'solid', version: '1.9' }` (the regular form) and
+ * may close over any framework version bundled by that plugin; the host never
+ * receives a framework-bound component.
  */
 export interface PluginUiSurface {
   readonly id: string

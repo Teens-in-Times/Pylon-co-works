@@ -1,22 +1,17 @@
 /** @jsxImportSource solid-js */
-import { For, Index, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type JSX } from 'solid-js'
+import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type Accessor, type JSX } from 'solid-js'
 import {
-  resolveFallbackCommands,
-  filterCommandSuggestions,
   parseSlashCommand,
-  decorateSuggestions,
-  selectUserTier,
   type CommandSuggestion,
 } from '../../../domains/chat/commandRegistry.ts'
 import { subscribePluginCommands } from '../../../application/commandSetResolver.ts'
 import type { WorkbenchAttachment } from '../../../domains/workbench/workbenchCommandFacade.ts'
 import { createSessionUiSignal } from '../adapters/sessionUiSignal.solid.tsx'
 import { useSolidWorkbench } from '../SolidWorkbenchContext.solid.tsx'
-import type { SessionCommand } from '../../../domains/workbench/session/sessionSurface.ts'
-import { ASSIST_PREDICTION_CONSUMED_KEY, assistPredictionInstanceKey, assistPredictionText } from '../../../domains/workbench/session/assistPrediction.ts'
-import { findHistoryCompletion, mergeHistory, type PredictionCandidate } from '../../../infrastructure/prediction/inputPredictionState.ts'
-import { createPredictionScheduler, type InputPredictionProvider } from '../../../infrastructure/prediction/inputPredictionProvider.ts'
-import { cachedInputPredictionSettings } from '../../../domains/inputPrediction/inputPredictionSettingsCache.ts'
+import { ASSIST_PREDICTION_CONSUMED_KEY } from '../../../domains/workbench/session/assistPrediction.ts'
+import { createCommandPaletteModel, resolvePaletteKeyAction } from './createCommandPaletteModel.solid.tsx'
+import { createInputPredictionController } from './createInputPredictionController.solid.tsx'
+import type { InputPredictionProvider } from '../../../infrastructure/prediction/inputPredictionProvider.ts'
 
 export interface QueuedWorkbenchMessage {
   id: number
@@ -45,11 +40,6 @@ export interface SolidInputBarProps {
   } | undefined)
 }
 
-/** 命令面板的一行：命令项，或「全部/常用」分层切换项（切换项进环选，键盘可达）。 */
-type PaletteRow =
-  | { kind: 'command'; key: string; suggestion: CommandSuggestion }
-  | { kind: 'toggle'; key: string }
-
 export function SolidInputBar(props: SolidInputBarProps) {
   const workbench = useSolidWorkbench()
   const sessionId = () => workbench.input().sessionId
@@ -61,13 +51,9 @@ export function SolidInputBar(props: SolidInputBarProps) {
   const [historyIndex, setHistoryIndex] = createSessionUiSignal(workbench.sessionUi, sessionId, 'input-history-index', -1)
   const [attachments, setAttachments] = createSessionUiSignal<readonly WorkbenchAttachment[]>(workbench.sessionUi, sessionId, 'attachments', [])
   const [sendError, setSendError] = createSessionUiSignal(workbench.sessionUi, sessionId, 'input-error', '')
-  const [commandIndex, setCommandIndex] = createSignal(0)
   const [queueSendingSessions, setQueueSendingSessions] = createSignal<ReadonlySet<string>>(new Set())
-  const [dismissedPrediction, setDismissedPrediction] = createSignal<string | null>(null)
-  const [providerPrediction, setProviderPrediction] = createSignal<string | null>(null)
   // #394：原生预测的消费标记（per-session）——接受/拒绝后 ghost 与卡片同时收敛。
   const [consumedPrediction, setConsumedPrediction] = createSessionUiSignal(workbench.sessionUi, sessionId, ASSIST_PREDICTION_CONSUMED_KEY, '')
-  const predictionScheduler = props.predictionProvider ? createPredictionScheduler(props.predictionProvider) : null
   let textarea: HTMLTextAreaElement | undefined
   let inputBar: HTMLDivElement | undefined
   let composing = false
@@ -114,145 +100,33 @@ export function SolidInputBar(props: SolidInputBarProps) {
   })
   onMount(() => queueMicrotask(resizeInput))
 
+  // ── 命令面板模型（#520 拆出：过滤/分层/环选/键位判定，见 createCommandPaletteModel.solid.tsx）──
   const [commandRevision, setCommandRevision] = createSignal(0)
-  const [showAllCommands, setShowAllCommands] = createSignal(false)
-  const suggestions = createMemo(() => {
-    commandRevision()
-    const sessionCommands = runtime().document?.session?.commands ?? []
-    const source = sessionCommands.length > 0
-      ? sessionCommandSuggestions(sessionCommands)
-      : resolveFallbackCommands()
-    return filterCommandSuggestions(draft(), source)
-  })
-  const userSuggestions = createMemo(() => selectUserTier(suggestions()))
-  /** #329 分层：默认只列 user 级；内部/开发者命令折叠在「全部」里。
-   *  **不做「user 层没命中就放行全量」的例外**——那个条件太宽（敲 `/s` 就会漏出 11 条
-   *  skin 命令，正是本 issue 要治的「内部命令淹没日常命令」）。用户要找内部命令时，
-   *  面板底部的切换项就在环选里，一格键的距离。 */
-  const suggestionList = createMemo(() => showAllCommands() ? suggestions() : userSuggestions())
-  /** 「全部」里比默认层多出来的条数——按**实际隐藏量**算，不按命中量算：
-   *  否则默认层为空的查询会报出「含内部 N 条」但一条也没藏（#329 审查 P2）。 */
-  const hiddenInternalCount = createMemo(() => suggestions().length - suggestionList().length)
-  /** 面板行 = 命令项 + 一个「全部/常用」切换项（进环选，键盘可达）。 */
-  const paletteRows = createMemo<PaletteRow[]>(() => {
-    const rows: PaletteRow[] = suggestionList().map(suggestion => ({ kind: 'command', key: `cmd:${suggestion.cmd}`, suggestion }))
-    if (hiddenInternalCount() > 0 || showAllCommands()) rows.push({ kind: 'toggle', key: 'toggle-layer' })
-    return rows
-  })
-  const toggleCommandLayer = () => {
-    setShowAllCommands(current => !current)
-    setCommandIndex(0)
-  }
-  // 展开状态跟着这一次 `/` 输入走：草稿不再是斜杠命令就收回（否则展开会粘到整个应用
-  // 会话，「只看常用命令」的控件也随面板一起消失，用户再也收不回来）。
-  createEffect(() => {
-    if (!draft().trimStart().startsWith('/')) setShowAllCommands(false)
+  const palette = createCommandPaletteModel({
+    draft,
+    sessionCommands: () => runtime().document?.session?.commands ?? [],
+    commandRevision,
   })
   // 展开后列表可能高于面板：键盘选中的行必须可见（否则是「选中了但看不见」）。
   createEffect(() => {
-    const index = commandIndex()
+    const index = palette.activeIndex()
     if (!draft().trimStart().startsWith('/')) return
     const rows = inputBar?.querySelectorAll('.command-palette .cmd-item')
     rows?.[index]?.scrollIntoView({ block: 'nearest' })
   })
-  // 列表长度会随查询/分层切换变化：索引越界会让「回车」落到面板外（被当成普通消息发出）。
-  createEffect(() => {
-    if (commandIndex() >= paletteRows().length) setCommandIndex(0)
+  // ── 三源预测控制器（#520 拆出：history/native/llm 仲裁 + scheduler 接线）────────
+  const predictionController = createInputPredictionController({
+    sessionId,
+    runtime,
+    sessionSource: () => workbench.input().sessionSource ?? null,
+    draft,
+    history,
+    hasAttachments: () => attachments().length > 0,
+    hasActiveSuggestions: () => palette.visibleSuggestions().length > 0,
+    consumed: consumedPrediction,
+    consume: key => setConsumedPrediction(key),
+    provider: props.predictionProvider,
   })
-  /** #395：文档按 **provider source** 建键（`WorkbenchDocument.sessionId` 即 source，见
-   *  `agentWorkbenchSession.ts` 的 `binding.source`），而 `sessionId()` 是身份域的
-   *  `Session.id`——判「这份文档是不是本会话的」必须用 source 比。此前两者混比导致判据恒假：
-   *  原生预测（ghost）+ 本地预测的 durable 上下文同时被丢弃。宿主未提供 source 时不收紧。 */
-  const sessionDocument = createMemo(() => {
-    const document = runtime().document
-    if (!document) return undefined
-    const source = workbench.input().sessionSource ?? null
-    return source === null || document.sessionId === source ? document : undefined
-  })
-  const durableHistory = createMemo(() => {
-    const document = sessionDocument()
-    if (!document) return [] as readonly string[]
-    return document.messages
-      .filter(message => message.role === 'user')
-      .map(message => message.content)
-      .filter((value): value is string => typeof value === 'string')
-  })
-  const durableMessages = createMemo(() => {
-    const document = sessionDocument()
-    if (!document) return [] as readonly { role: 'user' | 'assistant'; content: string }[]
-    return document.messages
-      .filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
-      .map(message => ({ role: message.role as 'user' | 'assistant', content: message.content as string }))
-  })
-  /** #394：Agent 推送的原生预测（一次性实例）。空文本帧不算预测——Peri 用 `prediction_ready`
-   *  的 `set_title` 动作发会话标题，此前那类帧被渲成一张无字空卡。已消费的实例不再呈现。 */
-  const nativePrediction = createMemo(() => {
-    const prediction = sessionDocument()?.assist.prediction
-    const text = assistPredictionText(prediction)
-    if (!text) return null
-    const key = assistPredictionInstanceKey(prediction)
-    if (!key || key === consumedPrediction()) return null
-    return { key, text }
-  })
-  const prediction = createMemo<PredictionCandidate | null>(() => {
-    const value = draft()
-    if (suggestionList().length > 0 || runtime().generating || attachments().length > 0) return null
-    const historyCompletion = findHistoryCompletion(value, mergeHistory(durableHistory(), history()))
-    if (historyCompletion) {
-      const key = `history:${value}:${historyCompletion}`
-      return dismissedPrediction() === key ? null : { text: historyCompletion, source: 'history' }
-    }
-    // 原生源优先（#394）：空草稿给全文；已输入部分是它的前缀时续显剩余（与代码补全同形）。
-    // 分歧分支这里只返回 null——消费是副作用，交给下面的 effect，memo 保持纯净。
-    const native = nativePrediction()
-    if (native) {
-      if (!native.text.startsWith(value)) return null
-      return native.text.length > value.length
-        ? { text: native.text, source: 'native', instanceKey: native.key }
-        : null
-    }
-    if (value) return null
-    const predictionMode = cachedInputPredictionSettings().mode
-    if (predictionMode === 'off' || predictionMode === 'standalone') return null
-    const valueFromProvider = providerPrediction()
-    if (!valueFromProvider) return null
-    const key = `llm:${valueFromProvider}`
-    return dismissedPrediction() === key ? null : { text: valueFromProvider, source: 'llm' }
-  })
-  // #394：输入分歧即拒绝（代码补全语义）——草稿不再以原生预测为前缀就消费掉它，
-  // 于是它不会在草稿被删回前缀时复活。写 sessionUi 是副作用，必须放 effect。
-  createEffect(() => {
-    const native = nativePrediction()
-    if (!native) return
-    const value = draft()
-    if (!value || native.text.startsWith(value)) return
-    setConsumedPrediction(native.key)
-  })
-  createEffect(() => {
-    const scheduler = predictionScheduler
-    const id = sessionId()
-    const value = draft()
-    const generating = runtime().generating
-    const hasCommands = suggestionList().length > 0
-    const hasAttachments = attachments().length > 0
-    // #394：原生预测在场时不再发本地请求（原生优先；`standalone` 模式表「强制本地」，故排除）。
-    const nativeActive = nativePrediction() !== null && cachedInputPredictionSettings().mode !== 'standalone'
-    if (!scheduler || !id || value || generating || hasCommands || hasAttachments || nativeActive) {
-      scheduler?.cancel()
-      setProviderPrediction(null)
-      return
-    }
-    const generation = runtime().generation
-    const historyValues = mergeHistory(durableHistory(), history())
-    const messages = durableMessages()
-    setProviderPrediction(null)
-    scheduler.schedule({ sessionId: id, generation, draft: value, history: historyValues, messages }, result => {
-      if (sessionId() !== id || runtime().generation !== generation || draft() !== '') return
-      const normalized = result?.trim()
-      setProviderPrediction(normalized || null)
-    })
-  })
-  onCleanup(() => predictionScheduler?.dispose())
   // ★ #266 刀9：输入形态固定为命令行（`inputVariant` / `inputMode` 两字段已删除）。
   // Placeholder copy is deferred to the send/indicator work; keep the
   // textarea free of a standalone instruction line.
@@ -363,7 +237,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
     }
     if (!id) return false
     const ui = workbench.sessionUi.capture(id)
-    const shouldRunSlashCommand = normalized.startsWith('/') && suggestionList().length > 0
+    const shouldRunSlashCommand = normalized.startsWith('/') && palette.visibleSuggestions().length > 0
     let clearedDraft = false
     let clearedAttachments = false
     if (clearComposer) {
@@ -391,7 +265,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
       }
       recordHistory(normalized, ui)
       ui.set('input-error', '')
-      if (sessionId() === id) setCommandIndex(0)
+      if (sessionId() === id) palette.resetIndex()
       return true
     } catch (error) {
       if (clearComposer && clearedDraft && ui.get('draft', '') === '') {
@@ -506,53 +380,36 @@ export function SolidInputBar(props: SolidInputBarProps) {
       void cancel()
       return
     }
-    if (paletteRows().length > 0) {
-      if (event.key === 'Enter' && !event.shiftKey && !composing) {
-        const row = paletteRows()[commandIndex()]
-        const parsed = parseSlashCommand(draft())
-        // 用户已经把某条命令名完整敲出来（可能是被折叠的 internal 命令）时，Enter 该发给它，
-        // 而不是先被切换项吃掉——否则「直接输入命令名使用」要多按一次（#329 审查）。
-        const exact = parsed
-          ? suggestions().find(item => item.cmd.toLowerCase() === parsed.name.toLowerCase())
-          : undefined
-        if (row?.kind === 'toggle' && !exact) {
-          event.preventDefault()
-          toggleCommandLayer()
-          return
-        }
-        if (row?.kind === 'command' && !exact && parsed?.name.toLowerCase() !== row.suggestion.cmd.toLowerCase()) {
-          event.preventDefault()
-          // 中文名（`/模型 deepseek`）永远走这条补全路径，必须把已输入参数带过去——
-          // 否则用户敲的参数会被提示串顶掉，且不可撤销（#327）。
-          applySuggestion(row.suggestion, parsed?.args)
-          return
-        }
+    // 命令面板键位（#520：判定收敛进 createCommandPaletteModel，纯函数可单测）。
+    const paletteAction = resolvePaletteKeyAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      composing,
+      index: palette.activeIndex(),
+      rows: palette.rows(),
+      suggestions: palette.suggestions(),
+      draft: draft(),
+    })
+    if (paletteAction) {
+      event.preventDefault()
+      if (paletteAction.type === 'toggle-layer') {
+        palette.toggleLayer()
+      } else if (paletteAction.type === 'apply') {
+        // 中文命令的已输入参数由判定层带回（#327），这里只负责落草稿与聚焦。
+        applySuggestion(paletteAction.suggestion, paletteAction.args)
+      } else if (paletteAction.type === 'move') {
+        palette.setIndex(paletteAction.index)
       }
-      if (event.key === 'Tab') {
-        event.preventDefault()
-        const row = paletteRows()[commandIndex()]
-        if (row?.kind === 'command') applySuggestion(row.suggestion)
-        return
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault()
-        setCommandIndex(index => (index + 1) % paletteRows().length)
-        return
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        setCommandIndex(index => Math.max(index - 1, 0))
-        return
-      }
+      return
     }
-    const currentPrediction = prediction()
+    const currentPrediction = predictionController.prediction()
     const atEnd = !textarea || (textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length)
     if (currentPrediction && (event.key === 'Tab' || (event.key === 'ArrowRight' && atEnd))) {
       event.preventDefault()
       setDraft(currentPrediction.text)
       // #394：接受＝消费该预测实例（卡片与 ghost 同时收敛，不再横在会话流里）。
       if (currentPrediction.instanceKey) setConsumedPrediction(currentPrediction.instanceKey)
-      setDismissedPrediction(null)
+      predictionController.clearDismissed()
       setHistoryIndex(-1)
       textarea?.focus()
       return
@@ -561,15 +418,13 @@ export function SolidInputBar(props: SolidInputBarProps) {
     if (currentPrediction && event.key === 'Backspace' && !draft()) {
       event.preventDefault()
       if (currentPrediction.instanceKey) setConsumedPrediction(currentPrediction.instanceKey)
-      setDismissedPrediction(currentPrediction.source === 'history' ? `history:${draft()}:${currentPrediction.text}` : `llm:${currentPrediction.text}`)
+      predictionController.dismiss(currentPrediction, draft())
       return
     }
     if (currentPrediction && event.key === 'Escape') {
       event.preventDefault()
       if (currentPrediction.instanceKey) setConsumedPrediction(currentPrediction.instanceKey)
-      setDismissedPrediction(currentPrediction.source === 'history'
-        ? `history:${draft()}:${currentPrediction.text}`
-        : `llm:${currentPrediction.text}`)
+      predictionController.dismiss(currentPrediction, draft())
       return
     }
     // 空草稿上按 Enter = 采纳并直接发出（ghost 与 llm 同形，键位语义保持一致）。
@@ -578,7 +433,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
       event.preventDefault()
       setDraft(currentPrediction.text)
       if (currentPrediction.instanceKey) setConsumedPrediction(currentPrediction.instanceKey)
-      setDismissedPrediction(null)
+      predictionController.clearDismissed()
       void sendText(currentPrediction.text)
       return
     }
@@ -605,7 +460,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
   const applySuggestion = (suggestion: CommandSuggestion, typedArgs?: string) => {
     const args = typedArgs?.trim() || suggestion.args.trim()
     setDraft(`${suggestion.cmd}${args ? ` ${args}` : ''} `)
-    setCommandIndex(0)
+    palette.resetIndex()
     textarea?.focus()
   }
 
@@ -627,24 +482,24 @@ export function SolidInputBar(props: SolidInputBarProps) {
       <Show when={workbench.input().bindingHint}>{hint => (
         <div class={`input-binding-status${hint().error ? ' input-binding-status--error' : ''}`} role="status">{hint().text}</div>
       )}</Show>
-      <Show when={!emptyState() && paletteRows().length > 0}>
+      <Show when={!emptyState() && palette.rows().length > 0}>
         <div class="command-palette" role="listbox" aria-label="命令建议">
-          <For each={paletteRows()}>{(row, index) => (
+          <For each={palette.rows()}>{(row, index) => (
             row.kind === 'toggle'
               ? <button
                   type="button"
                   role="option"
-                  aria-label={showAllCommands() ? '只看常用命令' : `显示全部命令，含内部 ${hiddenInternalCount()} 条`}
-                  class={`cmd-item cmd-toggle${index() === commandIndex() ? ' active' : ''}`}
-                  onClick={toggleCommandLayer}
+                  aria-label={palette.showAll() ? '只看常用命令' : `显示全部命令，含内部 ${palette.hiddenInternalCount()} 条`}
+                  class={`cmd-item cmd-toggle${index() === palette.activeIndex() ? ' active' : ''}`}
+                  onClick={palette.toggleLayer}
                 >
-                  <span class="cmd-name">{showAllCommands() ? '只看常用命令' : `显示全部命令（含内部 ${hiddenInternalCount()} 条）`}</span>
+                  <span class="cmd-name">{palette.showAll() ? '只看常用命令' : `显示全部命令（含内部 ${palette.hiddenInternalCount()} 条）`}</span>
                 </button>
               : <button
                   type="button"
                   role="option"
-                  aria-selected={index() === commandIndex()}
-                  class={`cmd-item${index() === commandIndex() ? ' active' : ''}`}
+                  aria-selected={index() === palette.activeIndex()}
+                  class={`cmd-item${index() === palette.activeIndex() ? ' active' : ''}`}
                   onClick={() => pickSuggestion(row.suggestion)}
                 >
                   <span class="cmd-name">{row.suggestion.cmd}{row.suggestion.args}</span>
@@ -698,7 +553,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
       <div class="input-row">
         <span class="cli-prefix">❯</span>
         <div class="input-editor-stack">
-          <Show when={prediction()}>{candidate => (
+          <Show when={predictionController.prediction()}>{candidate => (
             <div class="input-ghost-suggestion" aria-hidden="true" data-prediction-source={candidate().source}>
               <span class="input-ghost-prefix">{draft()}</span><span>{candidate().text.slice(draft().length)}</span>
             </div>
@@ -710,8 +565,8 @@ export function SolidInputBar(props: SolidInputBarProps) {
             value={draft()}
             onInput={event => {
               setDraft(event.currentTarget.value)
-              setDismissedPrediction(null)
-              setCommandIndex(0)
+              predictionController.clearDismissed()
+              palette.resetIndex()
               if (historyIndex() >= 0) setHistoryIndex(-1)
               resizeInput()
             }}
@@ -727,19 +582,6 @@ export function SolidInputBar(props: SolidInputBarProps) {
       <Show when={emptyState()?.after}>{content => <div class="input-empty-after">{content()}</div>}</Show>
     </div>
   )
-}
-
-/** 会话上报命令 → 建议项。宿主注册表里的元数据（检索词 + 可见性档）按命令名并回：
- *  只靠上报字段，中文界面下 `/新` 搜不到英文命令名（#327）、分层也落不了地（#329）。
- *  agent 主动宣告的命令默认按 user 级呈现——那是它要用户用的命令。 */
-function sessionCommandSuggestions(commands: readonly SessionCommand[]): readonly CommandSuggestion[] {
-  return decorateSuggestions(commands
-    .filter(command => command.availability !== false && command.availability !== 'unavailable')
-    .map(command => ({
-      cmd: command.name.startsWith('/') ? command.name : `/${command.name}`,
-      args: command.inputHint ?? '',
-      info: command.description ?? command.capability ?? '会话命令',
-    })), 'user')
 }
 
 function sameAttachments(left: readonly WorkbenchAttachment[], right: readonly WorkbenchAttachment[]): boolean {

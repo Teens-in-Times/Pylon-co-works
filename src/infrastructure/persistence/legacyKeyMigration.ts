@@ -45,13 +45,14 @@ function readJson(storage: Pick<Storage, 'getItem'>, key: string): unknown {
 }
 
 /** Reads all legacy layout keys once, with deterministic precedence and field-level fallback. */
-export function readLegacyLayoutSnapshot(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): LegacyLayoutSnapshot {
+export function readLegacyLayoutSnapshot(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage, options: { ignoreMarker?: boolean } = {}): LegacyLayoutSnapshot {
   if (!storage) return {}
   // Once the marker is present, the versioned owners are authoritative.  Do
   // not let a stale legacy key re-enter the state during a later HMR/module
-  // evaluation or after a partial storage restore.
+  // evaluation or after a partial storage restore.  Exception: #538 升级缝
+  // （workspaceStore hydrate 检测 v3 键缺席）需要绕过标记补读一次，见调用点。
   try {
-    if (storage.getItem(PERSISTENCE_MIGRATION_MARKER) === '1') return {}
+    if (!options.ignoreMarker && storage.getItem(PERSISTENCE_MIGRATION_MARKER) === '1') return {}
   } catch { /* storage may be readable only through individual keys */ }
 
   const railValue = readJson(storage, 'pylon-right-rail') as { state?: { width?: unknown } } | undefined

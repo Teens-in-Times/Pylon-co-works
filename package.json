@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "bun run build:wasm && tsc -b && vite build",
-    "check:solid": "tsc -p tsconfig.solid.json && node scripts/check-solid-workbench-boundaries.mjs && bun scripts/check-workbench-theme-contract.mts && bun scripts/check-product-contribution-boundary.mts && bun scripts/check-renderer-architecture.mts && bun scripts/check-layer-boundaries.mts && bun scripts/check-runtime-boundaries.mts && bun scripts/check-css-var-consumption.mts && bun scripts/check-theme-field-consistency.mts && bun scripts/check-plugin-manifests.mts && bun scripts/check-context-panel-wiring.mts && bun scripts/check-hook-anchor-parity.mts",
+    "check:solid": "tsc -p tsconfig.solid.json && node scripts/check-solid-workbench-boundaries.mjs && bun scripts/check-workbench-theme-contract.mts && bun scripts/check-product-contribution-boundary.mts && bun scripts/check-renderer-architecture.mts && bun scripts/check-layer-boundaries.mts && bun scripts/check-import-cycles.mts && bun scripts/check-runtime-boundaries.mts && bun scripts/check-css-var-consumption.mts && bun scripts/check-theme-field-consistency.mts && bun scripts/check-plugin-manifests.mts && bun scripts/check-context-panel-wiring.mts && bun scripts/check-hook-anchor-parity.mts",
     "check:boundaries": "bun scripts/check-runtime-boundaries.mts",
     "check:maintenance": "bun scripts/audit-maintenance.mts",
     "build:solid-smoke": "vite build --config vite.solid-smoke.config.ts && node scripts/check-solid-smoke-build.mjs",

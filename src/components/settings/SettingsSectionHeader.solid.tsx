@@ -17,7 +17,7 @@ const DENSITY_LABELS: Readonly<Record<SettingsDensity, string>> = {
   all: '全部',
 }
 
-export interface SettingsSectionHeaderProps {
+interface SettingsSectionHeaderProps {
   section: SettingsSectionId
   density: SettingsDensity
   onDensity: (density: SettingsDensity) => void

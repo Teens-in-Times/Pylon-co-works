@@ -12,7 +12,7 @@
  * - 禁止 malformed event 直接跳过且不落 raw → malformed/unknown 恒产出
  *   `eventType: 'unknown'` 的 canonical 事件，`rawPayload` 恒为原始 wire（§5.10 原则 5）。
  *
- * 纯域模块：仅依赖 EVT-01 eventSchema（`./eventSchema`），零 React / 零 store。
+ * 纯域模块：仅依赖 EVT-01 eventSchema（`./eventSchema`），零框架 / 零 store。
  *
  * 工具 identity 解析顺序（单一路径，与既有 replay 路径 `replayToolId` 一致，保序）：
  *   toolCallId  root → content → _meta（root 优先——Peri 工具 id 在 update 根）；

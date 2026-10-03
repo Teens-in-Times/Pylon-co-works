@@ -3,6 +3,7 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-j
 import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
 import { useThemeStore } from '../domains/theme/themeStore'
 import { resolveSpinnerFrames, resolveSpinnerMarker } from '../domains/chat/spinnerFrames'
+import { Spinner, SpinnerSummary } from './ui/Spinner.solid.tsx'
 import { resolveConnectorColor, type ToolConnectorStatus } from '../domains/tool/toolPresentation'
 import { resolveToolIndicatorAssetForTone } from '../domains/chat/toolIndicatorAssets'
 import { toCssBackgroundImage } from '../infrastructure/skin/backgroundImage'
@@ -323,25 +324,20 @@ function PvSpinner() {
   const frames = createMemo(() => resolveSpinnerFrames(preset(), customFrames()))
   // P52 D4：React GenerationFooter 已退役——预览用同一 resolveSpinnerMarker
   // 呈现三终态标记（终态文案契约由 Solid footer 测试锁定，此处仅视觉预览）。
+  // #520 K 域：spinner/summary DOM 由 ui/Spinner 统一承载（本组件只做取数与标记解析）。
   const markers = [
-    { reason: 'done' as const, mode: doneMode, marker: doneMarker, label: '生成完毕', cls: 'term-summary-done' },
-    { reason: 'cancelled' as const, mode: cancelledMode, marker: cancelledMarker, label: '已停止', cls: 'term-summary-cancelled' },
-    { reason: 'error' as const, mode: errorMode, marker: errorMarker, label: '处理失败', cls: 'term-summary-error' },
+    { reason: 'done', mode: doneMode, marker: doneMarker, label: '生成完毕' },
+    { reason: 'cancelled', mode: cancelledMode, marker: cancelledMarker, label: '已停止' },
+    { reason: 'error', mode: errorMode, marker: errorMarker, label: '处理失败' },
   ]
   return <>
-    <div class="term-spinner-row">
-      <div class="term-spinner" data-activity="active">
-        <span class="spinner-frame" style={{ 'font-size': `${spinnerSize()}px` }}>{frames()[0]}</span>
-        <span class="spinner-meta">(<span>3s</span>)</span>
-      </div>
-    </div>
+    <Spinner frame={frames()[0]} size={spinnerSize()}>
+      <span class="spinner-meta">(<span>3s</span>)</span>
+    </Spinner>
     <For each={markers}>{item => (
-      <div class={`term-summary ${item.cls}`}>
-        <span class="term-summary-frame" style={{ 'font-size': `${spinnerSize()}px` }}>
-          {resolveSpinnerMarker(frames(), item.mode(), item.marker())}
-        </span>
-        <span>{item.label} 3s</span>
-      </div>
+      <SpinnerSummary reason={item.reason} marker={resolveSpinnerMarker(frames(), item.mode(), item.marker())} size={spinnerSize()}>
+        {item.label} 3s
+      </SpinnerSummary>
     )}</For>
     <span class="term-preview-spinner-markers" aria-hidden="true">
       {doneMode()}:{doneMarker()} {cancelledMode()}:{cancelledMarker()} {errorMode()}:{errorMarker()}

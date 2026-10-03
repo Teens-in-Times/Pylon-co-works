@@ -18,7 +18,7 @@ import { buildDemoAgents, buildDemoMessages, buildDemoPermissionRequest, buildDe
 import { buildVisualQaMessages, buildVisualQaSessions, buildVisualQaWorkspaces } from './visualQaData.ts'
 import { createSheetState } from '../domains/workspace/sheetState.ts'
 import type { AgentStatus } from '../contracts/agentTypes.ts'
-import { useWorkspaceEntityStore } from '../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../domains/workspace/workspaceEntityStore.ts'
 import { serializeWorkspaces, WORKSPACE_STORAGE_KEY } from '../domains/workspace/workspaceEntities.ts'
 import { useInterfaceModeStore } from '../domains/interface/interfaceModeStore.ts'
 

@@ -10,7 +10,7 @@ import {
   persistMergingUnresolved,
   updateIdentityCacheMeta,
 } from './identityPersistence.ts'
-import { userDataRepository } from '../../infrastructure/persistence/identityBackendSync.ts'
+import { identityBackendSync } from './identityBackendSyncPort.ts'
 import { DEFAULT_PROFILES, type SessionHydrationState } from './identityTypes.ts'
 import { bumpIdentityMutationSeq, currentIdentityMutationSeq, ownerHintsFromSheetStates, type IdentityStoreAccessor, type IdentityStoreState } from './identityStoreShape.ts'
 
@@ -56,6 +56,7 @@ export function createProfileActions(accessor: IdentityStoreAccessor): Pick<Iden
       // I14-W7：Tauri 模式删除走后端原子事务（fallback/重绑定/activeProfileId 单事务，
       // 见 user_data.rs delete_profile），成功后从后端重读权威状态（内存/localStorage/
       // adapter baseline 同步）；失败可见（reportRuntimeError），状态不变。
+      const userDataRepository = identityBackendSync().userDataRepository
       if (userDataRepository) {
         try {
           await userDataRepository.deleteProfile(id)
@@ -129,6 +130,7 @@ export function createProfileActions(accessor: IdentityStoreAccessor): Pick<Iden
       // I14-W6：Tauri 模式以后端 versioned store 读回为权威源；后端明确无行时才从
       // 本地缓存做 CAS=0 冷启动导入，读取失败则只读降级。seq 守卫：hydrate 期间发生 mutation →
       // 读回丢弃（旧 response 不覆盖新 mutation）。
+      const userDataRepository = identityBackendSync().userDataRepository
       if (hasBackend() && userDataRepository) {
         const startSeq = currentIdentityMutationSeq()
         try {

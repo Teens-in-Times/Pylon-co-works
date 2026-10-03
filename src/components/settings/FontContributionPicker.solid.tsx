@@ -10,7 +10,7 @@ import { resolvePluginSettingOptions } from '../../plugin-runtime/settings/plugi
 import type { RegistryEntry } from '../../plugin-runtime/registry/types.ts'
 import type { PluginSettingOptionsContribution } from '../../plugin-runtime/settings/pluginSettingsTypes.ts'
 
-export interface FontContributionPickerProps {
+interface FontContributionPickerProps {
   value: string
   role: FontRole
   ariaLabel: string

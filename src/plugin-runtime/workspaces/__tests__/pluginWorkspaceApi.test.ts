@@ -5,7 +5,6 @@ import {
   serializeSheetStateV2,
   type PersistedSheetState,
 } from '../../../domains/workspace/sheetPersistence'
-import { DEFAULT_SHEET_LAYOUT } from '../../../domains/workspace/sheetPersistence'
 import { resolveWorkspace } from '../workspaceRegistry'
 import type { WorkspaceTypeDefinition } from '../workspaceTypes'
 import { TestPluginRuntime as PluginRuntime } from '../../testing/pluginRuntimeHarness.ts'
@@ -79,7 +78,7 @@ describe('PluginWorkspaceApi', () => {
       sheet: { kind, title: 'Dynamic Sheet', state: { count: 2 } },
     })
     const persisted: PersistedSheetState = { ...opened, agentStates: {} }
-    const serialized = serializeSheetStateV2(persisted, DEFAULT_SHEET_LAYOUT)
+    const serialized = serializeSheetStateV2(persisted)
     const restored = parseSheetStateV2(serialized)
 
     expect(opened.sheets).toHaveLength(1)

@@ -15,7 +15,7 @@
  * - 聚合后的 identity = incoming ?? last（与 live streamingIdentity 一致）；
  * - 跨角色（assistant ↔ reasoning ↔ tool ↔ user）→ 新建消息。
  *
- * 纯函数域模块：零 React / 零 store。
+ * 纯函数域模块：零框架 / 零 store。
  */
 import type { OptionalChatEventIdentity } from '../../infrastructure/acp/chatContracts.ts'
 

@@ -3,8 +3,7 @@ import { LucideIcon } from '../components/LucideIcon.solid.tsx'
 import { type LaunchIconKey } from './launchIconKeys.ts'
 
 /**
- * 稳定图标键 → 图标的唯一映射（Solid 版，#279 第 3 梯队；键表与 launchIcons.tsx 逐键
- * 键表单源见 ./launchIconKeys.ts（两侧编译期穷举，防漂移）。
+ * 稳定图标键 → 图标的唯一映射（Solid 终态；键表 ./launchIconKeys.ts 编译期穷举，防漂移）。
  *
  * 由 **Workspace launch 项**（SheetLauncher.solid）消费；未知键安全降级为通用图标。
  */

@@ -7,6 +7,7 @@
  * #439：canonical sink 自写轨与注入缝已退役，feed 只读消费 committed 行。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushTask } from '../../test/solidTestHelpers.ts'
 
 const listeners = new Map<string, (payload: unknown) => void>()
 vi.mock('@tauri-apps/api/event', () => ({
@@ -161,14 +162,14 @@ describe('canonicalEventFeed（P52 D2）', () => {
   it('pylon:user 广播兜底走同一 acceptFrame 入口', async () => {
     createCanonicalEventFeed()
     // 广播注册是异步的（listen promise）；等待一拍
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushTask()
     const handler = listeners.get('pylon:user')
     expect(handler).toBeDefined()
   })
 
   it('#310：pylon:update 广播兜底把助手正文帧送进 plugin bus（未注册 Channel 的发送路径）', async () => {
     const feed = createCanonicalEventFeed()
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushTask()
     const handler = listeners.get('pylon:update')
     expect(handler).toBeDefined()
     // 已 seed 到 2：sequence 3 不是 gap，走正常 publish 路径
@@ -179,7 +180,7 @@ describe('canonicalEventFeed（P52 D2）', () => {
     // 后端对未注册 per-source Channel 的来源改走窗口广播（与 Channel 互斥）：
     // 这一帧此前没有任何订阅者，实时投影整段收不到助手正文。
     handler!({ source: SOURCE, canonicalEvent: canonicalEvent(3, 'assistant.text.delta', 'a') })
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushTask()
 
     expect(published.map(event => event.sequence)).toEqual([3])
   })

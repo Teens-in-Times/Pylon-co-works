@@ -7,7 +7,6 @@ import { PhysicalSize } from '@tauri-apps/api/dpi'
 import { clearWindowSize } from '../../infrastructure/persistence/windowSizePersistence'
 import { Row } from './themeFieldRenderer.solid.tsx'
 
-export interface WindowPanelProps {}
 
 function WindowSizeRow() {
   const [size, setSize] = createSignal('—')

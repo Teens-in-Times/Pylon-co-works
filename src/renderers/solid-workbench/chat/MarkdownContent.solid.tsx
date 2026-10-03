@@ -15,6 +15,22 @@ import { MathRender } from './mathRender.solid.tsx'
 import { splitOpenCodeFenceTail, splitStreamingMarkdownBlockEnds } from '../../../infrastructure/compute/streamingCompute.ts'
 import { noteStreamingRowSet } from './streamingRowCounters.ts'
 
+/**
+ * settleMotion / typing 五跳透传链（#520 K 域集中登记——各跳签名就地保留，此处只画地图）：
+ *
+ *   MarkdownContent（:28 props.settleMotion/typewriter/streaming）
+ *     → StreamingMarkdownBlocks（:121 owns `typing` 信号；settleMotion 驱动行尾块
+ *       pulseSettle 结算动画）逐行下发 streaming/settleMotion/typing（:193-195）
+ *       → StreamingMarkdownBlock（:240 块级分发；行 settling/typing 透传）
+ *         → MarkdownSegment（:303 typing 光标条件解析；settling→data-md-settle）
+ *           → MarkdownNode（:352 typingTail 光标挂叶尾 text/math；settling→pre/
+ *             blockquote/table/ul-ol-h1-6 的 data-md-settle，:446 Dynamic 处）
+ *             → MarkdownChildren（typingTail 只挂在最后一个内容子节点上继续下传）。
+ *
+ * 语义：`typing` = 流式增长尾的光标可见性（仅尾块尾节点亮）；`settleMotion` =
+ * 行/块从增长态转稳定态的一次性结算动效（Reasoning/只读视图可整体关闭）。
+ */
+
 export interface MarkdownContentProps {
   text: string
   streaming?: boolean

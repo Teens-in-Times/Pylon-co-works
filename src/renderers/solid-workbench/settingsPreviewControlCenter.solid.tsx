@@ -2,15 +2,15 @@
 /**
  * settingsPreviewControlCenter — 设置页中控预览的 Solid 挂载点（P52 D4）。
  *
- * 由 settingsPreviewControlCenterLoader 经 import.meta.glob 加载（React 宿主
- * 不直接 import 本文件，保持双框架类型隔离）。数据来自 preview fixture
+ * 由 settingsPreviewControlCenterLoader 经 import.meta.glob 加载（宿主
+ * 不直接 import 本文件，保持加载缝类型隔离）。数据来自 preview fixture
  * 服务（与 RendererSettingsPreview 同源）；主题由宿主经 setTheme 同步。
  */
 import { render } from 'solid-js/web'
 import { createSignal } from 'solid-js'
 import { SolidWorkbenchContext } from './SolidWorkbenchContext.solid.tsx'
 import { SolidControlCenter } from './input/ControlCenter.solid.tsx'
-import { createPreviewWorkbenchServices } from './__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from './preview/previewWorkbenchServices.ts'
 
 export function mountSettingsPreviewControlCenter(host: HTMLElement) {
   const services = createPreviewWorkbenchServices()

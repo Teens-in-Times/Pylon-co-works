@@ -1,11 +1,10 @@
 /**
- * 测试夹具自检（阶段 0）：MemoryStorage / FakeInvoke / FakeEventBus 行为验证。
+ * 测试夹具自检（阶段 0）：MemoryStorage / FakeInvoke 行为验证。
  * 夹具是后续行为回归测试的基础，先钉死其契约。
  */
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from './memoryStorage'
 import { FakeInvoke } from './fakeInvoke'
-import { FakeEventBus } from './fakeEventBus'
 
 describe('MemoryStorage', () => {
   it('读写删与 dump 快照一致', () => {
@@ -76,35 +75,5 @@ describe('FakeInvoke', () => {
       new Promise<boolean>(resolve => setTimeout(() => resolve(false), 30)),
     ])
     expect(settled).toBe(false)
-  })
-})
-
-describe('FakeEventBus', () => {
-  it('listen/emit/unlisten 生命周期', async () => {
-    const bus = new FakeEventBus()
-    const received: unknown[] = []
-    const unlisten = await bus.listen('pylon:test', payload => received.push(payload))
-    bus.emit('pylon:test', 'a')
-    unlisten()
-    bus.emit('pylon:test', 'b')
-    expect(received).toEqual(['a'])
-    expect(bus.handlerCount('pylon:test')).toBe(0)
-  })
-
-  it('failNext 使下一次 listen reject，随后恢复', async () => {
-    const bus = new FakeEventBus()
-    bus.failNext('pylon:fail')
-    await expect(bus.listen('pylon:fail', () => {})).rejects.toThrowError('Failed to register listener')
-    await expect(bus.listen('pylon:fail', () => {})).resolves.toBeTypeOf('function')
-  })
-
-  it('构造期 failEvents 一次性生效（部分注册失败注入）', async () => {
-    const bus = new FakeEventBus({ failEvents: ['pylon:a'] })
-    const results = await Promise.allSettled([
-      bus.listen('pylon:a', () => {}),
-      bus.listen('pylon:b', () => {}),
-    ])
-    expect(results[0].status).toBe('rejected')
-    expect(results[1].status).toBe('fulfilled')
   })
 })

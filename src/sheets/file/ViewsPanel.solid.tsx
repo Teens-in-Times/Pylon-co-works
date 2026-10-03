@@ -7,9 +7,9 @@ import { toAgentContextKey } from '../../domains/agent/agentContext'
 import { FileTypeIconSolid } from './fileIcons.solid.tsx'
 
 /**
- * ViewsPanelProps — 与 React 桥（ViewsPanel.tsx）内声明的同名接口逐字段一致。
+ * ViewsPanelProps — 名字承自历史 React 契约（ViewsPanel.tsx，已退役）；本实体即唯一真源。
  */
-export interface ViewsPanelProps {
+interface ViewsPanelProps {
   source: string | null
   context?: AgentContext | null
   onOpenFile: (path: string) => void

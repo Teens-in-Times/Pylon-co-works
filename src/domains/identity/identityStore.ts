@@ -1,6 +1,6 @@
 import { createSolidStoreKernel, type SolidStoreKernel } from '../../infrastructure/state/solidStoreKernel'
 import { identityCrossDomain } from '../../app/ports/identityCrossDomainPort'
-import { createIdentityBackendSync } from '../../infrastructure/persistence/identityBackendSync.ts'
+import { identityBackendSync } from './identityBackendSyncPort.ts'
 import { DEFAULT_PROFILES } from './identityTypes.ts'
 import type { IdentityStoreAccessor, IdentityStoreState } from './identityStoreShape.ts'
 import { createProfileActions } from './identityProfileActions.ts'
@@ -10,6 +10,8 @@ import { installIdentityPluginDataPort } from './identityPluginDataPort.ts'
 // #228 批次D / B-8a：持久化、后端同步、Profile/Session 动作与插件数据端口已拆至
 // 各专责模块；以下 re-export 保持既有公开 import 面（消费方仍从 identityStore 取
 // 这些名字，零改动）。
+// #520 S1-P0-2：后端写穿端口化——infra 实现经 identityBackendSyncPort 由应用装配层
+// 注册，本模块不再 import identityBackendSync；flush/refresh 以端口包装保持既有导出面。
 export type { AgentEntry } from '../../contracts/agentEntry.ts'
 export {
   DEFAULT_PROFILES,
@@ -22,7 +24,11 @@ export {
   type UserMapping,
 } from './identityTypes.ts'
 export { IDENTITY_CACHE_META_KEY } from './identityPersistence.ts'
-export { flushIdentityBackend, refreshSessionsBackend } from '../../infrastructure/persistence/identityBackendSync.ts'
+
+/** 等待全部身份写穿链落定（关闭前 flush / 测试收敛）；经后端写穿端口（装配后生效）。 */
+export const flushIdentityBackend = (): Promise<void> => identityBackendSync().flushIdentityBackend()
+/** 删除会话等外部后端事务完成后，刷新 sessions revision baseline。 */
+export const refreshSessionsBackend = (): Promise<void> => identityBackendSync().refreshSessionsBackend()
 
 /**
  * identityStore — 身份与会话状态域（阶段 1：store 按域拆分）。
@@ -32,22 +38,20 @@ export { flushIdentityBackend, refreshSessionsBackend } from '../../infrastructu
  * 与插件会话数据端口的安装。Profile/Session 事务动作见 identityProfileActions /
  * identitySessionActions；持久化由 identityPersistence（localStorage cache meta /
  * mutation 守卫 / merge-unresolved 写盘）与 sessionPersistence/profilePersistence
- * 管理；Tauri SQLite 后端写穿由 identityBackendSync 管理。跨域联动（profile/session/
- * agent 变化同步 workspace 与 runtime）在动作内经 identityCrossDomain 调用其他域。
+ * 管理；Tauri SQLite 后端写穿经 identityBackendSyncPort（实现在 infrastructure/
+ * persistence/identityBackendSync，由 app/bootstrap/identityBackendSyncWiring 装配）。
+ * 跨域联动（profile/session/agent 变化同步 workspace 与 runtime）在动作内经
+ * identityCrossDomain 调用其他域。
  */
 
 // #515 批0：zustand → Solid 内核置换；W3 起 useIdentityStore 即内核本体（直连，无 shim）。
 // 装配先建同步器与 accessor（都经 useIdentityStore 延迟解析，无初始化环），再建内核。
-const syncIdentityToBackend = createIdentityBackendSync({
-  getState: () => useIdentityStore.getState(),
-  setState: patch => useIdentityStore.setState(patch),
-})
-// 动作工厂的 accessor：显式注解切断 store 初始化器内的类型自引用（TS7022）；
-// syncToBackend 经闭包延迟解析（同步器已在上行创建）。
+// 写穿同步器经端口延迟解析（实现在装配层注册；未装配时为 browser 基线 no-op）。
+// 动作工厂的 accessor：显式注解切断 store 初始化器内的类型自引用（TS7022）。
 const accessor: IdentityStoreAccessor = {
   get: () => useIdentityStore.getState() as IdentityStoreState,
   set: patch => { useIdentityStore.setState(patch as never) },
-  syncToBackend: (domains?: Array<'profiles' | 'sessions'>) => { syncIdentityToBackend(domains) },
+  syncToBackend: (domains?: Array<'profiles' | 'sessions'>) => { identityBackendSync().syncIdentityToBackend(domains) },
 }
 
 const identityKernel = createSolidStoreKernel<IdentityStoreState>({

@@ -3,7 +3,9 @@
  *
  * 规则来源：施工卡 A17「架构门禁与清理」步骤 1–3 + DIC-A17-01。
  * - R1 Solid/Suite 禁 import React、Zustand controller、provider adapter、canonical repository、Tauri client
- *   （SolidWorkbenchSmokeHost 是受控 React host 边界，豁免——与 check-solid-workbench-boundaries 同口径）
+ *   （#515 批7 起 SolidWorkbenchSmokeHost 已 Solid 化，React-host 豁免特判退役——与
+ *   check-solid-workbench-boundaries 同口径，包类黑名单对 smoke host 与测试一并不豁免；
+ *   仅路径类规则保留 __tests__ 豁免，测试可用宿主模块构造 fixture 对照）
  * - R2 projector（src/domains/workbench）禁 import renderer/plugin/settings 层
  * - R3 renderer 不解析 raw tool name：solid-workbench/host 禁 import normalizers/raw 字典源
  * - R4 production 只能经 Suite Host 进入 Solid：非 Suite 路径禁止 mount SolidWorkbenchApp
@@ -52,10 +54,6 @@ const SCOPE_IMPORT_RULES = [
   },
 ]
 
-const isReactHostBoundary = displayPath =>
-  displayPath.includes('/smoke/SolidWorkbenchSmokeHost')
-  || displayPath.includes('__tests__')
-
 function collectModuleSpecifiers(source) {
   const values = []
   const patterns = [
@@ -92,13 +90,15 @@ for (const rule of SCOPE_IMPORT_RULES) {
       if (displayPath.includes('.test.') && rule.label === 'R2 projector') continue // 领域测试可用任意工具
       for (const specifier of collectModuleSpecifiers(source)) {
         const pkg = rule.forbiddenPackages.find(name => specifier === name || specifier.startsWith(`${name}/`))
-        if (pkg && !isReactHostBoundary(displayPath)) {
+        if (pkg) {
           violations.push(`${displayPath}: [${rule.label}] 禁止 import ${specifier}`)
           continue
         }
         const normalized = specifier.replace(/^(\.\.?\/)+/, '')
         const hit = rule.forbiddenPathIncludes.find(fragment => normalized.includes(fragment) || specifier.includes(fragment))
-        if (hit && !isReactHostBoundary(displayPath)) {
+        // 路径类规则对 __tests__ 豁免：测试可用 normalizer 等宿主模块构造 fixture 对照
+        // （如 issue5 回归测试经 hermesNormalizer 驱动 canonical 事件）；包类黑名单不豁免。
+        if (hit && !displayPath.includes('__tests__')) {
           violations.push(`${displayPath}: [${rule.label}] 禁止 import ${specifier}（命中 ${hit}）`)
         }
       }

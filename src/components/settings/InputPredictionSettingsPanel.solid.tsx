@@ -6,7 +6,6 @@ import { cachedInputPredictionSettings } from '../../domains/inputPrediction/inp
 import { persistInputPredictionSettings } from '../../infrastructure/persistence/inputPredictionSettingsRepository.ts'
 import { createStandalonePredictionProvider } from '../../infrastructure/prediction/predictionStandalone.ts'
 
-export interface InputPredictionSettingsPanelProps {}
 
 function Field(props: { label: string; children: JSX.Element; hint?: string }) {
   return <label class="sess-field"><span>{props.label}</span>{props.children}<Show when={props.hint}><small>{props.hint}</small></Show></label>

@@ -5,6 +5,10 @@ import type { AgentSidebarContribution, AgentSidebarHeaderAction } from './sideb
 
 const TITLE_ACTIONS = ['expand', 'page'] as const
 
+/** 宿主保留的动作 id：自动补的「打开整页」动作（Sidebar.solid 的 OPEN_PAGE_ACTION，
+ * #520 S4-P2 注册期防撞）。贡献撞用会让点击分发永远走不到自定义处理器。 */
+const RESERVED_HEADER_ACTION_ID = '__open_page__'
+
 function validateHeaderActions(contribution: AgentSidebarContribution): void {
   const actions = contribution.headerActions
   if (actions === undefined) return
@@ -14,6 +18,9 @@ function validateHeaderActions(contribution: AgentSidebarContribution): void {
     if (!action || typeof action !== 'object') throw new Error(`Agent sidebar headerActions 项非法：${contribution.id}`)
     if (!action.id || action.id !== action.id.trim()) {
       throw new Error(`Agent sidebar headerActions[].id 必须是非空且无首尾空格的字符串：${contribution.id}`)
+    }
+    if (action.id === RESERVED_HEADER_ACTION_ID) {
+      throw new Error(`Agent sidebar headerActions id 与宿主保留动作冲突（${RESERVED_HEADER_ACTION_ID} 是自动「打开整页」动作）：${contribution.id}/${action.id}`)
     }
     if (seen.has(action.id)) throw new Error(`Agent sidebar headerActions id 重复：${contribution.id}/${action.id}`)
     seen.add(action.id)

@@ -45,10 +45,6 @@ export interface KernelBootstrapActions {
       capabilities?: readonly string[]
     }[]
   }>
-  /** @deprecated Use applicationMount. Retained for compatibility during the migration window. */
-  mountApplication?: (applicationId: string) => void
-  /** @deprecated Use applicationMount. Retained for compatibility during the migration window. */
-  unmountApplication?: () => void
   applicationMount?: ApplicationMountPort
   retryBuiltin(pluginId: string): Promise<BuiltinBootstrapResult>
 }
@@ -75,12 +71,12 @@ export function createKernelBootstrap(actions: KernelBootstrapActions): KernelBo
   let mountedApplicationId: string | null = null
 
   const mountApplication = (applicationId: string): void => {
-    const mount = actions.applicationMount?.mount ?? actions.mountApplication
+    const mount = actions.applicationMount?.mount
     if (!mount) throw new Error('Application mount port 未配置')
     mount(applicationId)
   }
   const unmountApplication = (): void => {
-    const unmount = actions.applicationMount?.unmount ?? actions.unmountApplication
+    const unmount = actions.applicationMount?.unmount
     if (!unmount) throw new Error('Application mount port 未配置')
     unmount()
   }

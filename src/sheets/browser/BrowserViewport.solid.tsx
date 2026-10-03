@@ -6,8 +6,8 @@ function browserPreviewUrl(url: string): string {
   return `/__pylon_browser_proxy?url=${encodeURIComponent(url)}`
 }
 
-/** 与 React 桥（BrowserViewport.tsx）内声明的同名接口逐字段一致。 */
-export interface BrowserViewportProps {
+/** 接口名承自历史 React 契约（BrowserViewport.tsx，已退役）；本实体即唯一真源。 */
+interface BrowserViewportProps {
   viewportRef: { current: HTMLDivElement | null }
   browserPreview: boolean
   snapshot: BrowserSnapshot

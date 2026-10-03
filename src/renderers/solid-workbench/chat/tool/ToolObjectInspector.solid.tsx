@@ -3,6 +3,7 @@ import { For, Show, createSignal } from 'solid-js'
 import type { RenderCommandPort } from '../../../../contracts/messageRenderer.ts'
 import { classifyResourceTarget, isUriLike } from './resourceTarget.ts'
 import { isRecord } from '../../../../utils/wireGuards.ts'
+import { ToolBodySubProps } from './toolBodyTypes.ts'
 
 const LONG_STRING_LENGTH = 220
 
@@ -10,9 +11,8 @@ const LONG_STRING_LENGTH = 220
  * 前 N 条并给出计数；子层（递归）不受此限，展开行为不变。 */
 const ROOT_ENTRY_RENDER_LIMIT = 200
 
-export function ToolObjectInspector(props: {
+export function ToolObjectInspector(props: ToolBodySubProps & {
   value: unknown
-  commands?: RenderCommandPort
   path?: readonly (string | number)[]
   depth?: number
 }) {
@@ -49,12 +49,11 @@ export function ToolObjectInspector(props: {
   </div>
 }
 
-function ToolObjectEntry(props: {
+function ToolObjectEntry(props: ToolBodySubProps & {
   name: string | number
   value: unknown
   path: readonly (string | number)[]
   depth: number
-  commands?: RenderCommandPort
 }) {
   const [branchOpen, setBranchOpen] = createSignal(props.depth < 1)
   const entries = () => objectEntries(props.value)
@@ -84,10 +83,9 @@ function ToolObjectEntry(props: {
   </div>
 }
 
-function ToolPrimitive(props: {
+function ToolPrimitive(props: ToolBodySubProps & {
   value: unknown
   path: readonly (string | number)[]
-  commands?: RenderCommandPort
 }) {
   const [expanded, setExpanded] = createSignal(false)
   const text = () => primitiveText(props.value)

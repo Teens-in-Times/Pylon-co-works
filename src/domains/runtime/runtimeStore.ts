@@ -3,7 +3,7 @@ import type { ConfigOption, ModelChoice } from '../../infrastructure/acp/chatCon
 import { clearSessionSourceState, updateSessionLiveStats, type SessionLiveStats } from '../chat/sessionRuntime.ts'
 import { shouldAcceptAgentStatus, type AgentStatus, type SessionBindingSnapshot } from '../../contracts/agentTypes.ts'
 import { permissionReducer, EMPTY_PERMISSION_STATE, type PermissionAction, type PermissionState } from '../permission/permissionState.ts'
-import { normalizeApprovalMode, type ApprovalMode } from '../permission/approvalMode.ts'
+import { normalizeApprovalMode, persistApprovalMode, readPersistedApprovalMode, type ApprovalMode } from '../permission/approvalMode.ts'
 import type { AgentContext, AgentContextKey } from '../agent/agentContext.ts'
 import { toAgentContextKey } from '../agent/agentContext.ts'
 
@@ -23,7 +23,9 @@ export interface SessionConfig {
  * runtimeStore — 运行时状态域。
  *
  * 承载：live 用量/生成源、每会话 live stats/modes/config、Agent 状态。
- * 本 store 不持久化。persist 域各自独立：themeStore（pylon-theme）之外另有
+ * 本 store 不走 persist 信封；唯一持久化例外是 approvalMode 的本地镜像
+ * （`pylon-approval-mode` 手写键，store 侧 seed + 写回，见 attachApprovalModePersistence）。
+ * 其余 persist 域各自独立：themeStore（pylon-theme）之外另有
  * workspaceStore（pylon-workspace-sheets）、interface-mode、presentation-preferences 等。
  * 跨域联动（会话删除清 runtime 等）由调用方（identityStore 组合 action）经 getState 触发。
  */
@@ -60,12 +62,11 @@ interface RuntimeStoreState {
   /** 权限请求状态（非持久化；P0-02 controller 经 setPermission 驱动纯 reducer） */
   permission: PermissionState
   setPermission: (action: PermissionAction) => void
-  /** 全局审批模式（P0-04，set_approval_mode；非持久化，默认 default） */
+  /** 全局审批模式（P0-04，set_approval_mode；默认 default；本地镜像持久化见模块尾） */
   approvalMode: ApprovalMode
   setApprovalMode: (mode: string) => void
   setLiveStats: (stats: Partial<LiveStatsPayload>) => void
   setSessionLiveStats: (context: AgentContext, stats: Partial<SessionLiveStats>) => void
-  clearSessionRuntime: (context: AgentContext) => void
   setSessionMode: (context: AgentContext, mode?: string) => void
   setSessionConfig: (context: AgentContext, cfg: Partial<SessionConfig>) => void
   setAgentStatus: (id: string, status: AgentStatus) => void
@@ -73,12 +74,14 @@ interface RuntimeStoreState {
   setBindingGeneration: (context: AgentContext, generation: number | undefined) => void
   /** CWD-03：递增会话 reload 令牌（rootPath 变更触发同会话原地重载） */
   bumpSessionReload: (context: AgentContext) => void
-  /** 会话删除：清该 context 的全部 runtime 状态（identityStore.removeSession 联动调用） */
+  /**
+   * 会话删除：清该 context 的全部 runtime 状态（identityStore.removeSession 联动调用）。
+   * #520 S2-P2：本名即 identityCrossDomain port 契约名（原 `clearSessionRuntime`
+   * 纯别名已删，调用点全部对齐本名）。
+   */
   clearSessionSource: (context: AgentContext) => void
   /** Agent 切换成功：只清会话运行时状态，保留 agentStatuses 供末尾快照对账。 */
   resetSessionRuntime: () => void
-  /** @deprecated 使用 resetSessionRuntime；保留兼容入口但不清 agentStatuses。 */
-  resetAll: () => void
 }
 
 // #515 批0：zustand → Solid 内核置换；W3 起 useRuntimeStore 即内核本体（直连，无 shim）。
@@ -103,7 +106,7 @@ const runtimeKernel = createSolidStoreKernel<RuntimeStoreState>({
   setSessionLiveStats: (context, stats) => runtimeKernel.setState(state => ({
     sessionLiveStats: updateSessionLiveStats(state.sessionLiveStats, context, stats),
   })),
-  clearSessionRuntime: (context) => runtimeKernel.setState(state => {
+  clearSessionSource: (context) => runtimeKernel.setState(state => {
     const cleared = clearSessionSourceState({
       context,
       sessionLiveStats: state.sessionLiveStats,
@@ -186,7 +189,6 @@ const runtimeKernel = createSolidStoreKernel<RuntimeStoreState>({
     const key = toAgentContextKey(context)
     return { sessionReloadTokens: { ...state.sessionReloadTokens, [key]: (state.sessionReloadTokens[key] ?? 0) + 1 } }
   }),
-  clearSessionSource: (context) => runtimeKernel.getState().clearSessionRuntime(context),
   resetSessionRuntime: () => runtimeKernel.setState({
     sessionConfig: {},
     sessionModes: {},
@@ -201,7 +203,33 @@ const runtimeKernel = createSolidStoreKernel<RuntimeStoreState>({
     // reducer receive 失效，超时/应答由 controller 与后端保护。
     approvalMode: 'default',
   }),
-  resetAll: () => runtimeKernel.getState().resetSessionRuntime(),
 })
 
 export const useRuntimeStore: SolidStoreKernel<RuntimeStoreState> = runtimeKernel
+
+/**
+ * approvalMode 持久化收口（#520 S2-P1：原「App.solid 启动读一次手写键」只覆盖 Tauri
+ * 且仅作后端权威事务的种子/降级源，browser 模式重启即丢）。改为 store 侧接管：
+ * - **seed**：模块装配期读 `pylon-approval-mode`（旧手写键）恢复一次——Tauri 与
+ *   browser 模式都有初始值；Tauri 侧 App.solid 的后端权威恢复事务（#321）异步在后，
+ *   仍以后端为权威，本 seed 只消除首帧空档；
+ * - **mirror**：订阅写回，值变化才落盘（runtimeStore 写入高频——agent status/live
+ *   stats——不做值级守卫会给每次 set 挂一次同步 localStorage 写）。
+ * 键名与值格式（裸枚举字符串，非 persist 信封）与旧手写键逐字兼容，存量数据原地可读；
+ * 因此不复用 attachSolidPersist（其信封格式会破坏兼容）。storage 注入仅供测试。
+ */
+export function attachApprovalModePersistence(
+  kernel: Pick<SolidStoreKernel<{ approvalMode: ApprovalMode }>, 'getState' | 'setState' | 'subscribe'>,
+  storage?: Pick<Storage, 'getItem' | 'setItem'>,
+): void {
+  const seeded = readPersistedApprovalMode(storage)
+  let mirrored: ApprovalMode | null = seeded
+  if (seeded) kernel.setState({ approvalMode: seeded })
+  kernel.subscribe(state => {
+    if (state.approvalMode === mirrored) return
+    mirrored = state.approvalMode
+    persistApprovalMode(state.approvalMode, storage)
+  })
+}
+
+attachApprovalModePersistence(runtimeKernel)

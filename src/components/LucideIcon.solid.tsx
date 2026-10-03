@@ -6,32 +6,43 @@ import {
   ArrowUpRight,
   BookOpen,
   Bookmark,
+  BookmarkCheck,
   Bot,
   Boxes,
+  Braces,
   ChevronDown,
   ChevronFirst,
-  Clock3,
+  ChevronLeft,
   ChevronLast,
+  ChevronRight,
   ChevronUp,
   ChevronsUpDown,
   Code2,
   Clock,
+  Clock3,
   Database,
   Download,
   FileCode2,
+  FileJson,
+  FileText,
   Files,
   Folder,
   FolderOpen,
   FolderTree,
+  GitBranch,
+  GitCommitHorizontal,
   Globe,
   Globe2,
+  Hash,
   History,
+  House,
   Inbox,
   LayoutDashboard,
   MessageSquare,
   Minus,
   MoreHorizontal,
   Network,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -40,13 +51,18 @@ import {
   PinOff,
   Plus,
   Puzzle,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
   Search,
   Send,
   Settings,
   Settings2,
   SlidersHorizontal,
+  Sparkles,
   Square,
   SquareStack,
+  Upload,
   Waypoints,
   X,
   type IconNode,
@@ -62,6 +78,10 @@ import {
  *
  * 图标按**具名静态导入 + 显式映射表**收敛：动态键索引会击穿 tree-shaking 把全量
  * 图标拖进产物（实测 744KB chunk）。新图标需在此登记。
+ *
+ * #520 D 域（S3-P2-1）：新增 `node` prop——ad-hoc 图标节点直传（lucide 核心具名导入
+ * 的 IconNode，优先于映射表；`name` 仍驱动 `.lucide-{kebab}` 类名契约）。零散一次性
+ * 图标可经它直传而不再登记本表；各视图的手绘 IconNode 映射表副本自此退役。
  */
 const ICON_NODES: Readonly<Record<string, IconNode>> = {
   Activity,
@@ -70,32 +90,43 @@ const ICON_NODES: Readonly<Record<string, IconNode>> = {
   ArrowUpRight,
   BookOpen,
   Bookmark,
+  BookmarkCheck,
   Bot,
   Boxes,
+  Braces,
   ChevronDown,
   ChevronFirst,
-  Clock3,
+  ChevronLeft,
   ChevronLast,
+  ChevronRight,
   ChevronUp,
   ChevronsUpDown,
   Code2,
   Clock,
+  Clock3,
   Database,
   Download,
   FileCode2,
+  FileJson,
+  FileText,
   Files,
   Folder,
   FolderOpen,
   FolderTree,
+  GitBranch,
+  GitCommitHorizontal,
   Globe,
   Globe2,
+  Hash,
   History,
+  House,
   Inbox,
   LayoutDashboard,
   MessageSquare,
   Minus,
   MoreHorizontal,
   Network,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -104,22 +135,32 @@ const ICON_NODES: Readonly<Record<string, IconNode>> = {
   PinOff,
   Plus,
   Puzzle,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
   Search,
   Send,
   Settings,
   Settings2,
   SlidersHorizontal,
+  Sparkles,
   Square,
   SquareStack,
+  Upload,
   Waypoints,
   X,
 }
 
-export function LucideIcon(props: { name: string; size?: number; strokeWidth?: number; class?: string }) {
+/** 名字 → 表内 IconNode（未登记返回 undefined；供字符串名契约的包装件保留自有回退）。 */
+export function lookupIconNode(name: string): IconNode | undefined {
+  return ICON_NODES[name]
+}
+
+export function LucideIcon(props: { name: string; node?: IconNode; size?: number; strokeWidth?: number; class?: string }) {
   // Invariance 豁免（显式）：props.name 挂载后不变——调用点均随 For 行重挂，name 变化即换
   // 实例；kebab/iconNode 顶层捕获（非响应式读）是有意为之，不按响应式访问器改写。
   const kebab = props.name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
-  const iconNode: IconNode = ICON_NODES[props.name] ?? SquareStack
+  const iconNode: IconNode = props.node ?? ICON_NODES[props.name] ?? SquareStack
 
   const build = (host: SVGSVGElement) => {
     const svgNamespace = 'http://www.w3.org/2000/svg'

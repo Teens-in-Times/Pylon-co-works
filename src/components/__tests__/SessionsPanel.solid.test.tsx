@@ -7,13 +7,13 @@
 // - 受控输入断言不变（fireEvent.change 对 Solid 实体的输入走原生 change 事件无法触达
 //   onInput 的场景，本文件输入均经 React 岛或 waitFor 异步链，无需改写）。
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render } from '@solidjs/testing-library'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render } from '@solidjs/testing-library'
 import { createSignal } from 'solid-js'
 import SessionsPanel from '../sidebar/SessionsPanel.solid.tsx'
 import { resetStores } from '../../test/resetStores'
 import type { AgentSidebarContributionProps } from '../../plugin-runtime/sidebar/sidebarTypes'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore'
 import { getPluginRuntime } from '../../plugin-runtime/pluginCompositionRoot.ts'
 
 const { invoke, open } = vi.hoisted(() => ({
@@ -82,8 +82,6 @@ function captureBlockAction(overrides: Partial<AgentSidebarContributionProps> = 
 }
 
 describe('SessionsPanel', () => {
-  afterEach(cleanup)
-
   beforeEach(() => {
     resetStores()
     localStorage.clear()

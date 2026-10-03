@@ -15,6 +15,7 @@ import {
 } from '../../../domains/activity/generationIndicatorCopyMachine.ts'
 import { resolveSpinnerMarker } from '../../../domains/chat/spinnerFrames.ts'
 import { glimmerIntensity, resolveActivity, resolveFrame, resolveGlimmer, resolveStallProgress } from '../../../domains/chat/spinnerMachine.ts'
+import { Spinner, SpinnerSummary } from '../../../components/ui/Spinner.solid.tsx'
 import { nextTokenCatchUp } from '../../../domains/chat/tokenCatchUp.ts'
 import { segmentGraphemes } from '../../../utils/textWidth.ts'
 import {
@@ -355,43 +356,44 @@ export function SolidGenerationFooter(props: SolidGenerationFooterProps) {
 
   return (
     <Show when={props.running} fallback={<GenerationSummaryView input={props} marker={summaryMarker()} />}>
-      <div class="term-spinner-row">
-        <div
-          class="term-spinner"
-          data-activity={activity()}
-          data-phase={props.appearance.framePreset === 'cc' ? undefined : (legacyPhaseFromActivity(props.activity) ?? props.phase)?.kind || 'idle'}
-          style={{ '--stall-progress': stallProgress().toFixed(3) }}
-        >
-          <span class="spinner-frame" style={{ color: props.appearance.color || undefined, 'font-size': `${props.appearance.size}px` }}>
-            {frame()}
-          </span>
-          <SolidSpinnerGlimmer
-            text={displayedVerb()}
-            elapsedMs={elapsedMs()}
-            active={activity() === 'active'}
-            reducedMotion={props.reducedMotion === true}
-            color={props.appearance.color}
-          />
-          <Show when={secondaryContext()}>
-            {secondary => <span class="spinner-context" title={secondary()}>{secondary()}</span>}
+      {/* #520 K 域：spinner DOM 词汇由 ui/Spinner 统一承载（帧字符/耗时不归组件管，
+          仍由本组件的 spinnerMachine 时钟解析）。 */}
+      <Spinner
+        frame={frame()}
+        size={props.appearance.size}
+        color={props.appearance.color}
+        activity={activity()}
+        phase={props.appearance.framePreset === 'cc' ? undefined : (legacyPhaseFromActivity(props.activity) ?? props.phase)?.kind || 'idle'}
+        stallProgress={stallProgress()}
+        actions={
+          <Show when={props.onStop}>
+            {onStop => <button class="spinner-stop-btn" type="button" title="停止生成 (Esc / Ctrl+C)" onClick={onStop()}>
+              <span aria-hidden="true">■</span> 停止
+            </button>}
           </Show>
-          <span class="spinner-meta">(
-            <span>{formatElapsed(elapsedMs())}</span>
-            <Show when={(legacyPhaseFromActivity(props.activity) ?? props.phase)?.kind === 'thinking' && props.thinkingStart != null}>
-              <span> · </span><span>思考 {formatElapsed(Math.max(0, now() - (props.thinkingStart ?? now())))}</span>
-            </Show>
-            <Show when={props.showTokenCount === true && props.tokenCount > 0}>
-              <span> · </span><span>↓ {formatTokens(shownTokens())} tokens</span>
-            </Show>
-          )</span>
-          <Show when={activity() !== 'active'}><span class="spinner-activity" aria-live="polite">…</span></Show>
-        </div>
-        <Show when={props.onStop}>
-          {onStop => <button class="spinner-stop-btn" type="button" title="停止生成 (Esc / Ctrl+C)" onClick={onStop()}>
-            <span aria-hidden="true">■</span> 停止
-          </button>}
+        }
+      >
+        <SolidSpinnerGlimmer
+          text={displayedVerb()}
+          elapsedMs={elapsedMs()}
+          active={activity() === 'active'}
+          reducedMotion={props.reducedMotion === true}
+          color={props.appearance.color}
+        />
+        <Show when={secondaryContext()}>
+          {secondary => <span class="spinner-context" title={secondary()}>{secondary()}</span>}
         </Show>
-      </div>
+        <span class="spinner-meta">(
+          <span>{formatElapsed(elapsedMs())}</span>
+          <Show when={(legacyPhaseFromActivity(props.activity) ?? props.phase)?.kind === 'thinking' && props.thinkingStart != null}>
+            <span> · </span><span>思考 {formatElapsed(Math.max(0, now() - (props.thinkingStart ?? now())))}</span>
+          </Show>
+          <Show when={props.showTokenCount === true && props.tokenCount > 0}>
+            <span> · </span><span>↓ {formatTokens(shownTokens())} tokens</span>
+          </Show>
+        )</span>
+        <Show when={activity() !== 'active'}><span class="spinner-activity" aria-live="polite">…</span></Show>
+      </Spinner>
     </Show>
   )
 }
@@ -432,12 +434,9 @@ function GenerationSummaryView(props: { input: GenerationFooterInput; marker: st
   return (
     <Show when={props.input.summary}>
       {summary => (
-        <div class={`term-summary term-summary-${summary().reason}`}>
-          <span class="term-summary-frame" style={{ 'font-size': `${props.input.appearance.size}px` }}>{props.marker}</span>
-          <span>
-            {summary().reason === 'cancelled' ? '已停止' : summary().reason === 'error' ? '处理失败' : '处理耗时'} {formatSummaryElapsed(summary())}
-          </span>
-        </div>
+        <SpinnerSummary reason={summary().reason} marker={props.marker} size={props.input.appearance.size}>
+          {summary().reason === 'cancelled' ? '已停止' : summary().reason === 'error' ? '处理失败' : '处理耗时'} {formatSummaryElapsed(summary())}
+        </SpinnerSummary>
       )}
     </Show>
   )
