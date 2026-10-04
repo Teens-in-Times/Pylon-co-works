@@ -9,7 +9,6 @@ import { presentationProfileInterfaceMode } from '../../application/transactions
 import { useInterfaceModeStore } from '../../domains/interface/interfaceModeStore.ts'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
-export interface PresentationProfilePickerProps {}
 
 /** #515：PresentationProfilePicker 的 Solid 实体（原 .tsx 为 React 薄桥）。 */
 export default function PresentationProfilePicker() {

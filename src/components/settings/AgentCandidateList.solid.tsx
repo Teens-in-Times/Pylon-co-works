@@ -79,7 +79,7 @@ function installStatusClass(status: AgentProviderPreflight['status']): string {
   return 'warn'
 }
 
-export interface AgentCandidateListProps {
+interface AgentCandidateListProps {
   candidates: readonly AgentRuntimeCandidate[]
   /** 当前 Agent 注册表里的导入解析（id 精确匹配，回落 provider 匹配；未配置为 undefined）。 */
   resolveImportedAgentId: (candidate: AgentRuntimeCandidate) => string | undefined

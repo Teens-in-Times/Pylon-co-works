@@ -1,11 +1,12 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
-import { createPreviewWorkbenchServices } from '../../renderers/solid-workbench/__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../../renderers/solid-workbench/preview/previewWorkbenchServices.ts'
 import { THEME_DEFAULTS, THEME_SETTING_KEYS } from '../../domains/theme/themeFieldDefs.ts'
 import { useThemeStore } from '../../domains/theme/themeStore.ts'
 import { getPluginSettingOptionsRegistry, getPresentationProfileRegistry, getRendererSettingsStore } from '../../plugin-runtime/runtimeServices.ts'
 import { usePresentationPreferenceStore } from '../../domains/presentation/presentationPreferenceStore.ts'
 import { resolveProductionRenderAppearance } from '../../plugin-runtime/renderers/productionRenderAppearance.ts'
+import { resolveRendererSlot } from '../../plugin-runtime/renderers/rendererActivationResolver.ts'
 import { createRegistrySignal } from '../../infrastructure/state/solidSheetSupport.solid.tsx'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 import type { RenderAppearanceSnapshot, RenderCommandPort, RenderNodeSnapshot, RenderSurface } from '../../contracts/messageRenderer.ts'
@@ -102,10 +103,14 @@ function pickPreviewKind(entry: RendererSettingsCatalogEntry, catalog: RendererR
     ?? 'content.unknown'
 }
 
+/** #520 S4-P1：预览选中 slot 与生产同序——套件上下文可用时直接走生产侧
+ * resolveRendererSlot（fallback → priority → id 稳定序）；仅 kind 命名空间且无激活
+ * 套件的退化态保持全套件视图（生产没有「无套件」形态，此处只保证成员不丢）。 */
 function pickSlot(kind: string, catalog: RendererRegistrySnapshot, activeSuiteId?: string, preferredSlotId?: string) {
-  const candidates = catalog.rendererSlots.filter(entry => entry.value.kinds.includes(kind)
-    && (!activeSuiteId || entry.value.targetSuites.includes('*') || entry.value.targetSuites.includes(activeSuiteId)))
-  return candidates.find(entry => entry.value.id === preferredSlotId) ?? candidates[0]
+  const ordered = activeSuiteId
+    ? resolveRendererSlot(activeSuiteId, kind, catalog.rendererSlots)
+    : catalog.rendererSlots.filter(entry => entry.value.kinds.includes(kind))
+  return ordered.find(entry => entry.value.id === preferredSlotId) ?? ordered[0]
 }
 
 function previewSuiteForEntry(entry: RendererSettingsCatalogEntry, catalog: RendererRegistrySnapshot, activeSuiteId?: string): string | undefined {
@@ -120,7 +125,7 @@ function previewSuiteForEntry(entry: RendererSettingsCatalogEntry, catalog: Rend
 
 /**
  * RendererSettingsPreview — Renderer 设置页真实示例预览（#515 Solid 实体；
- * 原 RendererSettingsPreview.tsx 保留同名薄桥）。surface 挂载 effect（依赖
+ * 原同名 React 薄桥已随批7 退役，本实体为唯一形态）。surface 挂载 effect（依赖
  * entry/kind/suite/catalog/状态/选项贡献）以 createEffect + onCleanup 逐路回收，
  * 与原 React useEffect 的双 return 清理路径语义一致。
  */

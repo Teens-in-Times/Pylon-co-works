@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url'
 type LangId = 'ts' | 'tsx' | 'js' | 'jsx' | 'rs' | 'css' | 'html' | 'py' | 'sh' | 'c' | 'ps1'
 
 const LANG_LABEL: Record<LangId, string> = {
-  ts: 'TypeScript', tsx: 'TSX (React/Solid)', js: 'JavaScript', jsx: 'JSX',
+  ts: 'TypeScript', tsx: 'TSX (Solid)', js: 'JavaScript', jsx: 'JSX',
   rs: 'Rust', css: 'CSS', html: 'HTML', py: 'Python', sh: 'Shell', c: 'C', ps1: 'PowerShell',
 }
 

@@ -4,7 +4,7 @@
  * 覆盖的持久化 key：主题（pylon-theme）、工作区 sheets（pylon-workspace-sheets）、
  * 窗口尺寸（pylon-window-size）、会话（pylon-sessions）、Profile（pylon-profiles，
  * FE-AUD-002）。
- * 其他 key（pylon-pet-v3、pylon-msgs-* 等运行态）不导出。
+ * 其他 key（pylon-msgs-* 等运行态；宠物链 pylon-pet-v3 已随 #520 K 域退役）不导出。
  * I14-W8：Tauri 模式导出聚合后端 versioned user store 的 profiles/sessions envelope
  * （权威源）；导入预检对 profiles/sessions 值做结构校验（损坏拒绝、legacy 形状兼容）。
  */
@@ -21,6 +21,8 @@ export const CONFIG_ENVELOPE_VERSION = 1
 export const CONFIG_STORAGE_KEYS = [
   'pylon-theme',
   'pylon-workspace-sheets',
+  // #538 起布局真源在本键（不再随 workspace 信封迁移），纳入备份恢复布局
+  'pylon-workspace-layout-v3',
   'pylon-window-size',
   'pylon-sessions',
   'pylon-profiles',

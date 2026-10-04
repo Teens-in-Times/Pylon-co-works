@@ -5,7 +5,7 @@ import {
 } from '../hydrateIdentityAndWorkspace.ts'
 import { useIdentityStore } from '../../../domains/identity/identityStore.ts'
 import { useWorkspaceStore } from '../../../domains/workspace/workspaceStore.ts'
-import { useWorkspaceEntityStore } from '../../../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../../../domains/workspace/workspaceEntityStore.ts'
 
 describe('identity/workspace hydration coordinator', () => {
   beforeEach(() => {

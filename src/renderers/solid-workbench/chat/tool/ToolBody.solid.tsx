@@ -7,13 +7,13 @@ import { ToolObjectInspector } from './ToolObjectInspector.solid.tsx'
 import { classifyResourceTarget, resourceRange, type RenderResourceTarget } from './resourceTarget.ts'
 import { isTerminalToolVisualState, normalizeToolStatus } from '../../../../domains/tool/status.ts'
 import { isRecord } from '../../../../utils/wireGuards.ts'
+import { ToolBodySubProps } from './toolBodyTypes.ts'
 
-export function ToolBody(props: {
+export function ToolBody(props: ToolBodySubProps & {
   snapshot: ToolInvocationSnapshot
   renderKind: string
   parts: readonly ContentPart[]
   inputParts?: readonly ContentPart[]
-  commands?: RenderCommandPort
   renderPart: (part: ContentPart, index: number, source: 'input' | 'output') => JSX.Element
 }) {
   const kind = () => effectiveKind(props.renderKind, props.snapshot)
@@ -95,11 +95,10 @@ export function ToolBody(props: {
   </div>
 }
 
-function InputSection(props: {
+function InputSection(props: ToolBodySubProps & {
   value: unknown
   parts?: readonly ContentPart[]
   kind: string
-  commands?: RenderCommandPort
   renderPart: (part: ContentPart, index: number, source: 'input' | 'output') => JSX.Element
 }) {
   const hiddenKeys = () => showcasedInputKeys(props.kind)
@@ -131,7 +130,7 @@ function InputSection(props: {
   </Show>
 }
 
-function ReadSummary(props: { input?: Record<string, unknown>; snapshot: ToolInvocationSnapshot; commands?: RenderCommandPort }) {
+function ReadSummary(props: ToolBodySubProps & { input?: Record<string, unknown>; snapshot: ToolInvocationSnapshot }) {
   const inputTarget = () => firstStringEntry(props.input, PATH_KEYS)
   const path = () => inputTarget()?.value ?? firstLocationPath(props.snapshot.locations)
   const target = () => inputTarget()
@@ -158,7 +157,7 @@ function ReadSummary(props: { input?: Record<string, unknown>; snapshot: ToolInv
   </Show>
 }
 
-function EditSummary(props: { input?: Record<string, unknown>; parts: readonly ContentPart[]; commands?: RenderCommandPort }) {
+function EditSummary(props: ToolBodySubProps & { input?: Record<string, unknown>; parts: readonly ContentPart[] }) {
   const resources = () => uniqueResourceEntries(compact([
     firstStringEntry(props.input, PATH_KEYS),
     ...props.parts.flatMap(part => part.kind === 'diff'
@@ -186,7 +185,7 @@ function EditSummary(props: { input?: Record<string, unknown>; parts: readonly C
   </Show>
 }
 
-function ExecuteSummary(props: { input?: Record<string, unknown>; commands?: RenderCommandPort }) {
+function ExecuteSummary(props: ToolBodySubProps & { input?: Record<string, unknown> }) {
   const command = () => firstString(props.input, ['command', 'cmd', 'script'])
   const cwd = () => firstString(props.input, ['cwd', 'working_directory', 'workingDirectory', 'directory'])
   const env = () => props.input && isRecord(props.input.env) ? Object.keys(props.input.env).length : 0
@@ -207,7 +206,7 @@ function ExecuteSummary(props: { input?: Record<string, unknown>; commands?: Ren
   </Show>
 }
 
-function SearchFetchSummary(props: { kind: string; input?: Record<string, unknown>; commands?: RenderCommandPort }) {
+function SearchFetchSummary(props: ToolBodySubProps & { kind: string; input?: Record<string, unknown> }) {
   const isFetch = () => props.kind === 'tool.fetch'
   const query = () => isFetch()
     ? firstString(props.input, ['url', 'uri', 'href'])
@@ -261,7 +260,7 @@ function PlanSummary(props: { input?: Record<string, unknown> }) {
   </Show>
 }
 
-function SkillSummary(props: { input?: Record<string, unknown>; commands?: RenderCommandPort }) {
+function SkillSummary(props: ToolBodySubProps & { input?: Record<string, unknown> }) {
   const name = () => firstString(props.input, ['skill', 'skill_name', 'skillName', 'name', 'query'])
   const path = () => firstString(props.input, ['path', 'skill_path', 'skillPath', 'file'])
   const operation = () => firstString(props.input, ['operation', 'action', 'command'])
@@ -278,7 +277,7 @@ function SkillSummary(props: { input?: Record<string, unknown>; commands?: Rende
   </Show>
 }
 
-function McpSummary(props: { input?: Record<string, unknown>; snapshot: ToolInvocationSnapshot; commands?: RenderCommandPort }) {
+function McpSummary(props: ToolBodySubProps & { input?: Record<string, unknown>; snapshot: ToolInvocationSnapshot }) {
   const identity = () => `${props.snapshot.canonicalName ?? ''} ${props.snapshot.name ?? ''}`
   const inferred = () => /^mcp__([^_]+)__(.+)$/i.exec((props.snapshot.canonicalName ?? props.snapshot.name ?? '').trim())
   const server = () => firstString(props.input, ['server', 'server_name', 'serverName']) ?? inferred()?.[1]
@@ -296,7 +295,7 @@ function McpSummary(props: { input?: Record<string, unknown>; snapshot: ToolInvo
   </Show>
 }
 
-function BrowserSummary(props: { input?: Record<string, unknown>; action?: string; commands?: RenderCommandPort }) {
+function BrowserSummary(props: ToolBodySubProps & { input?: Record<string, unknown>; action?: string }) {
   const url = () => firstString(props.input, ['url', 'uri', 'href'])
   const target = () => firstString(props.input, ['selector', 'ref', 'element', 'target', 'label', 'text'])
   const operation = () => props.action || firstString(props.input, ['action', 'operation', 'method'])
@@ -314,7 +313,7 @@ function BrowserSummary(props: { input?: Record<string, unknown>; action?: strin
   </Show>
 }
 
-function ArtifactSummary(props: { input?: Record<string, unknown>; commands?: RenderCommandPort }) {
+function ArtifactSummary(props: ToolBodySubProps & { input?: Record<string, unknown> }) {
   const title = () => firstString(props.input, ['title', 'name', 'artifact_name', 'artifactName'])
   const resource = () => firstStringEntry(props.input, PATH_KEYS)
   const path = () => resource()?.value
@@ -333,7 +332,7 @@ function ArtifactSummary(props: { input?: Record<string, unknown>; commands?: Re
   </Show>
 }
 
-function ProgressSection(props: { value: unknown; commands?: RenderCommandPort }) {
+function ProgressSection(props: ToolBodySubProps & { value: unknown }) {
   const record = () => isRecord(props.value) ? props.value : undefined
   const completed = () => firstFinite(record(), ['completed', 'current', 'done', 'value'])
   const total = () => firstFinite(record(), ['total', 'maximum', 'max'])
@@ -357,7 +356,7 @@ function ProgressSection(props: { value: unknown; commands?: RenderCommandPort }
   </section>
 }
 
-function LocationsSection(props: { value: unknown; commands?: RenderCommandPort }) {
+function LocationsSection(props: ToolBodySubProps & { value: unknown }) {
   const locations = () => collectLocations(props.value)
   return <section class="solid-tool-locations tool-rich-section" aria-label="相关位置">
     <SectionHeading label="位置" count={locations().length || undefined} />
@@ -387,7 +386,7 @@ function ChipList(props: { values: readonly string[] }) {
   </div></Show>
 }
 
-function ResourceButton(props: { value: string; kind?: 'path' | 'uri'; target?: RenderResourceTarget; commands?: RenderCommandPort }) {
+function ResourceButton(props: ToolBodySubProps & { value: string; kind?: 'path' | 'uri'; target?: RenderResourceTarget }) {
   return <button class="tool-resource-primary" type="button" title={props.value}
     disabled={!can(props.commands, 'resource.open')}
     onClick={() => openTarget(props.commands, props.target ?? classifyResourceTarget(props.value, props.kind))}>

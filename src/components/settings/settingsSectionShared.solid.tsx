@@ -27,7 +27,7 @@ export function Group(props: { title: string; children: JSX.Element; defaultOpen
   )
 }
 
-export interface ZonePresetRowProps {
+interface ZonePresetRowProps {
   zone: ZonePresetEntry['zone']; interfaceMode: string; activeName: string; isDirty: boolean
   onApply: (zone: ZonePresetEntry['zone'], entry: ZonePresetEntry) => void
   onSaveCurrent: (zone: ZonePresetEntry['zone'], name: string) => void

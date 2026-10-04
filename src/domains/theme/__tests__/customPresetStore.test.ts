@@ -8,6 +8,7 @@
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { resetStores } from '../../../test/resetStores.ts'
+import { flushTask } from '../../../test/solidTestHelpers.ts'
 
 // 搬家用例需要控制 localStorage 先于 store 模块求值（zustand persist 在 import 时
 // 同步 hydrate）——隔离模块图后按用例动态 import。
@@ -20,7 +21,7 @@ async function freshStores() {
   const { useThemeStore } = await import('../customPresetStore.ts').then(() => import('../themeStore.ts'))
   const { useCustomPresetStore, CUSTOM_PRESET_STORAGE_KEY } = await import('../customPresetStore.ts')
   // zustand persist 的 hydrate 经微任务链调度——等它落定后再断言
-  await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+  await flushTask()
   return { useThemeStore, useCustomPresetStore, CUSTOM_PRESET_STORAGE_KEY }
 }
 

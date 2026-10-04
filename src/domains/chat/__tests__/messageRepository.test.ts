@@ -194,14 +194,14 @@ describe('#110 F6 孤儿消息快照 GC（pruneOrphanMessageSnapshots）', () =>
     expect(storage.keys()).toEqual(['pylon-msgs-live-1'])
   })
 
-  it('不碰非 pylon-msgs-* 的运行态键（主题/宠物/会话列表等）', () => {
+  it('不碰非 pylon-msgs-* 的运行态键（主题/Profile/会话列表等；旁观键不指名已退役的宠物键）', () => {
     const storage = enumerableStorage({
       'pylon-sessions': '{"version":3,"sessions":[]}',
-      'pylon-pet-v3': '{}',
+      'pylon-profiles': '{"version":1,"profiles":[]}',
       'pylon-theme': 'dark',
     })
     expect(pruneOrphanMessageSnapshots([], storage)).toEqual([])
-    expect(storage.keys().sort()).toEqual(['pylon-pet-v3', 'pylon-sessions', 'pylon-theme'])
+    expect(storage.keys().sort()).toEqual(['pylon-profiles', 'pylon-sessions', 'pylon-theme'])
   })
 
   it('枚举能力缺失（隐私模式等）时静默跳过，不抛也不误删', () => {

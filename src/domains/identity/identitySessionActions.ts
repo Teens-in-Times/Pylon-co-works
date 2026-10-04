@@ -1,10 +1,10 @@
 import { CORE_COMMAND_SET_PLUGIN_ID } from '../../contracts/agentCommandSet.ts'
-import { loadSessions, normalizeSessions, SESSION_SCHEMA_VERSION } from './sessionPersistence'
-import { clearSessionUiState } from '../chat/sessionUiState'
+import { loadSessions, normalizeSessions } from './sessionPersistence'
 import { logError } from '../../contracts/frontendLogSink.ts'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
-import { resolveUnresolvedSessionTransaction } from '../../app/bootstrap/resolveUnresolvedSessionTransaction'
 import { identityCrossDomain } from '../../app/ports/identityCrossDomainPort'
+import { identitySessionRecovery } from './identitySessionRecoveryPort.ts'
+import { identityBackendSync } from './identityBackendSyncPort.ts'
 import {
   canMutateIdentityDomain,
   hasBackend,
@@ -12,7 +12,6 @@ import {
   persistMergingUnresolved,
   updateIdentityCacheMeta,
 } from './identityPersistence.ts'
-import { userDataRepository } from '../../infrastructure/persistence/identityBackendSync.ts'
 import { mergePluginNamespace } from '../pluginData/pluginNamespace.ts'
 import { getSessionCreationRegistry } from '../../plugin-runtime/runtimeServices.ts'
 import { compileSessionCreationSnapshot } from '../../plugin-runtime/session-creation/compileSessionCreationSnapshot.ts'
@@ -183,7 +182,8 @@ export function createSessionActions(accessor: IdentityStoreAccessor): Pick<Iden
       // 联动：清 runtime（live stats/modes/config/generating）、sheet 状态与会话级 UI 状态
       // I01-W2：按 AgentContext（agentId+source）清理，同名 source 其他 Agent 的会话不受影响
       identityCrossDomain().clearSessionSource({ agentId: removed.agentId, source: removed.source })
-      clearSessionUiState(id)
+      // #520 S2-P1-2：会话级 UI 注册表条目回收经跨域端口（原 chat/sessionUiState 直连已退役）
+      identityCrossDomain().clearSessionUiState(id)
       const agentStates = Object.fromEntries(Object.entries(identityCrossDomain().sheetAgentStates()).map(([agentId, sheetState]) => [
         agentId,
         sheetState.activeSessionId === id ? { ...sheetState, activeSessionId: undefined } : sheetState,
@@ -251,56 +251,14 @@ export function createSessionActions(accessor: IdentityStoreAccessor): Pick<Iden
       queueMicrotask(() => syncToBackend())
       return { sessions, lastPersistError: persistFlag(ok, s.lastPersistError) }
     }),
-    resolveSessionOwner: async (sessionId, agentId) => {
-      if (!canMutateIdentityDomain(get().identityPersistence, 'sessions')) return false
-      const result = await resolveUnresolvedSessionTransaction(sessionId, agentId, {
-        getUnresolved: () => {
-          const hydration = get().sessionHydration
-          return hydration?.kind === 'needs-owner-resolution' ? hydration.unresolved : []
-        },
-        getAgents: () => get().agents,
-        commit: async (legacy, owner) => {
-          const current = get()
-          const resolved: Session = {
-            ...legacy,
-            agentId: owner,
-            metadata: legacy.metadata ?? {},
-            context: legacy.context ?? {},
-          }
-          const sessions = [...current.sessions, resolved]
-          const unresolved = current.sessionHydration?.kind === 'needs-owner-resolution'
-            ? current.sessionHydration.unresolved.filter(item => item.id !== legacy.id)
-            : []
-          const nextHydration: SessionHydrationState = unresolved.length > 0
-            ? { kind: 'needs-owner-resolution', unresolved }
-            : { kind: 'ready' }
-          // Tauri 模式先提交后端权威 envelope；失败直接抛出，store/unresolved 保持原状。
-          // browser 模式无 repository，仍由 localStorage 同步提交。
-          if (userDataRepository) {
-            await userDataRepository.save('sessions', {
-              version: SESSION_SCHEMA_VERSION,
-              sessions: [...sessions, ...unresolved],
-              turns: current.turns,
-            })
-          }
-          const ok = persistMergingUnresolved(sessions, current.turns, nextHydration)
-          bumpIdentityMutationSeq()
-          set({ sessions, sessionHydration: nextHydration, sessionsHydrated: true, lastPersistError: persistFlag(ok, current.lastPersistError) })
-        },
-      })
-      if (!result.ok) {
-        if (result.kind === 'transport') {
-          reportRuntimeError('恢复遗留会话归属', result.cause ?? result.message, undefined, {
-            key: `identity:resolve-session:${sessionId}`, scope: { kind: 'session', id: sessionId }, source: 'identity',
-          })
-        }
-        return false
-      }
-      resolveRuntimeErrors({ key: `identity:resolve-session:${sessionId}` })
-      return true
+    resolveSessionOwner: (sessionId, agentId) => {
+      // #520 S1-P0-2：owner 恢复事务的校验与提交装配在应用层
+      //（app/bootstrap/identitySessionRecoveryWiring），域侧只经端口触发。
+      return identitySessionRecovery().resolveSessionOwner(sessionId, agentId)
     },
     hydrateSessions: async () => {
       // I14-W6：Tauri 模式后端读回优先；无行才冷启动导入，失败时缓存只读；seq 守卫防旧读回覆盖 mutation。
+      const userDataRepository = identityBackendSync().userDataRepository
       if (hasBackend() && userDataRepository) {
         const startSeq = currentIdentityMutationSeq()
         try {

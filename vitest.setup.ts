@@ -30,32 +30,27 @@ process.on('unhandledRejection', onUnhandledRejection)
 //     （错误中心、渲染边界、事务回滚、网关写回、Agent 切换/探测失败等）；
 //   B node 环境噪音——canonical feed 兜底监听注册在无 window/Tauri 的 node 工程
 //     里失败（「注册 canonical feed user 兜底监听失败 …」）。根因是产品侧注册无
-//     环境守卫（src/infrastructure/events/canonicalEventFeed.ts:241 一带）；
+//     环境守卫——守卫已落地（canonicalEventFeed.createCanonicalEventFeed 按
+//     `typeof window` 静默跳过注册），B 类 node 组条目已全部移出；jsdom 组
+//     （有 window、无 Tauri 宿主，listen 照旧失败）条目仍在；
 //   C Renderer Suite fatal 回退链——「Renderer Suite 回退失败 …（自动重试 N/M）」
 //     是回退机制的过程日志，用例正是断言该回退行为。
 // 白名单外文件出现任何 console.error 一律 fail（fail 消息带首条原文，便于定性）。
-// 回收计划：B 类在产品注册处补 `typeof window`/Tauri 可用性守卫后逐文件移出；
-// A/C 类在产品改走诊断通道上报后移出；**名单清零后删除整个白名单机制**，
-// afterAll 对 console.error 无条件 throw（即原「阶段 8 硬断言」，届时本注释一并删除）。
+// 回收计划：B 类余量在测试宿主给 jsdom 注入 Tauri 垫片后移出（注册点不宜直接
+// 收窄到 IS_TAURI——canonicalEventFeed.test.ts 在无宿主 jsdom 里断言注册发生，
+// 需先补垫片）；A/C 类在产品改走诊断通道上报后移出；**名单清零后删除整个白
+// 名单机制**，afterAll 对 console.error 无条件 throw（即原「阶段 8 硬断言」，
+// 届时本注释一并删除）。
 const EXPECTED_CONSOLE_ERROR_FILES: readonly string[] = [
-  // B 类：canonical feed 兜底监听注册在 node 环境失败的噪音
-  'src/__tests__/replay/livenessAuthority.test.ts',
-  'src/__tests__/replay/agentWorkbenchSession.batch.test.ts',
-  'src/__tests__/replay/agentWorkbenchSession.rebindIndicator.test.ts',
-  'src/__tests__/replay/agentWorkbenchSession.snapshotBridge.test.ts',
-  // #376-b：与上面三个 agentWorkbenchSession 同族（同一个 feed 注册噪音源）。
+  // B 类：canonical feed 兜底监听注册噪音。node 组（无 window）条目已随产品侧
+  // window 守卫全部移出；剩余为 jsdom 组（有 window、无 Tauri 宿主，listen 照旧
+  // 失败）——
+  // #376-b：agentWorkbenchSession 族在 jsdom 的 feed 注册噪音（node 同族条目已摘）。
   'src/__tests__/replay/agentWorkbenchSession.pagedLoad.test.ts',
-  // #390：同族（生成指示器稳定性回归，同一个 feed 注册噪音源）。
-  'src/__tests__/replay/agentWorkbenchSession.indicatorStability.test.ts',
-  // #442：同族（turnBoundary 权威字段行为，同一个 feed 注册噪音源）。
-  'src/__tests__/replay/agentWorkbenchSession.turnBoundary.test.ts',
-  'src/__tests__/replay/documentLayer.test.ts',
-  'src/application/agent-workbench/__tests__/agentWorkbenchSession.test.ts',
-  'src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts',
-  'src/application/agent-workbench/__tests__/agentWorkbenchSession.emptyStateFirstPrompt.test.ts',
-  // #515：两文件随实体迁移改名 .solid.test.tsx（同族 feed 注册噪音，白名单跟随）。
+  // #515：随实体迁移改名 .solid.test.tsx（同族 feed 注册噪音，白名单跟随）。
+  // 同族的 sheetLayoutSidebarCollapsedReactive.solid.test.tsx 只直连 SheetLayout
+  // （activeSession=null，不构建 feed），噪音实测已消失，条目一并摘除。
   'src/workspace-sheets/__tests__/agentSuiteKeepAlive.integration.solid.test.tsx',
-  'src/workspace-sheets/__tests__/sheetLayoutSidebarCollapsedReactive.solid.test.tsx',
   // C 类：Renderer Suite fatal 回退链过程日志（含少量 B 类注册噪音）
   // #515：两文件随实体直连改名 .solid.test.tsx（同一错误路径契约，白名单跟随）。
   'src/application/agent-workbench/__tests__/AgentRendererSuiteWorkbench.fatal.solid.test.tsx',
@@ -153,7 +148,9 @@ afterAll(() => {
 
 // Node 26 的全局 localStorage 是实验性 getter：未传 --localstorage-file 时访问即触发
 // ExperimentalWarning 并返回 undefined（且会遮蔽 jsdom 的）。无条件用内存垫片覆盖该
-// descriptor（configurable: true），消除 warning 并让 zustand persist 可用（仅测试环境）。
+// descriptor（configurable: true），消除 warning 并让 Solid 内核 store 的 persist 复刻
+// （语义对齐 zustand persist，见 infrastructure/state/solidStoreKernel 的
+// attachSolidPersist）可用（仅测试环境）。
 const memory = new Map<string, string>()
 const storage: Storage = {
   getItem: key => (memory.has(key) ? memory.get(key)! : null),
@@ -168,7 +165,9 @@ if (typeof window !== 'undefined' && Object.getOwnPropertyDescriptor(window, 'lo
   Object.defineProperty(window, 'localStorage', { value: storage, configurable: true, writable: true })
 }
 
-// matchMedia：motion/react 的 useReducedMotion 在 jsdom 下会访问
+// matchMedia：垫片的在役消费者是首方 Solid 组件——TacticalScene.solid.tsx 与
+// AgentRendererSuiteWorkbench.solid.tsx 直读 window.matchMedia('(prefers-reduced-motion)')
+// （motion 垫片的 reduced-motion 面）；jsdom 未实现该方法，补最小桩。
 if (typeof window !== 'undefined' && typeof window.matchMedia === 'undefined') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -200,7 +199,9 @@ if (typeof Range !== 'undefined' && typeof Range.prototype.getBoundingClientRect
     toJSON: () => ({}),
   })
 }
-// K-3（施工书 09）：Radix Slider 的 use-size 依赖 ResizeObserver；jsdom 未实现。
+// K-3（施工书 09）：jsdom 未实现 ResizeObserver。原 Radix Slider / use-size 时代已随
+// #520 React 退役过去；现在的在役消费者是首方 Solid 组件（ErrorCenter.solid.tsx、
+// SettingsPreview.solid.tsx、createChatScrollController.solid.tsx 等）。
 // 测试环境垫片：立即回调 size 0 即可满足布局观察协议。
 if (typeof globalThis.ResizeObserver === 'undefined') {
   class ResizeObserverShim {

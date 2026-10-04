@@ -1,7 +1,7 @@
 /**
  * skinRuntimeServices — SkinRuntime 前端单例与 Theme Store 基线接线（阶段 5 S5-C）。
  *
- * 唯一 SkinRuntime 实例由本模块持有；React 通过 useSyncExternalStore 订阅，
+ * 唯一 SkinRuntime 实例由本模块持有；Solid 组件经信号订阅，
  * 禁止各组件自建 Runtime 或直接 useThemeStore.setState 驱动皮肤。
  */
 import { SkinRuntime } from '../../plugin-runtime/skin/skinRuntime.ts'

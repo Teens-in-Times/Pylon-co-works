@@ -10,6 +10,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeInvoke } from '../../../test/fakeInvoke'
+import { flushTask } from '../../../test/solidTestHelpers.ts'
 
 const { invokeRef } = vi.hoisted(() => ({
   invokeRef: { current: null as null | ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) },
@@ -112,7 +113,7 @@ describe('Tauri 模式（IS_TAURI=true）', () => {
     persistInputPredictionSettings(next)
     // 缓存同步生效（保存路径 fire-and-forget 不阻塞 UI）
     expect(cachedInputPredictionSettings().mode).toBe('off')
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(fakeInvoke.calls).toContainEqual({
       cmd: 'user_data_save',
       args: { key: 'input-prediction', payload: expect.objectContaining({ version: 1, mode: 'off' }), expectedRevision: null },
@@ -128,7 +129,7 @@ describe('Tauri 模式（IS_TAURI=true）', () => {
     fakeInvoke.register('user_data_save', () => { throw new Error('db busy') })
     persistInputPredictionSettings({ ...DEFAULT_INPUT_PREDICTION_SETTINGS, apiKey: 'sk-keep' })
     expect(cachedInputPredictionSettings().apiKey).toBe('sk-keep')
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(cachedInputPredictionSettings().apiKey).toBe('sk-keep')
     expect(globalThis.localStorage.getItem(UNSYNCED_FLAG_KEY)).toBe('1')
     expect(cachedInputPredictionSettings()).toMatchObject({ apiKey: 'sk-keep' })
@@ -142,7 +143,7 @@ describe('Tauri 模式（IS_TAURI=true）', () => {
     })
     fakeInvoke.register('user_data_save', () => { throw new Error('db busy') })
     persistInputPredictionSettings({ ...DEFAULT_INPUT_PREDICTION_SETTINGS, apiKey: 'sk-unrecoverable' })
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(globalThis.localStorage.getItem(INPUT_PREDICTION_SETTINGS_KEY)).toBeNull()
     // 失败一律置位：若影子恰与后端一致属 no-op 失败多置，hydrate 等值检查自愈清除
     expect(globalThis.localStorage.getItem(UNSYNCED_FLAG_KEY)).toBe('1')
@@ -249,7 +250,7 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     globalThis.localStorage.setItem(UNSYNCED_FLAG_KEY, '1')
     const hydrating = hydrateInputPredictionSettingsFromBackend()
     // 重发已入飞（10ms 延迟窗口），此刻用户保存较新值 → 排到链上重发之后
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(fakeInvoke.calls.some(call => call.cmd === 'user_data_save')).toBe(true)
     persistInputPredictionSettings({ ...DEFAULT_INPUT_PREDICTION_SETTINGS, mode: 'fork' as const, apiKey: 'sk-new' })
     await hydrating
@@ -265,7 +266,7 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     fakeInvoke.register('user_data_save', () => { throw new Error('backend down') })
     // 第一次保存：影子写成功、后端失败 → 标志置位（shadow=V1 可证较新）
     persistInputPredictionSettings({ ...DEFAULT_INPUT_PREDICTION_SETTINGS, mode: 'off' as const, apiKey: 'sk-v1' })
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     expect(globalThis.localStorage.getItem(UNSYNCED_FLAG_KEY)).toBe('1')
     // 第二次保存：影子写失败（quota）、后端也失败 → 标志必须保持（V1 仍是恢复源）
     const setItem = globalThis.localStorage.setItem.bind(globalThis.localStorage)
@@ -274,7 +275,7 @@ describe('#463 前端 C-1：未同步标志对账', () => {
       setItem(key, value)
     })
     persistInputPredictionSettings({ ...DEFAULT_INPUT_PREDICTION_SETTINGS, mode: 'fork' as const, apiKey: 'sk-v2' })
-    await new Promise(resolve => globalThis.setTimeout(resolve, 0))
+    await flushTask()
     vi.restoreAllMocks()
     expect(globalThis.localStorage.getItem(UNSYNCED_FLAG_KEY)).toBe('1')
     expect(JSON.parse(globalThis.localStorage.getItem(INPUT_PREDICTION_SETTINGS_KEY)!)).toMatchObject({ mode: 'off' })

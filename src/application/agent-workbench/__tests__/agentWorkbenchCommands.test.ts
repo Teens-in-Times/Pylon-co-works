@@ -3,6 +3,7 @@ import type { Session } from '../../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../../domains/runtime/runtimeStore.ts'
 import { createAgentWorkbenchCommandFacade } from '../agentWorkbenchCommands.ts'
 import type { InteractionResponseIdentity } from '../../../domains/agent/agentContracts.ts'
+import { flushTask } from '../../../test/solidTestHelpers.ts'
 
 const session: Session = {
   id: 'session-a', source: 'local:a', agentId: 'peri', profileId: 'profile-a', name: 'A',
@@ -37,7 +38,7 @@ describe('Agent Workbench production commands', () => {
     })
 
     resolveSend()
-    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    await flushTask()
     await early.value.initialPromptOutcome
     expect(commands.sessionCreation?.getSnapshot()).toMatchObject({
       phase: 'prompt-terminal', sessionId: session.id,

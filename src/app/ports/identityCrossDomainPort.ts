@@ -1,6 +1,6 @@
 /**
- * identityCrossDomainPort — identity 域对外部域（workspace sheet 状态 / runtime 会话源）
- * 的同步联动端口（#351）。
+ * identityCrossDomainPort — identity 域对外部域（workspace sheet 状态 / runtime 会话源 /
+ * 统一 sessionUi 注册表）的同步联动端口（#351；#520 S2-P1-2 扩 clearSessionUiState）。
  *
  * 断裂 `identityStore → workspaceStore/runtimeStore` 的横向 import：identity 的组合
  * action 在**原调用点**经本端口发同步调用，读写时序逐点不变；具体实现由应用装配层
@@ -22,6 +22,9 @@ export interface IdentityCrossDomainPort {
   patchSheetAgentStates(states: Record<string, IdentitySheetAgentStateView>): void
   pruneAgentSheets(agentIds: string[]): void
   clearSessionSource(context: { agentId: string; source: string }): void
+  /** #520 S2-P1-2：会话删除时回收会话级 UI 注册表条目（统一 sessionUiStore；原
+   * identitySessionActions 对 chat/sessionUiState 的域间直连改经本端口）。 */
+  clearSessionUiState(sessionId: string): void
 }
 
 let port: IdentityCrossDomainPort | null = null

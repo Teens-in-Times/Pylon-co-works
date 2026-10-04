@@ -1,14 +1,14 @@
 /**
  * createSkinSurface — useSkinSurface 的 Solid 等价形态（#515，供根翻转后的 Solid App 根消费）。
  *
- * 与 React 版（useSkinSurface.ts）逐项对齐：
+ * 与已退役的 React 版逐项对齐（行为保真迁移）：
  * - 经 SkinRuntime.subscribe 订阅快照（不依赖设置页手动刷新，也不直写 Store）；
- * - resolved skin 由 resolveSkin 派生，snapshot.revision 变化驱动重解析（对齐 React 版
- *   deps 里的 snapshot.revision；布局 options 同样进入追踪，避免左栏折叠时 CSS variables
- *   停留在旧的 TitleBar 轨道宽度）；
+ * - resolved skin 由 resolveSkin 派生，snapshot.revision 变化驱动重解析（对齐已退役
+ *   React 版 deps 里的 snapshot.revision 语义；布局 options 同样进入追踪，避免左栏折叠时
+ *   CSS variables 停留在旧的 TitleBar 轨道宽度）；
  * - ref 挂上真实 DOM surface 后由 projectSkinSurface 投影，dispose 随作用域回收。
  *
- * React 版保留给现役 React 根（App.tsx）；根翻转后本文件是唯一形态，React 版随批7 删除。
+ * 根翻转已完成：本文件是 useSkinSurface 的唯一形态（React 版已随批7 删除）。
  */
 import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import type { SkinResolutionContext } from '../../plugin-runtime/skin/skinRuntime.ts'

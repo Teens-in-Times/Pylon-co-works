@@ -15,7 +15,7 @@ import type { KernelBootstrap } from '../../kernel/kernelBootstrap.ts'
  * #515：Solid 实体（原 PluginCapabilityConsentCard.tsx 为 React 薄桥）。
  */
 
-export interface PluginCapabilityConsentCardProps {
+interface PluginCapabilityConsentCardProps {
   /** 待授权声明清单：bootstrap capability-consent 失败投影。 */
   readonly pending: readonly {
     pluginId: string

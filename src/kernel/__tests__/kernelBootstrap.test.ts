@@ -15,8 +15,7 @@ describe('Kernel bootstrap supervisor', () => {
     const bootstrap = createKernelBootstrap({
       bootstrapBuiltins: vi.fn(() => builtins.promise),
       initializeUserPackages: vi.fn(async () => ({ activated: [], failed: [] })),
-      mountApplication: vi.fn(() => { order.push('mount') }),
-      unmountApplication: vi.fn(),
+      applicationMount: { mount: vi.fn(() => { order.push('mount') }), unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({ activePluginIds: [], failures: [], skippedPluginIds: [] })),
     })
 
@@ -42,7 +41,7 @@ describe('Kernel bootstrap supervisor', () => {
 
   it('keeps the recovery surface degraded when the shell did not activate', async () => {
     const initializeUserPackages = vi.fn(async () => ({ activated: [], failed: [] }))
-    const mountApplication = vi.fn()
+    const mount = vi.fn()
     const shellFailure = {
       pluginId: BUILTIN_PYLON_SHELL_ID,
       stage: 'activate' as const,
@@ -57,14 +56,13 @@ describe('Kernel bootstrap supervisor', () => {
         skippedPluginIds: [],
       })),
       initializeUserPackages,
-      mountApplication,
-      unmountApplication: vi.fn(),
+      applicationMount: { mount, unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({ activePluginIds: [], failures: [], skippedPluginIds: [] })),
     })
 
     await bootstrap.startNormal()
 
-    expect(mountApplication).not.toHaveBeenCalled()
+    expect(mount).not.toHaveBeenCalled()
     expect(initializeUserPackages).not.toHaveBeenCalled()
     expect(bootstrap.getSnapshot()).toEqual({
       kind: 'degraded',
@@ -85,8 +83,7 @@ describe('Kernel bootstrap supervisor', () => {
         activated: [],
         failed: [{ pluginId: 'user.broken', message: 'entry rejected' }],
       })),
-      mountApplication: vi.fn(),
-      unmountApplication: vi.fn(),
+      applicationMount: { mount: vi.fn(), unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({ activePluginIds: [], failures: [], skippedPluginIds: [] })),
     })
 
@@ -114,8 +111,7 @@ describe('Kernel bootstrap supervisor', () => {
         skippedPluginIds: [],
       })),
       initializeUserPackages: vi.fn(async () => { throw new Error('plugin directory unavailable') }),
-      mountApplication: vi.fn(),
-      unmountApplication: vi.fn(),
+      applicationMount: { mount: vi.fn(), unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({ activePluginIds: [], failures: [], skippedPluginIds: [] })),
     })
 
@@ -141,7 +137,7 @@ describe('Kernel bootstrap supervisor', () => {
       message: 'shell boom',
       retryable: true,
     }
-    const mountApplication = vi.fn()
+    const mount = vi.fn()
     const bootstrap = createKernelBootstrap({
       bootstrapBuiltins: vi.fn(async () => ({
         activePluginIds: [],
@@ -149,8 +145,7 @@ describe('Kernel bootstrap supervisor', () => {
         skippedPluginIds: [],
       })),
       initializeUserPackages: vi.fn(async () => ({ activated: [], failed: [] })),
-      mountApplication,
-      unmountApplication: vi.fn(),
+      applicationMount: { mount, unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({
         activePluginIds: [BUILTIN_PYLON_SHELL_ID],
         failures: [],
@@ -161,7 +156,7 @@ describe('Kernel bootstrap supervisor', () => {
 
     await bootstrap.retryPlugin(BUILTIN_PYLON_SHELL_ID)
 
-    expect(mountApplication).toHaveBeenCalledWith(BUILTIN_PYLON_SHELL_ID)
+    expect(mount).toHaveBeenCalledWith(BUILTIN_PYLON_SHELL_ID)
     expect(bootstrap.getSnapshot()).toEqual({
       kind: 'ready',
       activePluginIds: [BUILTIN_PYLON_SHELL_ID],
@@ -170,7 +165,7 @@ describe('Kernel bootstrap supervisor', () => {
 
   it('enters safe mode without user packages and unmounts any product application', async () => {
     const initializeUserPackages = vi.fn(async () => ({ activated: [], failed: [] }))
-    const unmountApplication = vi.fn()
+    const unmount = vi.fn()
     const bootstrap = createKernelBootstrap({
       bootstrapBuiltins: vi.fn(async mode => ({
         activePluginIds: [],
@@ -178,14 +173,13 @@ describe('Kernel bootstrap supervisor', () => {
         skippedPluginIds: mode === 'safe-mode' ? ['builtin.pylon-shell'] : [],
       })),
       initializeUserPackages,
-      mountApplication: vi.fn(),
-      unmountApplication,
+      applicationMount: { mount: vi.fn(), unmount },
       retryBuiltin: vi.fn(async () => ({ activePluginIds: [], failures: [], skippedPluginIds: [] })),
     })
 
     await bootstrap.startSafeMode()
 
-    expect(unmountApplication).toHaveBeenCalledOnce()
+    expect(unmount).toHaveBeenCalledOnce()
     expect(initializeUserPackages).not.toHaveBeenCalled()
     expect(bootstrap.getSnapshot()).toEqual({
       kind: 'safe-mode',
@@ -195,7 +189,7 @@ describe('Kernel bootstrap supervisor', () => {
 
   it('starts an explicitly selected safe-mode builtin closure without initializing user packages', async () => {
     const initializeUserPackages = vi.fn(async () => ({ activated: [], failed: [] }))
-    const mountApplication = vi.fn()
+    const mount = vi.fn()
     const bootstrap = createKernelBootstrap({
       bootstrapBuiltins: vi.fn(async () => ({
         activePluginIds: [],
@@ -203,8 +197,7 @@ describe('Kernel bootstrap supervisor', () => {
         skippedPluginIds: [BUILTIN_PYLON_SHELL_ID],
       })),
       initializeUserPackages,
-      mountApplication,
-      unmountApplication: vi.fn(),
+      applicationMount: { mount, unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({
         activePluginIds: [BUILTIN_PYLON_SHELL_ID],
         failures: [],
@@ -215,7 +208,7 @@ describe('Kernel bootstrap supervisor', () => {
 
     await bootstrap.retryPlugin(BUILTIN_PYLON_SHELL_ID)
 
-    expect(mountApplication).toHaveBeenCalledWith(BUILTIN_PYLON_SHELL_ID)
+    expect(mount).toHaveBeenCalledWith(BUILTIN_PYLON_SHELL_ID)
     expect(initializeUserPackages).not.toHaveBeenCalled()
     expect(bootstrap.getSnapshot()).toEqual({ kind: 'safe-mode', skippedPluginIds: [] })
   })
@@ -242,8 +235,7 @@ describe('Kernel bootstrap supervisor', () => {
         skippedPluginIds: [],
       })),
       initializeUserPackages: vi.fn(async () => ({ activated: [], failed: [] })),
-      mountApplication: vi.fn(),
-      unmountApplication: vi.fn(),
+      applicationMount: { mount: vi.fn(), unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({
         activePluginIds: [BUILTIN_PYLON_SHELL_ID],
         failures: [],
@@ -274,8 +266,7 @@ describe('Kernel bootstrap supervisor', () => {
         if (packageAttempt === 1) throw new Error('directory unavailable')
         return { activated: ['user.recovered'], failed: [] }
       }),
-      mountApplication: vi.fn(),
-      unmountApplication: vi.fn(),
+      applicationMount: { mount: vi.fn(), unmount: vi.fn() },
       retryBuiltin,
     })
     await bootstrap.startNormal()
@@ -293,8 +284,7 @@ describe('Kernel bootstrap supervisor', () => {
     const bootstrap = createKernelBootstrap({
       bootstrapBuiltins: vi.fn(async () => { throw new Error('host construction failed') }),
       initializeUserPackages: vi.fn(async () => ({ activated: [], failed: [] })),
-      mountApplication: vi.fn(),
-      unmountApplication: vi.fn(),
+      applicationMount: { mount: vi.fn(), unmount: vi.fn() },
       retryBuiltin: vi.fn(async () => ({ activePluginIds: [], failures: [], skippedPluginIds: [] })),
     })
 
@@ -322,8 +312,7 @@ describe('Kernel bootstrap supervisor', () => {
         return { activePluginIds: [], failures: [], skippedPluginIds: [] }
       }),
       initializeUserPackages: vi.fn(async () => ({ activated: [], failed: [] })),
-      mountApplication: vi.fn(),
-      unmountApplication: vi.fn(),
+      applicationMount: { mount: vi.fn(), unmount: vi.fn() },
       retryBuiltin,
     })
 

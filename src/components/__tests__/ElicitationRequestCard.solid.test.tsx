@@ -3,10 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   collectElicitationValues,
   parseElicitationFields,
-} from '../ElicitationRequestCard.solid.tsx'
+} from '../elicitationSchema.ts'
 
 /**
- * #316：elicitation form 卡的 schema 解析与值收集纯函数测试（#515 迁移为 .solid.test：导入改指 Solid 实体，断言集原样保留）。
+ * #316：elicitation form 卡的 schema 解析与值收集纯函数测试（纯函数住
+ * elicitationSchema.ts，测试直连原模块；断言集原样保留）。
  *
  * 官方契约：requestedSchema 是受限 JSON Schema（扁平 properties 原语
  * string/number/boolean/enum + default + required）；超出原语子集 → 降级

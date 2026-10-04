@@ -275,13 +275,10 @@ export function projectSettingsContributionCatalog(input: SettingsContributionCa
   return Object.freeze({ ...base, searchItems: freezeDeep(buildSettingsContributionSearchItems(base)) })
 }
 
-/** Editable routes are the conflict-free, active owner entries only. */
-export function canonicalEditableRecords(catalog: SettingsContributionCatalog): readonly SettingsContributionRecord[] {
-  return Object.freeze(catalog.records.filter(record => record.active && !record.deprecated && !record.diagnostics.some(diagnostic => diagnostic.code === 'duplicate-identity' || diagnostic.code === 'route-collision')))
-}
-
+// #520 收口：canonicalEditableRecords 已删（含测试在内全仓零生产消费者）；
+// searchItems 构建步骤仅由 projectSettingsContributionCatalog 文件内消费，导出面收窄。
 /** Convert the canonical records into the SettingsQuickSearch contract. */
-export function buildSettingsContributionSearchItems(
+function buildSettingsContributionSearchItems(
   catalog: SettingsContributionCatalog,
 ): readonly SettingsSearchItem[] {
   return Object.freeze(catalog.records.filter(record => !(record.namespace === 'kind' && record.ownerId.startsWith('tool.') && record.deprecated)).map(record => {

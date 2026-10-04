@@ -7,7 +7,7 @@ import type { RenderSurface } from '../../../contracts/messageRenderer.ts'
 
 const surface = (id: string): RenderSurface => ({ rendererId: id, kind: 'solid', mount: () => ({}), update: () => {}, destroy: () => {}, on: () => () => {} })
 const k = (id: string, fallbackKind = 'content.unknown') => ({ id, category: 'content', fallbackKind, priority: 1, fixture: {}, defaultTokens: {}, settingsSchemaVersion: 1, validateInput: () => true })
-const s = (id: string, fallbackSuiteId?: string): RendererSuiteContribution => ({ id, label: id, apiVersion: 1, runtime: { framework: 'solid', version: '1' }, compatibility: { documentSchema: 'workbench.v1', renderCatalogSchema: 1 }, requiredKinds: ['plugin.note'], fallbackSuiteId, factory: () => ({}) })
+const s = (id: string, fallbackSuiteId?: string): RendererSuiteContribution => ({ id, label: id, apiVersion: 1, runtime: { framework: 'solid', version: '1' }, compatibility: { documentSchema: 'workbench.v1', renderCatalogSchema: 1 }, requiredKinds: ['plugin.note'], fallbackSuiteId, factory: { prepare: async () => { throw new Error('not mounted in test') } } })
 const slot = (id: string, targetSuites: readonly (string | '*')[], kinds: readonly string[], fallback = false): RendererSlotContribution => ({ id, targetSuites, kinds, priority: fallback ? 100 : 1, fallback, canRender: () => true, createSurface: () => surface(id) })
 
 describe('RendererActivationResolver', () => {

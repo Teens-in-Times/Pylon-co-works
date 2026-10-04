@@ -6,13 +6,14 @@ import type { WorkbenchRendererFactory as PreparedWorkbenchRendererFactory } fro
 
 export type RendererSuiteId = string
 
-/** Framework-neutral input reserved for the Suite Host (A13). */
-export interface WorkbenchRendererFactoryInput {
-  readonly suiteId: RendererSuiteId
-}
-
-/** A factory owns a complete Workbench implementation; it never receives raw stores. */
-export type WorkbenchRendererFactory = ((input: WorkbenchRendererFactoryInput) => unknown) | PreparedWorkbenchRendererFactory
+/**
+ * A factory owns a complete Workbench implementation; it never receives raw stores.
+ *
+ * #520 S4-P2 收窄：历史上的「裸函数 factory」臂自 Suite Host（A13）起从未被实现
+ * （host 对函数形态直接 throw），且无任何生产/测试消费者——函数臂与配套的
+ * `WorkbenchRendererFactoryInput` 已删除，Suite factory 只剩 prepare 工厂对象一种形态。
+ */
+export type WorkbenchRendererFactory = PreparedWorkbenchRendererFactory
 
 export interface RendererSuiteContribution {
   readonly id: RendererSuiteId

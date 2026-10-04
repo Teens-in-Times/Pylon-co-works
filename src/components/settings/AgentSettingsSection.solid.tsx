@@ -10,7 +10,7 @@ import ConfigOptionsPanel from './ConfigOptionsPanel.solid.tsx'
 import { Group } from './settingsSectionShared.solid.tsx'
 import { createSettingsAgentActions } from './settingsAgentActions.solid.ts'
 
-export interface AgentSettingsSectionProps {
+interface AgentSettingsSectionProps {
   initialAgentId?: string
   activeSessionContext?: { agentId: string; source: string }
 }

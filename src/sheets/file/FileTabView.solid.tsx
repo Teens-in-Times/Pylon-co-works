@@ -20,7 +20,7 @@ export interface FileSaveReceipt {
 }
 
 /**
- * FileTabViewProps — 与 React 桥（FileTabView.tsx）内声明的同名接口逐字段一致。
+ * FileTabViewProps — 名字承自历史 React 契约（FileTabView.tsx，已退役）；本实体即唯一真源。
  */
 export interface FileTabViewProps {
   target?: WorkspaceTarget | null

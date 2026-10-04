@@ -11,7 +11,7 @@
 import { cleanup, waitFor } from '@solidjs/testing-library'
 import { describe, it } from 'vitest'
 import { mountSolidWorkbench } from '../mountSolidWorkbench.solid.tsx'
-import { createPreviewWorkbenchServices } from '../__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../preview/previewWorkbenchServices.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../domains/workbench/events/workbenchEventSchema.ts'
 import { projectWorkbench } from '../../../domains/workbench/workbenchProjector.ts'
 

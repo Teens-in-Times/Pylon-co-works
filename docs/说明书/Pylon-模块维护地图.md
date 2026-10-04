@@ -16,8 +16,7 @@
 | 渲染器 | `src/renderers/`；[SolidWorkbenchApp](../../src/renderers/solid-workbench/SolidWorkbenchApp.solid.tsx) | 消费 document / appearance / commands；拥有局部 UI 与 DOM 清理，不另建会话数据源 | `vitest run src/renderers`；`check:solid`；实际 UI 检验 |
 | 工作区 UI | `src/sheets/`、`src/workspace-sheets/`、`src/components/` | Sheet 激活、设置与已有组件；agent-workbench 子目录优先归宿主块。chat 含历史编排，迁移前逐个核实 | 对应组件/Sheet 测试；`check:first-party-styles` |
 | CLI | `src/cli/` | 语法和执行适配，复用命令责任方，不重建 session 生命周期 | `vitest run src/cli` |
-| 观测 | `src/devtools/obs/` | 冷启动、删除取证、stderr 样本与三源导出 DEV 触发器；只读证据，触发器在 main 动态接入（原 `src/obs04~07` 四个顶级散目录，结构全修批收敛为单目录，安装样板抽 `devTriggerKit.ts`）。#228 起三源采集器下沉 `src/domains/export/`（生产 `core.export.*` 与 DEV 钩子同源） | `vitest run src/domains/export src/devtools/obs` |
-| 历史策略 | `src/css01/` | 已有样式取证基线；目录编号本身不是删除或合并的证据（`src/css04/`、`src/cwd02/` 已作为零引用死代码删除，#228；cwd wire 行为锁迁 `src/infrastructure/acp/__tests__/`） | 各目录测试；样式与边界门禁 |
+| 观测 | `src/devtools/obs/` | 冷启动、删除取证、stderr 样本、三源导出与 typography 基线 DEV 触发器；只读证据，触发器在 main 动态接入（原 `src/obs04~07` 四个顶级散目录，结构全修批收敛为单目录，安装样板抽 `devTriggerKit.ts`；#520 K 域起原 `src/css01/` 取证件并入本目录——`typographyBaselineTrigger.ts`，其基线工件组装迁 `src/domains/theme/typographyBaseline.ts`）。#228 起三源采集器下沉 `src/domains/export/`（生产 `core.export.*` 与 DEV 钩子同源） | `vitest run src/domains/export src/devtools/obs` |
 | 窄工具 / 演示 | `src/utils/`、`src/demo/` | 窄工具按消费者归属；demo 数据不能当真实 Agent 结果 | 对应工具测试；生产 bundle 检查 |
 | 前端根文件 | `src/*` 的直接文件（main/App/index.css/声明文件）；主题/预设集群已整体落位 `src/domains/theme/`（结构全修批：`store.ts`→`themeStore.ts`、`themeTypes.ts`、themeFieldDefs、customPresets、themePresetState、tokenFormat、`presets/`、`zones/`，themeFieldRenderer→`components/settings/`） | 入口文件继续按 #351 口径不吸收新增子目录；主题域文件随 `src/domains/theme/` 维护，`ThemeSettings` 单源在 `themeTypes.ts`（灭 store⇄defs⇄presets 类型环） | `lint`、`build` 与消费者测试 |
 | 测试支撑 | `src/test-utils/` | mock 形状与 fixture 工厂（如 `tauriCoreMock.ts`）；仅测试代码消费，不进生产构建 | `lint` 与消费它的套件 |
@@ -87,6 +86,7 @@ flowchart LR
 | `dispatcher/` 已有 `routing`、`canonical_flush`、`crash_reconnect`、`interaction_route`、`host_tools_gate`、`permission_route`、`fallback_route`、`publish_route`、`reactions`（#416：会话更新选路收口与 pet 订阅 sink）缝模块（#317 批次二）；宠物事件在 sessions 锁内收集、锁外按序应用。#336/U2b：主泵 `start_notification_dispatcher` 为编排入口（复位+装配+spawn），循环骨架在 `NotificationPump::{new,run,pump_step,route_frame}`——分支各一行模块调用，`route_frame` 的 return true/false 精确映射原 continue/break；flush 环境经 `flush_context()` 现场构造（#335 `CanonicalFlushContext` 字段清单唯一处）。#334：逐帧热路径 payload 经 `Arc<Value>` 共享进 ingest（ingest 先、publish 后取回唯一引用），reducer 走 `AcpSessionState::apply_session_update` 零拷贝入口，`turn_ledger` 拆 active/terminal 双表（单 Mutex）后 `note_session_activity` 只扫 active 表 | 继续拆块必须保持锁外副作用时序；路由顺序与锁持有范围不得随重构改变（对照基准 = `route_frame` 分支次序与 `pump_step` biased 优先级） |
 | OBS 04—07 的采集对象、trace 包装与返回 API 不同 | 不把相似安装守卫抽成泛用全局注册器；保留 DEV 隔离和各自证据语义 |
 | 根 store 已随 #351 下沉各域（identity 经 `app/ports/identityCrossDomainPort` 单向装配）；plugins/renderers 仍有 10 个 global store import 在 legacy 白名单 | 白名单仅报告存量消费点；不能通过新增豁免宣称模块化完成 |
+| 视图目录仍住 store/controller 存量：`src/sheets/tacticalSceneStore.ts`（持久化偏好 store 居视图目录）、工作区控制器居视图目录（#520 结构审查 S2-P2 登记） | 已认知的存量债：归属随对应域收敛批裁决，不因目录位置单独搬动 |
 
 ## 验证
 

@@ -19,7 +19,8 @@ const FOOTNOTE_PATTERN = /\[\^[^\]\n]+\]/
 
 /**
  * 只允许没有可识别 Markdown 结构的文本走 raw text renderer。
- * 判定必须保守：无法确认是纯文本时继续交给 ReactMarkdown。
+ * 判定必须保守：无法确认是纯文本时继续交给 markdown 解析渲染
+ * （MarkdownContent.solid 的渲染模型管线）。
  */
 export function isPlainTextContent(content: string): boolean {
   if (!content) return true

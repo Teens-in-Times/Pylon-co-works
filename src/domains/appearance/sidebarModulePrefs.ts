@@ -7,7 +7,7 @@
  * 换个 Sheet 就换一套排布。
  *
  * 独立 localStorage key——A-V12 收敛前的存量手写读写器（新偏好字段一律走域内
- * zustand persist，不再新增本形状），**不写进 ADR-0009 锁定的
+ * persist（Solid 内核），不再新增本形状），**不写进 ADR-0009 锁定的
  * `pylon-workspace-layout-v3`**，避免动那个被契约钉住的持久化面。
  */
 

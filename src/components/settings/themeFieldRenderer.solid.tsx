@@ -18,9 +18,7 @@ import { lastSettingWriter, SETTING_WRITE_SOURCE_LABELS } from '../../domains/th
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
 /**
- * themeFieldRenderer — 声明式字段渲染器（自定义系统骨架）的 Solid 实体
- * （#515；原 themeFieldRenderer.tsx 为 React 薄桥，保留 Row/Slider/Num/Sel/Txt
- * 的 React 原实现作导出面）。
+ * themeFieldRenderer — 声明式字段渲染器（自定义系统骨架）的 Solid 实体。
  *
  * 按 THEME_FIELD_DEFS 类型/控件标识 + GROUP_ORDER（分区/组/compact）渲染
  * Settings 字段区。能力：type 分发、特殊控件（bgImage/spinnerMarker/
@@ -51,12 +49,12 @@ export function Slider(props: { value: number; onChange: (v: number) => void; mi
     onInput={e => props.onChange(+e.currentTarget.value)} class="set-range" />
 }
 
-export function Num(props: { value: number; onChange: (v: number) => void; min?: number; max?: number }) {
+function Num(props: { value: number; onChange: (v: number) => void; min?: number; max?: number }) {
   return <input type="number" min={props.min} max={props.max} value={props.value} step={0.1}
     onInput={e => props.onChange(+e.currentTarget.value)} class="set-num" />
 }
 
-export function Sel(props: { value: string; onChange: (v: string) => void; options: readonly (string | { value: string; label: string; description?: string; disabled?: boolean })[]; ariaLabel: string }) {
+function Sel(props: { value: string; onChange: (v: string) => void; options: readonly (string | { value: string; label: string; description?: string; disabled?: boolean })[]; ariaLabel: string }) {
   return <Select ariaLabel={props.ariaLabel} className="set-select" value={props.value} onChange={props.onChange} options={props.options.map(option => typeof option === 'string' ? { value: option, label: option } : option)} />
 }
 
@@ -70,11 +68,11 @@ function withUnavailableCurrent(options: ReturnType<typeof settingOptions>, valu
     : [{ value, label: `${value}（已不可用）`, disabled: true }, ...options]
 }
 
-export function Txt(props: { value: string; onChange: (v: string) => void }) {
+function Txt(props: { value: string; onChange: (v: string) => void }) {
   return <input type="text" value={props.value} onInput={e => props.onChange(e.currentTarget.value)} class="set-input" />
 }
 
-// A-V12：折叠记忆统一走 settingsChromeStore（zustand persist 真值源，订阅式）。
+// A-V12：折叠记忆统一走 settingsChromeStore（Solid 内核 persist 真值源，订阅式）。
 function Group(props: { zone?: string; title: string; children: JSX.Element; defaultOpen?: boolean; forceOpen?: boolean }) {
   const collapseKey = props.zone ? `${props.zone}.${props.title}` : undefined
   // 挂载时捕获一次记忆值：折叠态记忆是「上次离开时的状态」，不随他组操作联动重放。

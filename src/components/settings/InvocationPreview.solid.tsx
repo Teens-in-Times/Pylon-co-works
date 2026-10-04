@@ -2,7 +2,7 @@
 import { createMemo, For } from 'solid-js'
 import { describeInvocation } from '../../domains/agent/invocationDraft.ts'
 
-export interface InvocationPreviewProps {
+interface InvocationPreviewProps {
   executable: string
   args: string[]
   effectiveArgs?: string[]

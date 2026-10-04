@@ -5,11 +5,12 @@ import type {
 /**
  * 左栏模块（`AgentSidebarContribution`）**隔离面**的 wire 协议（`renderKind: 'isolated-surface'`）。
  *
- * 真源纪律：宿主渲染器（`Sidebar.tsx` block 体量 / `AgentSheetPageHost.tsx` page 体量）以
+ * 真源纪律：宿主渲染器（`Sidebar.solid.tsx` block 体量 / `AgentSheetPageHost.solid.tsx`
+ * page 体量）以
  * `satisfies` 挂本类型，经 `IsolatedPluginSurface` 的 `host:input` 通道推送（每次 input
  * 变化重放一次）；插件侧从 SDK 引用同一类型解析 input，按 `SIDEBAR_SURFACE_EVENTS`
- * 词表回传事件。字段全部是**跨隔离边界可序列化的投影**——不含宿主回调（那是一方
- * React 变体的 props 面，见 `AgentSidebarContributionProps`）。
+ * 词表回传事件。字段全部是**跨隔离边界可序列化的投影**——不含宿主回调（那是第一方
+ * （first-party-solid）实体的 props 面，见 `AgentSidebarContributionProps`）。
  */
 
 /** 会话投影项（wire 最小面：列表渲染 + 定位所需，不含状态机字段）。 */

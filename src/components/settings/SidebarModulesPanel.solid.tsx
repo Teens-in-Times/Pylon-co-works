@@ -7,7 +7,6 @@ import {
   sidebarModulePrefsStore,
 } from '../../domains/appearance/sidebarModulePrefs.ts'
 
-export interface SidebarModulesPanelProps {}
 
 /**
  * 侧栏模块显隐（设置 → 侧栏）。

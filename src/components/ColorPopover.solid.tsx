@@ -69,7 +69,7 @@ function colorKind(value: string): string {
 
 /**
  * ColorPopover 的 Solid 实体（#515 收拢：原 settings/ColorPopover.solid.tsx 本地副本
- * 收拢至此——组件的正式住所在 React 原件旁）。DOM 结构、class、role/aria 与键盘行为
+ * 收拢至此）。DOM 结构、class、role/aria 与键盘行为
  * （Enter 提交 / Escape 还原并收起）逐项保持；recent 色板沿用模块级共享态。
  */
 export default function ColorPopover(props: Props) {

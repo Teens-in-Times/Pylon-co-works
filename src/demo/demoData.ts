@@ -315,7 +315,7 @@ const WORKSPACE_TREE: Record<string, WorkspaceBackendEntry[]> = {
     { name: 'brand-guidelines.md', relativePath: 'assets/brand/brand-guidelines.md', kind: 'file' },
   ],
   'src/sheets': [
-    { name: 'AgentSheetView.tsx', relativePath: 'src/sheets/AgentSheetView.tsx', kind: 'file' },
+    { name: 'AgentSheetView.solid.tsx', relativePath: 'src/sheets/AgentSheetView.solid.tsx', kind: 'file' },
     { name: 'OverviewSheetView.tsx', relativePath: 'src/sheets/OverviewSheetView.tsx', kind: 'file' },
     { name: 'history', relativePath: 'src/sheets/history', kind: 'directory' },
   ],
@@ -360,7 +360,7 @@ export function resolveWorkspaceEntries(relativePath: string): WorkspaceBackendE
 }
 
 const FILE_TEXTS: Record<string, string> = {
-  'src/sheets/AgentSheetView.tsx': 'import { useEffect } from \'react\'\nimport ChatView from \'../components/chat/ChatView\'\nimport ControlCenter from \'../components/ControlCenter\'\nimport { useReplayPostureStore } from \'../components/chat/replayPostureStore\'\n\nexport default function AgentSheetView({ ctx }) {\n  const postureSession = useReplayPostureStore(s => s.sessionId)\n  const isReplay = ctx.activeSession !== null && postureSession === ctx.activeSession\n  useEffect(() => {\n    if (postureSession !== null && postureSession !== ctx.activeSession) {\n      useReplayPostureStore.getState().clear()\n    }\n  }, [postureSession, ctx.activeSession])\n  return (\n    <div className="main">\n      <ChatView sessionId={ctx.activeSession} />\n      {isReplay\n        ? <button className="replay-continue-bar">只读回放 · 点击继续</button>\n        : <ControlCenter sessionId={ctx.activeSession} />}\n    </div>\n  )\n}\n',
+  'src/sheets/AgentSheetView.solid.tsx': '/** @jsxImportSource solid-js */\nimport { createEffect, createMemo, Show } from \'solid-js\'\nimport { useReplayPostureStore } from \'../domains/chat/replayPostureStore\'\nimport { createZustandSignal } from \'../infrastructure/state/solidStoreBridge.ts\'\nimport AgentRendererSuiteWorkbench from \'./agent-workbench/AgentRendererSuiteWorkbench.solid.tsx\'\n\nexport default function AgentSheetView(props) {\n  const postureSession = createZustandSignal(useReplayPostureStore, s => s.sessionId)\n  const active = () => props.ctx.activeSession\n  // 姿态是一次性手势：会话不匹配即清，防 tab 重开误回只读。\n  createEffect(() => {\n    if (postureSession() !== null && postureSession() !== active()) useReplayPostureStore.getState().clear()\n  })\n  return (\n    <Show when={postureSession() === null || postureSession() !== active()}\n      fallback={<div class="replay-continue-bar">只读回放 · 点击继续</div>}>\n      <AgentRendererSuiteWorkbench sheet={props.sheet} ctx={props.ctx} />\n    </Show>\n  )\n}\n',
   'package.json': '{\n  "name": "prism-desktop",\n  "private": true,\n  "version": "0.1.0",\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc && vite build",\n    "test:legacy": "node scripts/run-frontend-tests.mts"\n  }\n}\n',
 }
 
@@ -373,7 +373,7 @@ export function buildWorkspaceSearchResults(query: string): Array<{ path: string
   const q = query.toLowerCase()
   if (!q) return []
   const haystack = [
-    { path: 'src/sheets/AgentSheetView.tsx', line: 12, lineText: 'const isReplay = ctx.activeSession !== null && postureSession === ctx.activeSession' },
+    { path: 'src/sheets/AgentSheetView.solid.tsx', line: 12, lineText: 'if (postureSession() !== null && postureSession() !== active()) useReplayPostureStore.getState().clear()' },
     { path: 'src/components/chat/replayPostureStore.ts', line: 3, lineText: 'export const useReplayPostureStore = create<ReplayPostureState>()(set => ({' },
     { path: 'docs/施工日志.md', line: 52, lineText: 'W4-02 接入只读回放视图 | 完成 | 姿态二' },
   ]

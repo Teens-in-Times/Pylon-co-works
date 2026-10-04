@@ -4,7 +4,7 @@
  * 的类型图，模块接口在此声明）。
  */
 export interface SettingsPreviewControlCenterHandle {
-  /** React 宿主在主题 store 变更时调用（theme 为浅合并快照）。 */
+  /** 宿主在主题 store 变更时调用（theme 为浅合并快照）。 */
   setTheme(theme: Record<string, unknown>): void
   destroy(): void
 }

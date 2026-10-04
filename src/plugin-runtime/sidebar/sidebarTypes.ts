@@ -1,3 +1,4 @@
+import type { Component } from 'solid-js'
 import type { RegistryEntry } from '../registry/types.ts'
 import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
 import type { Workspace } from '../../domains/workspace/workspaceEntities.ts'
@@ -32,7 +33,7 @@ export interface AgentSidebarContributionContext {
 /**
  * 区块头部的动作按钮。声明成数据而不是让贡献自己画，是因为：
  * ① 宿主拥有区块外壳（标题 + 折叠），贡献只画内容，头部才不会有第二份标题；
- * ② 外置插件是隔离表面，无法往宿主头部塞 React 节点。
+ * ② 外置插件是隔离表面，无法往宿主头部塞任意组件节点。
  * `icon` 是由宿主解释的稳定字符串键（与 Workspace launch icon 同一约定），未知键安全降级。
  */
 export interface AgentSidebarHeaderAction {
@@ -110,8 +111,13 @@ interface AgentSidebarContributionBase {
 
 export interface FirstPartyAgentSidebarContribution extends AgentSidebarContributionBase {
   readonly renderKind: 'first-party-solid'
-  /** Opaque at the runtime boundary; the Solid host (src/components/Sidebar.solid.tsx) narrows it before rendering. */
-  readonly component: unknown
+  /**
+   * #520 S4-P1-6：typed component（对齐 contextPanelTypes 既有范式，不再 opaque）。
+   * 第一方贡献组件是 Solid `Component<AgentSidebarContributionProps>`，宿主
+   * （Sidebar / AgentSheetPageHost）经 PluginContributionBody 直连渲染——
+   * 宿主侧的 `as Component` 断言随 opaque 收窄一并退役。
+   */
+  readonly component: Component<AgentSidebarContributionProps>
 }
 
 export interface IsolatedAgentSidebarContribution extends AgentSidebarContributionBase {

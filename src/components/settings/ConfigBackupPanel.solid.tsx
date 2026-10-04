@@ -11,7 +11,6 @@ import { reportRuntimeError } from '../../app/runtimeError'
 import { selectUserDataRepository } from '../../infrastructure/persistence/userDataRepository'
 import { importConfigurationTransaction } from '../../application/transactions/importConfigurationTransaction'
 
-export interface ConfigBackupPanelProps {}
 
 /** #515：ConfigBackupPanel 的 Solid 实体（原 .tsx 为 React 薄桥）。 */
 export default function ConfigBackupPanel() {

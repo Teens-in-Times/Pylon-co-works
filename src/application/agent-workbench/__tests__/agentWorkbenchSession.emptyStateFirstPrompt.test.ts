@@ -10,7 +10,9 @@ import { getCanonicalEventFeed } from '../../../infrastructure/events/canonicalE
  *
  * 生产时序（`ControlCenter.createEmptySession` → `commands.createSession`）：
  * `selectSession(created.sessionId)` 之后**同一 tick** 调 `send`，而 Workbench 的 bind
- * 由 React effect 触发（内部 await loadAll）。因此发送入口运行时该会话**尚未绑定**。
+ * 由 Solid host 的 createEffect 触发（AgentRendererSuiteWorkbench.solid.tsx，
+ * `createEffect(() => { void sessionRuntime.bind(session()) })`，内部 await loadAll）。
+ * 因此发送入口运行时该会话**尚未绑定**。
  *
  * 修复前：`projectOptimisticUser` 因未绑定早退 ⇒ 无 TurnClock 起点 ⇒ 终帧
  * `turnClockTerminal` 查不到条目直接 return ⇒ 摘要永不发布。
@@ -64,7 +66,7 @@ describe('empty-state first prompt publishes the terminal summary without a rebi
       },
     })
 
-    // ① 空态创建：会话已被 select，bind 尚未发生（React effect 之后才 bind）。
+    // ① 空态创建：会话已被 select，bind 尚未发生（Solid host 的 createEffect 首轮运行后才 bind）。
     const sent = await service.commands.send(active.id, { text: '首条消息' })
     expect(sent.status).toBe('sent')
 
@@ -79,6 +81,10 @@ describe('empty-state first prompt publishes the terminal summary without a rebi
     expect(service.runtime.getSnapshot().summary).toBeNull()
 
     // ④ 生成结束：终帧到达即发布摘要——**没有**任何 re-bind / refresh（等价于不切 sheet）。
+    // 这 5ms 是承重睡：elapsedMs = 终帧 Date.now() − 发送入口 Date.now()
+    // （optimisticEcho 的 generationStart，agentWorkbenchOptimisticEcho.ts:85/122），
+    // Date.now 1ms 分辨率下必须真实越过至少 1ms 才保得住 elapsedMs > 0——
+    // 不能降级成纯微任务冲刷（flushTask 可落在同一毫秒内）。
     await new Promise(resolve => setTimeout(resolve, 5))
     await feed.acceptFrame({ event: 'pylon:done', payload: { source: active.source } })
 

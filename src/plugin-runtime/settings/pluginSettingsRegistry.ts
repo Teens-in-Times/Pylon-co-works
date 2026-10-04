@@ -1,6 +1,6 @@
 import { ValidatedContributionRegistry } from '../registry/validatedContributionRegistry.ts'
 import type { PluginSettingsPageContribution } from './pluginSettingsTypes.ts'
-import { normalizeRendererSettingsSchema } from '../renderers/rendererSettingsTypes.ts'
+import { normalizeSettingsSchema } from '../../contracts/rendererSettingsSchema.ts'
 
 export function validatePluginSettingsPage(page: PluginSettingsPageContribution): PluginSettingsPageContribution {
   if (!page.id || page.id !== page.id.trim()) throw new Error('Plugin settings page id 非法')
@@ -11,7 +11,7 @@ export function validatePluginSettingsPage(page: PluginSettingsPageContribution)
   if (page.renderKind === 'isolated-surface' && !page.surfaceId?.trim()) {
     throw new Error(`Plugin settings page surfaceId 不能为空：${page.id}`)
   }
-  return Object.freeze({ ...page, ...(page.schema ? { schema: normalizeRendererSettingsSchema(page.schema) } : {}) })
+  return Object.freeze({ ...page, ...(page.schema ? { schema: normalizeSettingsSchema(page.schema) } : {}) })
 }
 
 function validateAdapterIdentity(ownerPluginId: string, contributionId: string, adapter: PluginSettingsPageContribution['valueAdapter']): void {

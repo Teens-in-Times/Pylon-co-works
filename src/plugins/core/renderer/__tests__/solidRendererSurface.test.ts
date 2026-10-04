@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushTask } from '../../../../test/solidTestHelpers.ts'
 import type {
   RenderAppearanceSnapshot,
   RenderCommandPort,
@@ -73,7 +74,7 @@ describe('Solid semantic RenderSurface', () => {
     const handle = surface.mount(container, snapshot(0), appearance, commands)
     surface.destroy(handle)
     await Promise.resolve()
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushTask()
     expect(container.childElementCount).toBe(0)
     expect(error).not.toHaveBeenCalled()
   })

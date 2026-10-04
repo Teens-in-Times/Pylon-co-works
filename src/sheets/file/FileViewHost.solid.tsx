@@ -23,9 +23,9 @@ const FILE_SHEET_MAX_READ_BYTES = 1024 * 1024
 const IDLE_SUMMARY: KernelSummary = { dirty: false, selection: null, lineCount: 0, cursor: null }
 
 /**
- * FileViewHostProps — 与 React 桥（FileViewHost.tsx）内声明的同名接口逐字段一致。
+ * FileViewHostProps — 名字承自历史 React 契约（FileViewHost.tsx，已退役）；本实体即唯一真源。
  */
-export interface FileViewHostProps {
+interface FileViewHostProps {
   target?: WorkspaceTarget | null
   /** @deprecated direct component compatibility. */ source?: string | null
   fileProvider?: FileProvider | null

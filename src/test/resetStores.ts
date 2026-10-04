@@ -2,7 +2,7 @@
  * resetStores — 测试间共享状态统一清理（阶段 0 测试夹具）。
  *
  * 清理范围：四个 Zustand store 回初始态（zustand v5 getInitialState）、
- * sessionUiState 注册表。测试 beforeEach/afterEach 调用。
+ * 统一 sessionUi 注册表。测试 beforeEach/afterEach 调用。
  */
 
 import { useThemeStore } from '../domains/theme/themeStore'
@@ -10,10 +10,10 @@ import { useCustomPresetStore } from '../domains/theme/customPresetStore'
 import { useIdentityStore } from '../domains/identity/identityStore'
 import { useRuntimeStore } from '../domains/runtime/runtimeStore'
 import { useWorkspaceStore } from '../domains/workspace/workspaceStore'
-import { clearAllSessionUiState } from '../domains/chat/sessionUiState'
+import { sessionUiStore } from '../domains/workbench/sessionUiStore.ts'
 import { usePresentationPreferenceStore } from '../domains/presentation/presentationPreferenceStore.ts'
 import { useInterfaceModeStore } from '../domains/interface/interfaceModeStore.ts'
-import { useWorkspaceEntityStore } from '../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../domains/workspace/workspaceEntityStore.ts'
 import { getRendererSettingsStore } from '../plugin-runtime/runtimeServices.ts'
 import { useRightRailStore } from '../domains/workspace/layoutRailsStore.ts'
 import { useSettingsChromeStore } from '../domains/appearance/settingsChromeStore.ts'
@@ -47,5 +47,6 @@ export function resetStores(): void {
   useWorkspaceEntityStore.setState(useWorkspaceEntityStore.getInitialState(), true)
   getRendererSettingsStore().setSessionPreview({})
   getRendererSettingsStore().reset()
-  clearAllSessionUiState()
+  // #520 S2-P1-1：统一 sessionUi 注册表（原 chat/sessionUiState 的继任者）一并清场
+  sessionUiStore.clearAll()
 }

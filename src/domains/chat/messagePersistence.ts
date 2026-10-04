@@ -161,7 +161,7 @@ export function settleInterruptedSnapshot<T extends RestorableRunningMessage>(me
 
 // ============================================================================
 // I14-W2：MessageRepository 抽象（分层见 ISSUE-14「参考解决方案」）。
-// React/Zustand → scheduler → MessageRepository → browser(adapter localStorage)
+// Solid 组件 → scheduler → MessageRepository → browser(adapter localStorage)
 // | tauri(adapter typed invoke) → Rust command → MessageService → MsgRepo。
 // adapter 在 composition root（messagePersistScheduler 单例）按 IS_TAURI 选择；
 // 组件不直接 invoke、不直接知道 SQLite。

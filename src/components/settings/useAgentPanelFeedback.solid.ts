@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js'
+import { createSignal, onCleanup } from 'solid-js'
 import { errorCode as wireErrorCode } from '../../infrastructure/tauri/errorPayload.ts'
 import { reportRuntimeError } from '../../app/runtimeError.ts'
 
@@ -23,10 +23,20 @@ export function createAgentPanelFeedback(options: {
 
   // 轻量操作提示：保存/新建/导入成功等「需要弹出」的反馈走 toast，自动消失；
   // 压缩/校验等详情性提示仍走 setFeedback 内联。
+  // toast 定时器互斥：连续 notify 时先掐掉上一条的 timer，旧 timer 不得把新 toast
+  // 提前清掉；残余 timer 经 onCleanup 随响应式 owner 释放（本工厂须在 owner 内调用）。
+  let toastTimer: number | undefined
   const notify = (message: string) => {
+    if (toastTimer !== undefined) window.clearTimeout(toastTimer)
     setToast(message)
-    window.setTimeout(() => setToast(null), 2500)
+    toastTimer = window.setTimeout(() => {
+      toastTimer = undefined
+      setToast(null)
+    }, 2500)
   }
+  onCleanup(() => {
+    if (toastTimer !== undefined) window.clearTimeout(toastTimer)
+  })
 
   /** 配置 mutation 失败的统一呈现：CAS 冲突进横幅 + 内联保留草稿说明。 */
   const reportConfigMutationError = (operation: string, error: unknown, agentId?: string) => {

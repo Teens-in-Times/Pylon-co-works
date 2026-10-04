@@ -33,8 +33,7 @@ import { HOSTED_PLUGIN_MANAGER_PAGE_ID, SETTINGS_SECTION_LABELS, sectionZone, SE
 import type { WorkspaceViewProps } from '../plugin-runtime/workspaces/workspaceTypes.ts'
 import type { SettingsSheetState } from '../workspace-sheets/settingsSheetState.ts'
 import type { RendererSettingsCatalogEntry } from './settings/rendererSettingsCatalog.ts'
-// ---- Solid 域内直连（#515 W1 终局批：settings agent 避让域 Solid 化收口，
-// 以下 ReactIslandHost/glob 岛全部退役，宿主与组件同为 Solid ⇒ solid-in-solid 直连）。 ----
+// ---- settings 避让域 Solid 化已收口（#515 W1 终局批）：岛全部退役，宿主与组件同为 Solid，solid-in-solid 直连。 ----
 import { type RenderCtx, ZoneGroupFields } from './settings/themeFieldRenderer.solid.tsx'
 import SidebarModulesPanel from './settings/SidebarModulesPanel.solid.tsx'
 import PresentationProfilePicker from './settings/PresentationProfilePicker.solid.tsx'
@@ -99,7 +98,7 @@ export function createSettingsContributionCatalog() {
   return { settingsContributionCatalog, pluginSettingsPages, rendererRegistrySnapshot, activeRendererSuiteId }
 }
 
-export interface SettingsProps extends WorkspaceViewProps<SettingsSheetState> {}
+interface SettingsProps extends WorkspaceViewProps<SettingsSheetState> {}
 
 /**
  * Settings — 设置 sheet 主组件（A-V3 拆分后只保留装配职责）：

@@ -24,29 +24,48 @@ import { resumePersistedSessionTransaction } from './resumePersistedSessionTrans
 import { ARCHIVED_OWNER_CONFLICT_MESSAGE, resolveArchivedSessionOwner } from './archiveOwnerResolver'
 
 /**
+ * switchAgent 装配共享工厂（#520 S2-P2：本文件与 settingsAgentActions 的 ports
+ * 对象逐字重复收敛）——client / runtime / identity / 广播接线单源；差异面作参数注入：
+ * Agent 名解析（缺省回落 agentId）与错误口径（report/resolve 回调各自闭合自己的
+ * key/来源格式：本事务用 `agent-switch:*` + source 'agent.switch'，Settings 用
+ * `settings:*` + source 'settings'）。
+ */
+export function createSwitchAgentRunner(options: {
+  resolveAgentName?: (agentId: string) => string | undefined
+  reportError: (action: string, error: unknown, agentId: string) => void
+  resolveError: (action: string, agentId: string) => void
+}): (agentId: string) => Promise<TransactionResult<string>> {
+  return agentId => switchAgentTransaction(agentId, options.resolveAgentName?.(agentId) ?? agentId, {
+    switchAgent: id => createAgentClient({ invoke: tauriInvokeTransport }).switchAgent(id),
+    resetRuntime: () => useRuntimeStore.getState().resetSessionRuntime(),
+    setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
+    fetchAgentStatus: () => createAgentClient({ invoke: tauriInvokeTransport }).agentStatus(),
+    applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),
+    reportError: (action, error) => options.reportError(action, error, agentId),
+    resolveError: action => options.resolveError(action, agentId),
+    dispatchSwitched: () => window.dispatchEvent(new CustomEvent('pylon:agent-switched')),
+  })
+}
+
+/**
  * 标准 owner 切换实现：复用 switchAgentTransaction 完整流程（invoke → reset runtime →
  * setActiveAgent → 对账 agent_status → 广播 agent-switched）。不在此开 sheet——
  * openOwnedSessionTransaction 负责最后以 owner 打开 agent sheet。
  */
 export function createStandardSwitchAgent(getAgentName: (agentId: string) => string | undefined): (agentId: string) => Promise<TransactionResult<string>> {
   const operationKey = (agentId: string, action: string) => `agent-switch:${agentId}:${action}`
-  return (agentId: string) => switchAgentTransaction(agentId, getAgentName(agentId) ?? agentId, {
-    switchAgent: id => createAgentClient({ invoke: tauriInvokeTransport }).switchAgent(id),
-    resetRuntime: () => useRuntimeStore.getState().resetAll(),
-    setActiveAgent: id => useIdentityStore.getState().setActiveAgent(id),
-    fetchAgentStatus: () => createAgentClient({ invoke: tauriInvokeTransport }).agentStatus(),
-    applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),
-    reportError: (action, error) => reportRuntimeError(action, error, agentId, {
+  return createSwitchAgentRunner({
+    resolveAgentName: getAgentName,
+    reportError: (action, error, agentId) => reportRuntimeError(action, error, agentId, {
       key: operationKey(agentId, action),
       scope: { kind: 'agent', id: agentId },
       source: 'agent.switch',
     }),
-    resolveError: action => resolveRuntimeErrors({
+    resolveError: (action, agentId) => resolveRuntimeErrors({
       key: operationKey(agentId, action),
       source: 'agent.switch',
       scope: { kind: 'agent', id: agentId },
     }),
-    dispatchSwitched: () => window.dispatchEvent(new CustomEvent('pylon:agent-switched')),
   })
 }
 

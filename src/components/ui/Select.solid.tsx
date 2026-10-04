@@ -30,8 +30,8 @@ function enabledIndex(options: readonly SelectOption[], from: number, direction:
 }
 
 /**
- * Select 的 Solid 实体（#515 收拢：原 settings/Select.solid.tsx 本地副本收拢至此——
- * 组件的正式住所在 React 原件旁；radix @radix-ui/react-select 已由手写最小等价替代）。
+ * Select 的 Solid 实体（#515 收拢：原 settings/Select.solid.tsx 本地副本收拢至此；
+ * radix @radix-ui/react-select 已由手写最小等价替代）。
  *
  * DOM 结构、class、role/aria 词汇（combobox/listbox/option、aria-activedescendant）、
  * 键盘行为（方向键/Home/End/Enter/空格/Escape/Tab/首字跳转）与弹层 portal 到

@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '../../../domains/workspace/workspaceEntities'
 
 const updateWorkspace = vi.hoisted(() => vi.fn(async () => undefined))
-vi.mock('../../../infrastructure/persistence/workspaceEntityStore', () => ({
+vi.mock('../../../domains/workspace/workspaceEntityStore', () => ({
   useWorkspaceEntityStore: {
     getState: () => ({ updateWorkspace }),
     subscribe: () => () => {},

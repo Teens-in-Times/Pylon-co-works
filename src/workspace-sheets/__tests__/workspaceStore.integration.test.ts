@@ -1,16 +1,18 @@
 /**
  * FE-AUD-001 行为回归（阶段 0，先 RED）：Workspace Sheet action 持久化一致性。
  *
- * 目标行为：open/focus/pin/close/closeOthers/closeRight/reopen/metadata/layout 任一
+ * 目标行为：open/focus/pin/close/closeOthers/closeRight/reopen/metadata 任一
  * action 之后，`pylon-workspace-sheets` 的序列化内容必须与 store 内存 next state 一致。
  * 阶段 0 以 RED 锁定缺陷（持久化旧 state）；阶段 1（F07 commitWorkspaceMutation）后全绿。
+ * #538 起信封不再承载 layout（布局真源在 layoutRailsStore），并锁定 hydrate 不回灌 rail。
  */
 import { describe, expect, it, beforeEach } from 'vitest'
 import '../../plugin-runtime/testing/productPluginTestBootstrap.ts'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore'
+import { railPersistStorage, RAIL_PERSIST_KEY, useRightRailStore } from '../../domains/workspace/layoutRailsStore'
 import { resetStores } from '../../test/resetStores'
 import { MemoryStorage } from '../../test/memoryStorage'
-import { SHEET_STORAGE_KEY, type PersistedSheetState, type SheetLayoutState } from '../../domains/workspace/sheetPersistence'
+import { SHEET_STORAGE_KEY, type PersistedSheetState } from '../../domains/workspace/sheetPersistence'
 import type { SheetRecord } from '../sheetTypes'
 
 const KEY = SHEET_STORAGE_KEY
@@ -18,7 +20,6 @@ const KEY = SHEET_STORAGE_KEY
 interface PersistedEnvelope {
   version: number
   state: PersistedSheetState
-  layout: SheetLayoutState
 }
 
 function readPersisted(): PersistedEnvelope {
@@ -168,10 +169,41 @@ describe('FE-AUD-001 Workspace action 持久化一致性', () => {
     expect(useWorkspaceStore.getState().workspaceSheets.sheets.find(sheet => sheet.id === id)?.state).toEqual({ activePageId: null })
   })
 
-  it('setSidebarWidth 后持久化 layout 与内存一致（基线：当前已正确）', () => {
-    useWorkspaceStore.getState().setSidebarWidth(320)
-    expect(useWorkspaceStore.getState().sidebarWidth).toBe(320)
-    expect(readPersisted().layout.sidebarWidth).toBe(320)
+  it('#538 信封不再承载 layout：v3 键在场时旧 layout 残留被忽略、不踩 rail', () => {
+    // 先让 rail 产生自己的 v3 持久化（writeBack），再预置带 layout 残留的旧 v2 信封
+    useRightRailStore.getState().setLeftRailWidth(300)
+    localStorage.setItem(KEY, JSON.stringify({
+      version: 2,
+      state: { sheets: [], activeSheetId: null, recentlyClosed: [], agentStates: {} },
+      layout: { sidebarWidth: 480, sidebarCollapsed: true, rightPanelCollapsed: true },
+    }))
+    // v3 键在场 = rail 权威：hydrate 不得用信封残留踩掉 300
+    useWorkspaceStore.getState().hydrateWorkspaceSheets()
+    expect(useRightRailStore.getState().leftRailWidth).toBe(300)
+
+    // 任意 action 后信封不含 layout 键，其余字段照常持久化
+    openAgentSheet()
+    expect('layout' in readPersisted()).toBe(false)
+    expectPersistedMatchesMemory()
+  })
+
+  it('#538 升级缝：v3 键缺席时信封 legacy 残留播种一次并物化 v3 键（复查 R1-P1-2）', () => {
+    // 跨版本升级用户：迁移标记已在、v3 键从未落盘，旧信封 layout 是其真实偏好。
+    // 前序用例可能在同源存储留下 v3 键——本用例模拟「缺席」先摘除。
+    railPersistStorage?.removeItem(RAIL_PERSIST_KEY)
+    localStorage.setItem(KEY, JSON.stringify({
+      version: 2,
+      state: { sheets: [], activeSheetId: null, recentlyClosed: [], agentStates: {} },
+      layout: { sidebarWidth: 480, sidebarCollapsed: true, rightPanelCollapsed: true },
+    }))
+    useWorkspaceStore.getState().hydrateWorkspaceSheets()
+    expect(useRightRailStore.getState().leftRailWidth).toBe(480)
+    expect(useRightRailStore.getState().leftRailCollapsed).toBe(true)
+    // 播种必须经 writeBack 物化 v3 键（与 persist 同源存储）——否则重启后二次回落默认
+    expect(railPersistStorage?.getItem(RAIL_PERSIST_KEY)).not.toBeNull()
+    // 第二次 hydrate（v3 已在场）：不再被信封重播
+    useWorkspaceStore.getState().hydrateWorkspaceSheets()
+    expect(useRightRailStore.getState().leftRailWidth).toBe(480)
   })
 
   it('openSheet 后模拟重启（hydrate）不丢失最近操作（当前实现丢失）', () => {

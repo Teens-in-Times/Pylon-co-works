@@ -2,7 +2,6 @@
 import { Match, Show, Switch } from 'solid-js'
 import type {
   RenderAppearanceSnapshot,
-  RenderCommandPort,
   RenderNodeSnapshot,
 } from '../../../contracts/messageRenderer.ts'
 import {
@@ -50,11 +49,12 @@ import { BUILTIN_SESSION_RENDER_KINDS } from '../../../domains/rendererContent/s
 import { SolidExtensionContentCard, type ExtensionRenderKind } from './content/ExtensionContentCard.solid.tsx'
 import { isUnknownContentPart, SolidUnknownContent } from './content/UnknownContent.solid.tsx'
 import { isStructuredContentKind, SolidStructuredContent, type StructuredContentKind } from './content/StructuredContent.solid.tsx'
+// #520 K 域：commands 臂与 ToolBody 家族共享同一类型面（ToolBodyHostProps）。
+import { ToolBodyHostProps } from './tool/toolBodyTypes.ts'
 
-export function BuiltinSolidContentSlot(props: {
+export function BuiltinSolidContentSlot(props: ToolBodyHostProps & {
   snapshot: RenderNodeSnapshot
   appearance: RenderAppearanceSnapshot
-  commands: RenderCommandPort
 }) {
   const kind = () => props.snapshot.kind
   const payload = () => props.snapshot.payload as ContentPart

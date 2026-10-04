@@ -11,7 +11,7 @@
  * - 首屏占位：canonical journal 投影读取 + 失败上报（迟到失败不污染新会话）；
  * - refresh 信号：canonicalRefresh → 宿主调 sessionRuntime.refresh（绑定链保真）。
  *
- * 框架无关（无 React hooks）：宿主 AgentRendererSuiteWorkbench 以 bind 效应驱动。
+ * 框架无关：宿主 AgentRendererSuiteWorkbench 以 bind 效应驱动。
  */
 import { appClients } from '../../app/appClients.ts'
 import { IS_TAURI, isBrowserMockRuntime } from '../../infrastructure/tauri/env.ts'

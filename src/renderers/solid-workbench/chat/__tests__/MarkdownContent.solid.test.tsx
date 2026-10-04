@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * CSS-04：Solid renderer 真实 DOM 渲染回归测试（CR-325 消化——css01 headingDomContract 与
+ * CSS-04：Solid renderer 真实 DOM 渲染回归测试（CR-325 消化——domains/theme/typographyBaseline（原 css01）headingDomContract 与
  * 工具同源无法捕获 renderer 回归，此测试直接渲染 MarkdownContent 验证 heading class 输出）。
  *
  * 覆盖：`# h1` → h1.term-h1；`###### h6` → h6.term-h6；普通段落不携带 term-h 类。

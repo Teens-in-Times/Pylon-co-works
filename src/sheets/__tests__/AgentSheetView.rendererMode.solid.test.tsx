@@ -27,7 +27,7 @@ import type { BuiltinPluginDefinition } from '../../plugin-runtime/pluginRuntime
 import { normalizeRawEvent } from '../../domains/events/canonicalNormalizer.ts'
 import { publishPluginEvent as publishCanonicalPluginEvent } from '../../infrastructure/events/pluginEventBusHost.ts'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore.ts'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore.ts'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../domains/workbench/events/workbenchEventSchema.ts'
 import { clearErrors, getErrors } from '../../app/errorCenter.ts'
 import { messageStorageKey, persistMessageSnapshot } from '../../domains/chat/messagePersistence.ts'

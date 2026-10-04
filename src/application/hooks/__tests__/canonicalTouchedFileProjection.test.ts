@@ -16,7 +16,7 @@ const recordTouchedFileMock = vi.hoisted(() => vi.fn())
 vi.mock('../../../domains/identity/identityStore.ts', () => ({
   useIdentityStore: { getState: () => ({ sessions: sessionsRef.current }) },
 }))
-vi.mock('../../../infrastructure/persistence/workspaceEntityStore.ts', () => ({
+vi.mock('../../../domains/workspace/workspaceEntityStore.ts', () => ({
   useWorkspaceEntityStore: { getState: () => ({ workspaces: workspacesRef.current }) },
 }))
 vi.mock('../../../domains/workspace/workspaceStore.ts', () => ({

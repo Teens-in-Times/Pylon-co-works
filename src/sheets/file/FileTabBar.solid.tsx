@@ -3,9 +3,9 @@ import { For, Show } from 'solid-js'
 import { fileTabKey, fileTabViewType, type FileTabRecord } from './fileSheetState.ts'
 
 /**
- * FileTabBarProps — 与 React 原件（FileTabBar.tsx）逐字段一致。
+ * FileTabBarProps — 名字承自历史 React 契约（FileTabBar.tsx，已退役）；本实体即唯一真源。
  */
-export interface FileTabBarProps {
+interface FileTabBarProps {
   tabs: readonly FileTabRecord[]
   activeKey: string | null
   dirtyKeys?: ReadonlySet<string>
@@ -20,7 +20,7 @@ export interface FileTabBarProps {
  * tabs/activeKey 存 sheet metadata（`{version:2,tabs:[{path,mode,staged?}],activeKey}`，
  * 可序列化、重启恢复）。tab 单例 key = `${mode}:${path}`：同路径 file/diff 并存为
  * 两个 tab 且不互相覆盖；关闭/切换均以 key 回调 FileSheetView 的 patchSheetMetadata。
- * React 原件保留在 FileTabBar.tsx（唯一消费者 FileSheetView 已直连本实体；原件随批7 退役）。
+ * 原 React 原件（FileTabBar.tsx）已随批7 退役（唯一消费者 FileSheetView 直连本实体）。
  */
 export default function FileTabBar(props: FileTabBarProps) {
   return (

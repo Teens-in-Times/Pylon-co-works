@@ -92,7 +92,7 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
   }
 
   // 区块头的「工作区」按钮由宿主渲染，语义在这里——只有本组件知道要弹目录选择器。
-  // useBlockActionHandler 的 Solid 形态（原 .ts 保留给域外 React 消费者）：最新处理器走
+  // useBlockActionHandler 的 Solid 形态（原 React hook 已随 #515 删除）：最新处理器走
   // 可变变量，挂载期注册、卸载期注销，避免每次重挂注册出现「点了没反应」的窗口。
   let blockActionHandler: (actionId: string) => void = () => {}
   onMount(() => {

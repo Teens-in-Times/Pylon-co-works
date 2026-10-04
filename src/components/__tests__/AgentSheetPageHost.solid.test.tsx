@@ -73,8 +73,9 @@ describe('AgentSheet 主区整页宿主', () => {
     render(() => <AgentSheetPageHost page={getAgentSidebarRegistry().list()[0]} ctx={ctx} sheet={{ id: SHEET_ID }} />)
 
     expect(screen.getByRole('heading', { name: '定时任务' })).toBeInTheDocument()
-    // 改写点：岛内容经 React 并发调度（createRoot.render 宏任务）落地，同步断言改 findBy。
-    expect(await screen.findByTestId('probe')).toHaveTextContent('page')
+    // Solid 实体直连后挂载是同步的（无 React 并发调度，Suspense 下也没有异步 resource）：
+    // probe 同帧就在 DOM 里，用同步断言钉住这一契约。
+    expect(screen.getByTestId('probe')).toHaveTextContent('page')
   })
 
   it('「返回」只清整页状态（折叠已迁出为全局偏好，与 Sheet 级整页互不牵挂，issue #202）', () => {

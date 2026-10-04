@@ -43,6 +43,3 @@ export interface WorkspaceTypeDefinition<TState = unknown> {
   deserialize(raw: unknown): TState
   canClose?(state: TState): boolean | Promise<boolean>
 }
-
-/** 兼容阶段 6 前两切片的命名；不再是 metadata-only。 */
-export type WorkspaceDescriptor<TState = unknown> = WorkspaceTypeDefinition<TState>

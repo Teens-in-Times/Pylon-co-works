@@ -129,7 +129,7 @@ describe('#266 CC-09 · 左栏「中控台」二级项 = 元件层', () => {
 
     for (const label of items) {
       // 主区：元件标题（h3）必须带同名锚点 —— 这正是本刀在 themeFieldRenderer 上补的那一处
-      // （主区在 ZonePresetSection React 岛内，岛首渲异步——先等锚点落地）
+      // （主区在 ZonePresetSection（Solid 直连）内，渲染提交异步——先等锚点落地）
       await waitFor(() => {
         expect(document.querySelector(`[data-group-anchor="${label}"]`)).not.toBeNull()
       })
@@ -138,11 +138,11 @@ describe('#266 CC-09 · 左栏「中控台」二级项 = 元件层', () => {
       // 导航侧：点一下确实触发了锚点滚动（滚动挂在 rAF 里 ⇒ 等一帧再断言）
       const scrollIntoView = Element.prototype.scrollIntoView as unknown as ReturnType<typeof vi.fn>
       scrollIntoView.mockClear()
-      // ★ #515 批8 二轮（负载 flake 根因修正）：点击二级项 → navigate → 主区岛
-      //   （ZonePresetSection，React 岛）异步重挂——重挂窗口内锚点短暂消失，而组件的
-      //   滚动挂在「下一帧 rAF」：满载下 rAF 抢在岛重挂完成前触发 ⇒ querySelector
+      // ★ #515 批8 二轮（负载 flake 根因修正）：点击二级项 → navigate → 主区
+      //   （ZonePresetSection，Solid 直连）异步重渲染——切换窗口内锚点短暂消失，而组件的
+      //   滚动挂在「下一帧 rAF」：满载下 rAF 抢在重渲染完成前触发 ⇒ querySelector
       //   落空 ⇒ 不滚（先前 1s→10s 预算治标不治本，机制本身是单发竞态）。修法 =
-      //   有界重试点击：岛稳定后的重点必命中（navigate 幂等），接线断言强度不变。
+      //   有界重试点击：渲染稳定后的重点必命中（navigate 幂等），接线断言强度不变。
       const btn = subgroups.getByRole('button', { name: label })
       for (let attempt = 0; attempt < 5 && scrollIntoView.mock.calls.length === 0; attempt++) {
         fireEvent.click(btn)

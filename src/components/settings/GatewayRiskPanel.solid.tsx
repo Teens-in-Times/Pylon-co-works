@@ -9,7 +9,6 @@ import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError
 // FE-AUD-008：typed client 收口 gateway 域 command literal
 const gatewayClient = appClients.gateway()
 
-export interface GatewayRiskPanelProps {}
 
 const credentialLabel = (status: AdapterInstance['credentialStatus']): string =>
   status === 'configured' ? '已配置' : status === 'invalid' ? '损坏' : '未配置'

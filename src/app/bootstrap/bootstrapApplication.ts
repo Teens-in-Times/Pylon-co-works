@@ -4,7 +4,7 @@
  * 顺序固定：迁移配置（store.ts persist rehydrate 已完成）→ hydrate domains →
  * 获取 agents → 应用 agents（F13 起为 prune，不重复全量 hydrate）→ 注册全局
  * listener → ready。Agent 列表失败属 degraded：不清空本地工作区，可重试。
- * 纯函数（node 可测）：不直接依赖 Tauri/React，传输与 store 经 deps 注入。
+ * 纯函数（node 可测）：不直接依赖 Tauri，传输与 store 经 deps 注入。
  */
 import type { AgentEntry } from '../../domains/identity/identityStore'
 import type { HydrationStatus } from './hydrationState'

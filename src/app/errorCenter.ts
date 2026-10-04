@@ -175,7 +175,7 @@ function subscribe(listener: () => void): () => void {
   return () => { listeners.delete(listener) }
 }
 
-/** #515：非 React 世界的订阅缝（RuntimeSheetView.solid 经 createRegistrySignal 消费）。 */
+/** #515：非组件世界的订阅缝（RuntimeSheetView.solid 经 createRegistrySignal 消费）。 */
 export function subscribeErrorCenter(listener: () => void): () => void {
   return subscribe(listener)
 }

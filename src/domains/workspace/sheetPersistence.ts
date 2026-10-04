@@ -4,8 +4,10 @@ import { isSheetKind } from '../../plugin-runtime/workspaces/workspaceRegistry.t
 import { resolveWorkspace } from '../../plugin-runtime/workspaces/workspaceRegistry.ts'
 
 // W1-01：schema v1→v2（F1-A 方案 A + F2-B 布局搬家）——9 kind 清洗旧 kind；
-// v2 envelope 加 layout 三字段（sidebarWidth/sidebarCollapsed/rightPanelCollapsed）；
-// v1 parser 保留为迁移源，parse 按 version 分支，serialize 只输出 v2。
+// v2 envelope 曾加 layout 三字段（sidebarWidth/sidebarCollapsed/rightPanelCollapsed），
+// #538 起布局真源收敛为 layoutRailsStore（pylon-workspace-layout-v3），信封不再读写
+// layout 键：旧信封里的 layout 残留被静默忽略，其余字段照常。v1 parser 保留为迁移源，
+// parse 按 version 分支，serialize 只输出 v2。
 export const SHEET_SCHEMA_VERSION = 2
 export const SHEET_STORAGE_KEY = 'pylon-workspace-sheets'
 
@@ -18,23 +20,9 @@ export interface PersistedSheetState extends SheetState {
   agentStates: Record<string, SheetWorkspaceState>
 }
 
-/** v2 layout 三字段（F2-B：布局状态从主题迁出，预设不覆盖） */
-export interface SheetLayoutState {
-  sidebarWidth: number
-  sidebarCollapsed: boolean
-  rightPanelCollapsed: boolean
-}
-
-export const DEFAULT_SHEET_LAYOUT: SheetLayoutState = {
-  sidebarWidth: 250,
-  sidebarCollapsed: false,
-  rightPanelCollapsed: false,
-}
-
 interface SheetEnvelopeV2 {
   version: typeof SHEET_SCHEMA_VERSION
   state: PersistedSheetState
-  layout: SheetLayoutState
 }
 
 interface StorageLike {
@@ -125,70 +113,53 @@ function normalizeState(value: unknown, agentIds?: readonly string[]): Persisted
   return { ...base, agentStates }
 }
 
-/** v2 layout 容错：宽度 finite + clamp；collapsed 只接受 boolean（细化路线 §4 步骤 2） */
-function normalizeLayout(value: unknown): SheetLayoutState {
-  const raw = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-  const rawWidth = raw.sidebarWidth
-  const width = typeof rawWidth === 'number' && Number.isFinite(rawWidth)
-    ? Math.min(520, Math.max(160, rawWidth))
-    : DEFAULT_SHEET_LAYOUT.sidebarWidth
-  return {
-    sidebarWidth: width,
-    sidebarCollapsed: typeof raw.sidebarCollapsed === 'boolean' ? raw.sidebarCollapsed : DEFAULT_SHEET_LAYOUT.sidebarCollapsed,
-    rightPanelCollapsed: typeof raw.rightPanelCollapsed === 'boolean' ? raw.rightPanelCollapsed : DEFAULT_SHEET_LAYOUT.rightPanelCollapsed,
-  }
-}
-
 export interface SheetHydrateResult {
   state: PersistedSheetState
-  layout: SheetLayoutState
-  /** 输入为 v1（或缺失 layout）：true——调用方应立即 serialize 写回 v2 */
+  /** 输入为 v1：true——调用方应立即 serialize 写回 v2 */
   migrated: boolean
 }
 
 /**
- * 解析 v2 envelope；v1 输入走迁移（normalize sheets 清洗旧 kind，layout 取默认，
- * sidebarWidth 由调用方读旧主题一次性迁移）。损坏/未知 version 返回空状态（不抛错）。
+ * 解析 v2 envelope；v1 输入走迁移（normalize sheets 清洗旧 kind）。损坏/未知 version
+ * 返回空状态（不抛错）。#538：旧信封的 layout 键被忽略（布局真源在 layoutRailsStore）。
  */
 export function parseSheetStateV2(raw: string | null, agentIds?: readonly string[]): SheetHydrateResult {
-  if (!raw) return { state: EMPTY_PERSISTED_SHEET_STATE, layout: { ...DEFAULT_SHEET_LAYOUT }, migrated: false }
+  if (!raw) return { state: EMPTY_PERSISTED_SHEET_STATE, migrated: false }
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return { state: EMPTY_PERSISTED_SHEET_STATE, layout: { ...DEFAULT_SHEET_LAYOUT }, migrated: false }
+    if (!parsed || typeof parsed !== 'object') return { state: EMPTY_PERSISTED_SHEET_STATE, migrated: false }
     const envelope = parsed as Record<string, unknown>
     if (envelope.version === SHEET_SCHEMA_VERSION) {
       return {
         state: normalizeState(envelope.state, agentIds),
-        layout: normalizeLayout(envelope.layout),
         migrated: false,
       }
     }
-    // v1 迁移（细化路线 §4 步骤 4）：先 normalize sheets，layout 取默认（sidebarWidth 由调用方读旧主题）
+    // v1 迁移（细化路线 §4 步骤 4）：先 normalize sheets
     if (envelope.version === 1) {
       return {
         state: normalizeState(envelope.state, agentIds),
-        layout: { ...DEFAULT_SHEET_LAYOUT },
         migrated: true,
       }
     }
-    return { state: EMPTY_PERSISTED_SHEET_STATE, layout: { ...DEFAULT_SHEET_LAYOUT }, migrated: false }
+    return { state: EMPTY_PERSISTED_SHEET_STATE, migrated: false }
   } catch {
-    return { state: EMPTY_PERSISTED_SHEET_STATE, layout: { ...DEFAULT_SHEET_LAYOUT }, migrated: false }
+    return { state: EMPTY_PERSISTED_SHEET_STATE, migrated: false }
   }
 }
 
-/** 只输出 v2，不再生成 v1（细化路线 §4 步骤 6） */
-export function serializeSheetStateV2(state: PersistedSheetState, layout: SheetLayoutState): string {
-  const envelope: SheetEnvelopeV2 = { version: SHEET_SCHEMA_VERSION, state, layout }
+/** 只输出 v2，不再生成 v1（细化路线 §4 步骤 6）；#538 起信封不含 layout */
+export function serializeSheetStateV2(state: PersistedSheetState): string {
+  const envelope: SheetEnvelopeV2 = { version: SHEET_SCHEMA_VERSION, state }
   return JSON.stringify(envelope)
 }
 
-export function persistSheetStateV2(storage: StorageLike, state: PersistedSheetState, layout: SheetLayoutState): boolean {
+export function persistSheetStateV2(storage: StorageLike, state: PersistedSheetState): boolean {
   try {
-    storage.setItem(SHEET_STORAGE_KEY, serializeSheetStateV2(normalizeState(state), normalizeLayout(layout)))
+    storage.setItem(SHEET_STORAGE_KEY, serializeSheetStateV2(normalizeState(state)))
     return true
   } catch {
-    // 存储不可用/写满：写盘失败不应让 workspace action（zustand set 内）抛异常；
+    // 存储不可用/写满：写盘失败不应让 workspace action（内核 setState 内）抛异常；
     // 返回 false 供调用方把"未保存"提升为可见状态（报告 FE-AUD-001/阶段 1A.5）
     return false
   }

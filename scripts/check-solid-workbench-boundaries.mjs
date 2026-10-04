@@ -50,10 +50,7 @@ for (const file of await walk(solidRoot)) {
     const forbiddenPackage = forbiddenPackages.find(name => specifier === name || specifier.startsWith(`${name}/`))
     const forbiddenPrefix = forbiddenPrefixes.find(prefix => specifier.startsWith(prefix))
     if (forbiddenPackage || forbiddenPrefix) {
-      // React host 与 React host 测试是受控边界，不属于 Solid renderer dependency graph。
-      // #515 批7：SolidWorkbenchSmokeHost 已 Solid 化，React-host 豁免特判退役。
-      const isReactHostBoundary = false
-      if (!isReactHostBoundary) violations.push(`${displayPath}: 禁止 import ${specifier}`)
+      violations.push(`${displayPath}: 禁止 import ${specifier}`)
     }
   }
 

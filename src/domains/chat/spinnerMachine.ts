@@ -1,7 +1,7 @@
 import { resolveFrameIndex, type SpinnerMotionKind } from './spinnerMotion.ts'
 
 /**
- * spinnerMachine — CC 对齐的 spinner 纯状态机（无 React 依赖，可单测）。
+ * spinnerMachine — CC 对齐的 spinner 纯状态机（零框架依赖，可单测）。
  *
  * 分层：activity（活动状态，阈值驱动）→ frame（帧索引，时间驱动）→
  * glimmer（光扫窗口，CC ±1 字符）→ verb（动词源，事件/配置驱动）。

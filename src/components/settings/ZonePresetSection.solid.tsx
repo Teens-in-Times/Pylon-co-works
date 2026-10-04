@@ -6,7 +6,7 @@ import { ZonePresetRow } from './settingsSectionShared.solid.tsx'
 import type { ZonePresetEntry } from '../../domains/theme/zones/index.ts'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
-export interface ZonePresetSectionProps {
+interface ZonePresetSectionProps {
   /** 区域分区骨架只服务具名 section 区（global 的组合不同，走 GlobalPresetSection）。 */
   zone: 'sidebar' | 'chat' | 'cc' | 'right'
   label?: string

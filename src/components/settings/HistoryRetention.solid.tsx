@@ -27,7 +27,6 @@ import {
 } from '../../infrastructure/persistence/retentionPolicyRepository'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
 
-export interface HistoryRetentionProps {}
 
 /**
  * HistoryRetention — 消息历史保留策略设置（I13-A-FE-02，D-03/D-15）。

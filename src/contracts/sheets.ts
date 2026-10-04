@@ -4,7 +4,7 @@
  * 纯类型中立落点：workspace-sheets（视图实现）与 plugin-runtime（workspace registry、
  * context-panel/file-workbench 贡献契约）共用同一份形状，消除 runtime→视图目录的
  * 类型反向依赖（结构审查 B-2/A 域外指涉）。SheetContext.sessionBySource 对身份域
- * Session 为 type-only 引用（契约层纪律只禁 React/Solid 与 components/ 实现依赖）。
+ * Session 为 type-only 引用（契约层纪律只禁 UI 框架与 components/ 实现依赖）。
  */
 import type { Session } from '../domains/identity/identityStore.ts'
 

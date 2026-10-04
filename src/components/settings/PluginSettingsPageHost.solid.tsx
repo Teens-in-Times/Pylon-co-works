@@ -1,11 +1,11 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, on, onCleanup, Show, Suspense } from 'solid-js'
+import { createEffect, createMemo, createSignal, on, onCleanup, Show } from 'solid-js'
 import { getPluginSettingOptionsRegistry, getPluginSettingsPageRegistry, getPluginSettingsStore } from '../../plugin-runtime/runtimeServices.ts'
 import { createPluginSettingsValueAdapter } from '../../plugin-runtime/settings/pluginSettingsStore.ts'
 import { resolvePluginSettingOptions } from '../../plugin-runtime/settings/pluginSettingOptionsRegistry.ts'
 import { settingFieldKey, type RendererSettingOption, type SettingsValue } from '../../plugin-runtime/renderers/rendererSettingsTypes.ts'
-import { IsolatedPluginSurface } from '../../plugin-runtime/ui/IsolatedPluginSurface.solid.tsx'
-import { PluginContributionBoundary } from '../../plugin-runtime/ui/PluginContributionBoundary.solid.tsx'
+import type { PluginSettingValue } from '../../plugin-runtime/settings/pluginSettingsTypes.ts'
+import { PluginContributionBody } from '../../plugin-runtime/ui/PluginContributionBody.solid.tsx'
 import { RendererSettingsSchemaHost } from './RendererSettingField.solid.tsx'
 import { createRegistrySignal } from '../../infrastructure/state/solidSheetSupport.solid.tsx'
 
@@ -13,8 +13,8 @@ const EMPTY_VALUES: Readonly<Record<string, SettingsValue>> = Object.freeze({})
 const EMPTY_ADAPTER_SNAPSHOT = Object.freeze({ values: EMPTY_VALUES, unavailable: Object.freeze({}), revision: 0 })
 
 /**
- * PluginSettingsPageHost — 插件设置页宿主（#515 Solid 实体；原
- * PluginSettingsPageHost.tsx 保留同名薄桥）。注册表/选项快照订阅经
+ * PluginSettingsPageHost — 插件设置页宿主（#515 Solid 实体；原同名 React 薄桥已随
+ * 批7 退役，本实体为唯一形态）。注册表/选项快照订阅经
  * createRegistrySignal；页头与空态是 Solid 直出 DOM。贡献面按 #515 贡献面翻转后的
  * 契约原生 Solid 渲染（与 ContextPanelHost.solid 同构）：schema →
  * RendererSettingsSchemaHost 实体；isolated-surface → IsolatedPluginSurface 实体；
@@ -74,67 +74,52 @@ export default function PluginSettingsPageHost(props: { pageId: string }) {
       {(current) => (
         <section class="plugin-settings-page" aria-label={current.value.label}>
           <header><span>{current.ownerPluginId}</span><h3>{current.value.label}</h3><Show when={current.value.description}><p>{current.value.description}</p></Show></header>
-          <PluginContributionBoundary contributionId={current.contributionId}>
-              {(() => {
-                const pluginId = current.ownerPluginId ?? ''
-                const schemaHost = current.value.schema && adapter() ? (
-                  <RendererSettingsSchemaHost
-                    schema={current.value.schema}
-                    anchorPrefix={`schema:${props.pageId}`}
-                    values={adapterSnapshot().values}
-                    unavailable={adapterSnapshot().unavailable}
-                    options={schemaFieldOptions()}
-                    onChange={(key, value) => { void adapter()?.setValue(key, value) }}
-                    onReset={key => { void adapter()?.reset(key) }}
-                    onRestoreUnavailable={key => { adapter()?.restoreUnavailable?.(key) }}
-                  />
-                ) : null
-                if (current.value.renderKind === 'isolated-surface') {
-                  if (!current.value.surfaceId) return null
-                  return (
-                    <>
-                      {schemaHost}
-                      <IsolatedPluginSurface
-                        surfaceId={current.value.surfaceId}
-                        className="plugin-settings-surface"
-                        input={{ pluginId, pageId: props.pageId, values: values() }}
-                        onEvent={(event, detail) => {
-                          if (event === 'settings:set' && detail && typeof detail === 'object') {
-                            const { key, value } = detail as { key?: unknown; value?: unknown }
-                            if (typeof key === 'string') {
-                              const active = adapter()
-                              if (active) void active.setValue(key, value as never)
-                              else store.set(pluginId, key, value as never)
-                            }
-                          }
-                          if (event === 'settings:remove' && typeof detail === 'string') {
-                            const active = adapter()
-                            if (active) void active.removeValue(detail)
-                            else store.remove(pluginId, detail)
-                          }
-                        }}
-                      />
-                    </>
-                  )
+          {/* #520 S4-P1-5：分发块收敛进 PluginContributionBody——schema 设置面经 `prefix`
+              留在同一错误边界内；Suspense 加载文案经 `suspenseFallback` 保留本页现状
+              （settings-empty-state，body 默认是 null）。 */}
+          <PluginContributionBody
+            contributionId={current.contributionId}
+            contribution={current.value}
+            prefix={() => {
+              if (!current.value.schema || !adapter()) return null
+              return (
+                <RendererSettingsSchemaHost
+                  schema={current.value.schema}
+                  anchorPrefix={`schema:${props.pageId}`}
+                  values={adapterSnapshot().values}
+                  unavailable={adapterSnapshot().unavailable}
+                  options={schemaFieldOptions()}
+                  onChange={(key, value) => { void adapter()?.setValue(key, value) }}
+                  onReset={key => { void adapter()?.reset(key) }}
+                  onRestoreUnavailable={key => { adapter()?.restoreUnavailable?.(key) }}
+                />
+              )
+            }}
+            surfaceClass="plugin-settings-surface"
+            surfaceInput={() => ({ pluginId: pluginId(), pageId: props.pageId, values: values() })}
+            onSurfaceEvent={(event, detail) => {
+              if (event === 'settings:set' && detail && typeof detail === 'object') {
+                const { key, value } = detail as { key?: unknown; value?: unknown }
+                if (typeof key === 'string') {
+                  const active = adapter()
+                  if (active) void active.setValue(key, value as never)
+                  else store.set(pluginId(), key, value as never)
                 }
-                const Contribution = current.value.renderKind === 'first-party-solid' ? current.value.component : null
-                return (
-                  <>
-                    {schemaHost}
-                    <Suspense fallback={<div class="settings-empty-state">正在加载插件设置…</div>}>
-                      {Contribution && (
-                        <Contribution
-                          pluginId={pluginId}
-                          values={values()}
-                          setValue={(key, value) => adapter() ? adapter()!.setValue(key, value) : store.set(pluginId, key, value)}
-                          removeValue={key => adapter() ? adapter()!.removeValue(key) : store.remove(pluginId, key)}
-                        />
-                      )}
-                    </Suspense>
-                  </>
-                )
-              })()}
-          </PluginContributionBoundary>
+              }
+              if (event === 'settings:remove' && typeof detail === 'string') {
+                const active = adapter()
+                if (active) void active.removeValue(detail)
+                else store.remove(pluginId(), detail)
+              }
+            }}
+            suspenseFallback={<div class="settings-empty-state">正在加载插件设置…</div>}
+            componentProps={() => ({
+              pluginId: pluginId(),
+              values: values(),
+              setValue: (key: string, value: PluginSettingValue) => adapter() ? adapter()!.setValue(key, value) : store.set(pluginId(), key, value),
+              removeValue: (key: string) => adapter() ? adapter()!.removeValue(key) : store.remove(pluginId(), key),
+            })}
+          />
         </section>
       )}
     </Show>

@@ -137,15 +137,16 @@ export function noteAgentSelectorsSnapshot(agentId: string, snapshot: { configOp
 }
 
 // Several Agent Sheets read the same store concurrently. A single last-agent
-// cache makes their getSnapshot calls evict each other and loop in React.
+// cache makes their snapshot reads evict each other and re-fire the Solid
+// signal subscribers (which compare by reference) in a loop.
 // Weak keys release old immutable config snapshots when the store replaces them.
 // Cached entries are versioned with the probe counter: a probe landing must
 // invalidate the merge even when the store snapshot object is unchanged.
 const entriesByConfig = new WeakMap<Record<string, SessionConfig>, Map<string, { entries: readonly WorkbenchOptionEntry[]; version: number }>>()
 
 /**
- * Returns the agent's advertised entries with a cached identity so a React
- * `useSyncExternalStore(getSnapshot)` can compare by reference: the same
+ * Returns the agent's advertised entries with a cached identity so Solid
+ * signal subscribers can compare by reference: the same
  * sessionConfig object, agent id, and probe version always yield the same
  * frozen array.
  */

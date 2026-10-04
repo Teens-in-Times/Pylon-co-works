@@ -1,5 +1,5 @@
 /**
- * C00：text/ansi 内容契约（纯 domain，Solid 与 React fallback 共用）。
+ * C00：text/ansi 内容契约（纯 domain，Solid surface 与第三方 react 兼容 kind 共用）。
  *
  * ANSI 解析采用 SGR 白名单策略（参考 claude-code-sourcemap ink/termio/sgr.ts 的
  * 语义化解析思路）：只保留颜色/加粗/斜体/下划线等表现语义；OSC（含 OSC 8 超链接、

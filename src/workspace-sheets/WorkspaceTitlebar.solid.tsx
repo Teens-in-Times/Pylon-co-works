@@ -1,8 +1,7 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, Suspense, untrack } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from 'solid-js'
 import SheetTabStrip from './SheetTabStrip.solid.tsx'
-import { IsolatedPluginSurface } from '../plugin-runtime/ui/IsolatedPluginSurface.solid.tsx'
-import { PluginContributionBoundary } from '../plugin-runtime/ui/PluginContributionBoundary.solid.tsx'
+import { PluginContributionBody } from '../plugin-runtime/ui/PluginContributionBody.solid.tsx'
 import { useRuntimeStore } from '../domains/runtime/runtimeStore'
 import { useThemeStore } from '../domains/theme/themeStore'
 import { useWorkspaceStore } from '../domains/workspace/workspaceStore'
@@ -66,8 +65,9 @@ let titlebarSequence = 0
  * WorkspaceTitlebar — 标题栏（#279 第 3 梯队 Solid 化实体；与 React 版逐行为同构）。
  *
  * 插件贡献簇（app-actions）直连渲染（#515 岛退役，原 WorkspaceTitlebarPluginIsland
- * 已删）：command 贡献不进标题栏、isolated-surface 挂 IsolatedPluginSurface、
- * first-party 组件包 PluginContributionBoundary + Suspense——见 TitlebarPluginActions。
+ * 已删；#520 S4-P1-5 分发块收进 PluginContributionBody）：command 贡献不进标题栏、
+ * isolated-surface 挂 IsolatedPluginSurface、first-party 组件包边界 + Suspense——
+ * 见 TitlebarPluginActions。
  * 其余全部 Solid：store 经 createZustandSignal 订阅，三个插件 registry 经
  * createRegistrySignal（快照引用等值）。
  */
@@ -356,9 +356,10 @@ export default function WorkspaceTitlebar(p: { latest: () => WorkspaceTitlebarPr
 
 /**
  * TitlebarPluginActions — app-actions 插件贡献簇（#515 岛退役：原 React 岛
- * WorkspaceTitlebarPluginIsland 直连化；DOM 契约逐项保留——command 菜单项不进标题栏、
- * isolated-surface 挂 workspace-titlebar-plugin-action、first-party 组件包
- * PluginContributionBoundary + Suspense）。
+ * WorkspaceTitlebarPluginIsland 直连化；#520 S4-P1-5 起分发块收进
+ * PluginContributionBody——command 菜单项不进标题栏的守卫留在宿主，isolated /
+ * first-party 分支、边界与 Suspense 全部由 body 承载；DOM 契约逐项保留——
+ * isolated-surface 挂 workspace-titlebar-plugin-action）。
  */
 function TitlebarPluginActions(props: { entries: TitlebarRegistryEntry[]; context: TitlebarContext }) {
   return (
@@ -366,24 +367,14 @@ function TitlebarPluginActions(props: { entries: TitlebarRegistryEntry[]; contex
       const contribution = entry.value
       // 菜单项不进标题栏按钮簇：它是数据化贡献，渲染在齿轮菜单里。
       if (contribution.renderKind === 'command') return null
-      if (contribution.renderKind === 'isolated-surface') {
-        if (!contribution.surfaceId) return null
-        return (
-          <IsolatedPluginSurface
-            surfaceId={contribution.surfaceId}
-            className="workspace-titlebar-plugin-action"
-            input={{ titlebarContext: props.context }}
-          />
-        )
-      }
-      const Action = contribution.component
-      if (!Action) return null
       return (
-        <PluginContributionBoundary contributionId={entry.contributionId}>
-          <Suspense fallback={null}>
-            <Action context={props.context} />
-          </Suspense>
-        </PluginContributionBoundary>
+        <PluginContributionBody
+          contributionId={entry.contributionId}
+          contribution={contribution}
+          surfaceClass="workspace-titlebar-plugin-action"
+          surfaceInput={() => ({ titlebarContext: props.context })}
+          componentProps={() => ({ context: props.context })}
+        />
       )
     }}</For>
   )

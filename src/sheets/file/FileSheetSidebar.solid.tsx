@@ -4,9 +4,9 @@ import type { FileActivityContribution } from '../../plugin-runtime/file-workben
 import { WorkbenchIcon } from './fileIcons.solid.tsx'
 
 /**
- * FileSheetSidebarProps — 与 React 原件（FileSheetSidebar.tsx）逐字段一致。
+ * FileSheetSidebarProps — 名字承自历史 React 契约（FileSheetSidebar.tsx，已退役）；本实体即唯一真源。
  */
-export interface FileSheetSidebarProps {
+interface FileSheetSidebarProps {
   activeSection: string
   activities: readonly FileActivityContribution[]
   collapsed: boolean
@@ -24,8 +24,8 @@ const ICON_NAMES: Record<FileActivityContribution['icon'], string> = {
 
 /**
  * FileSheetSidebar — 左列内容（#154：宽度/竖直分割线/折叠可见性归布局层的 .sidebar）。
- * #515 Solid 实体；React 原件保留在 FileSheetSidebar.tsx（唯一消费者 FileSheetView 已
- * 直连本实体；原件随批7 退役）。
+ * #515 Solid 实体；原 React 原件（FileSheetSidebar.tsx）已随批7 退役
+ * （唯一消费者 FileSheetView 直连本实体）。
  */
 export default function FileSheetSidebar(props: FileSheetSidebarProps) {
   const selected = () => props.activities.find(activity => activity.id === props.activeSection) ?? props.activities[0]

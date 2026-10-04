@@ -3,7 +3,7 @@
  *
  * Tauri events (for example `pylon:agent-status`) use the ACP event bus and
  * are intentionally not part of this registry.  This map covers the
- * window/document bridge used by React, Solid and the legacy chat adapter.
+ * window/document bridge used by Solid and the legacy chat adapter.
  */
 
 export interface PylonCustomEventDetailMap {

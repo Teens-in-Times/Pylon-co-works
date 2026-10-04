@@ -33,8 +33,9 @@ const EMPTY_REVEALING_ROWS: ReadonlySet<string> = Object.freeze(new Set<string>(
  * usage 的显示消费是数值（canonicalTokenCount → footer tokenCount），因此数值变化
  * 必然改变签名、必须放行；timeline 仅被纯标记空 div 消费，不进签名。
  * runtime 契约零改动：slice 通知、revision 语义均不受影响。
+ * （#520 收口：仅本文件发布门与自身测试消费，不再对外导出。）
  */
-export function displayGateSignature(snapshot: WorkbenchRuntimeSnapshot): readonly unknown[] {
+function displayGateSignature(snapshot: WorkbenchRuntimeSnapshot): readonly unknown[] {
   const document = snapshot.document
   return [
     snapshot.sessionId, snapshot.ownerKey, snapshot.generation, snapshot.turnEpoch,

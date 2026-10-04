@@ -5,8 +5,9 @@ import solid from 'vite-plugin-solid'
 
 // #279 逐梯队 Solid 化 → #515/#520 全量终态：solid 编译面扩展到全 src——
 // `.solid.tsx` 后缀即 solid 编译与 solid-dom 分组（与 vite.config.ts 同一正则）。
-// #520 W4：React 面退役，@vitejs/plugin-react 不再加载；react-dom/react-shared
-// 分组名保留（历史命名，承载非 solid 的 jsdom 逻辑/纯 DOM 测试）。
+// #520 W4：React 面退役，@vitejs/plugin-react 不再加载；原 react-dom/react-shared
+// 历史分组名已随 React 退役改名 jsdom-mock/jsdom-shared，承载非 solid 的
+// jsdom 逻辑/纯 DOM 测试。
 const SOLID_WORKBENCH_FILES = /src\/.*\.solid(?:\.test)?\.tsx$/
 
 // #175：非 watch 模式 vitest 默认吃满 availableParallelism（20 核开发机 = 19 worker）。
@@ -21,13 +22,13 @@ const maxWorkers = availableParallelism >= 12 ? '50%' : undefined
 // Preserve the environment declared by each test; directory names do not imply DOM use.
 const testFiles = [...globSync(['scripts/*.test.mts', 'src/**/*.test.{ts,tsx}'])]
   .map(file => file.replaceAll('\\', '/')).sort()
-function testGroup(file: string): 'node' | 'node-shared' | 'react-dom' | 'react-shared' | 'solid-dom' {
+function testGroup(file: string): 'node' | 'node-shared' | 'jsdom-mock' | 'jsdom-shared' | 'solid-dom' {
   const source = readFileSync(file, 'utf8')
   if (!/@(?:vitest|jest)-environment\s+jsdom/.test(source)) {
     return /\bvi\.(?:mock|doMock|unmock|doUnmock)\s*\(/.test(source) ? 'node' : 'node-shared'
   }
   if (file.endsWith('.solid.test.tsx')) return 'solid-dom'
-  return /\bvi\.(?:mock|doMock|unmock|doUnmock)\s*\(/.test(source) ? 'react-dom' : 'react-shared'
+  return /\bvi\.(?:mock|doMock|unmock|doUnmock)\s*\(/.test(source) ? 'jsdom-mock' : 'jsdom-shared'
 }
 
 // 前端测试：
@@ -45,7 +46,7 @@ export default defineConfig({
     // 是为了覆盖所有入口（watch、编辑器集成）；build-wasm 以源码哈希做戳，未变时
     // 只读几个文件。缺 wasm 工具链时**直接失败**，不静默跳过——跳过等于弱化 parity 门禁。
     globalSetup: ['scripts/vitest-wasm-setup.mts'],
-    projects: (['node', 'node-shared', 'react-dom', 'react-shared', 'solid-dom'] as const).map(name => ({
+    projects: (['node', 'node-shared', 'jsdom-mock', 'jsdom-shared', 'solid-dom'] as const).map(name => ({
       plugins: [
         solid({ include: SOLID_WORKBENCH_FILES, hot: false }),
       ],

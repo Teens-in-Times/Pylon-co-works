@@ -1,3 +1,9 @@
+/**
+ * 测试 / fixture 路径的外观命令落点：`reduceAppearanceCommand` 是纯 reducer（clamp / settle 内联），
+ * `createStaticWorkbenchAppearanceStore` 用它折叠命令。
+ * 与 `themeProjectedWorkbenchAppearanceStore.dispatchAppearanceCommand`（themeStore 真源生产路径）
+ * 的等价性由 `__tests__/appearanceCommandEquivalence.test.ts` 守卫。
+ */
 import { cloneCcLayout, DEFAULT_CC_LAYOUT, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
 import type { ThemeSettings } from '../theme/themeStore.ts'
 import { clampCcHeight, ccMinHeightInputOf, clampInputTypography } from '../cc/ccHeightState.ts'

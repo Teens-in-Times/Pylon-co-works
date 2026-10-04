@@ -10,7 +10,7 @@ import { PluginScope } from '../../../plugin-runtime/pluginScope.ts'
 import { mountFirstPartyStyleAssets } from '../../../plugins/product/firstPartyStyleRuntime.ts'
 import { loadBuiltinPylonRendererStyles } from '../../../plugins/product/packages/builtin.pylon-renderers/styleAssets.ts'
 import { loadBuiltinPylonShellStyles } from '../../../plugins/product/packages/builtin.pylon-shell/styleAssets.ts'
-import { createPreviewWorkbenchServices } from '../__fixtures__/previewWorkbenchServices.ts'
+import { createPreviewWorkbenchServices } from '../preview/previewWorkbenchServices.ts'
 import { mountSolidWorkbench } from '../mountSolidWorkbench.solid.tsx'
 
 const host = document.getElementById('root')

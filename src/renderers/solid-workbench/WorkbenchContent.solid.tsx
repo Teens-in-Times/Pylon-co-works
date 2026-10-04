@@ -25,6 +25,7 @@ import { CanonicalActivityList } from './CanonicalActivityList.solid.tsx'
 import { WorkbenchDocumentSurface } from './WorkbenchDocumentSurface.solid.tsx'
 import { WorkbenchRow, isAuthoritativelyLive } from './WorkbenchRow.solid.tsx'
 import { WorkbenchContentSlot } from './WorkbenchContentSlot.solid.tsx'
+import EmptyState from '../../components/ui/EmptyState.solid.tsx'
 // #486 项4：滚动跟随状态机与滚动条轨道交互拆出（本组件只保留投影与接线）。
 import { createChatScrollController } from './chat/createChatScrollController.solid.tsx'
 import { SolidScrollRail } from './chat/ScrollRail.solid.tsx'
@@ -267,25 +268,34 @@ export function WorkbenchContent(props: WorkbenchContentProps) {
 
 /** Brand-only empty-state layer. The control center remains the sole input
  * surface; this block provides recognition without duplicating instructions,
- * context rows, or creation controls. */
+ * context rows, or creation controls.
+ * #520 K 域：容器/标记/文案骨架由 ui/EmptyState 统一承载；本块只保留 brand
+ * lockup（aria-hidden 装饰位）与 agent-empty-* CSS 锚点类（tactical-blue 覆写）。 */
 function WorkbenchEmptyBrand() {
   const model = () => selectAgentEmptyState()
-  return <div class="agent-empty-state solid-workbench-empty-brand" role="img" aria-label="Pylon Agent">
-    <div class="agent-empty-lockup" aria-hidden="true">
-      <div class="agent-empty-brand">
-        <svg class="pylon-mark" width="52" height="52" viewBox="0 0 64 64">
-        <path class="pylon-mark-frame" d="M32 7 53 19v26L32 57 11 45V19Z" />
-        <circle class="pylon-mark-node" cx="32" cy="21.215" r="4" />
-        <circle class="pylon-mark-node" cx="20" cy="42" r="4" />
-        <circle class="pylon-mark-node" cx="44" cy="42" r="4" />
-        <path class="pylon-mark-links" d="m30 24.679-8 13.857m20 0-8-13.857M24 42h16" />
-        </svg>
+  return <EmptyState
+    class="agent-empty-state solid-workbench-empty-brand"
+    role="img"
+    ariaLabel="Pylon Agent"
+    mark={
+      <div class="agent-empty-lockup" aria-hidden="true">
+        <div class="agent-empty-brand">
+          <svg class="pylon-mark" width="52" height="52" viewBox="0 0 64 64">
+          <path class="pylon-mark-frame" d="M32 7 53 19v26L32 57 11 45V19Z" />
+          <circle class="pylon-mark-node" cx="32" cy="21.215" r="4" />
+          <circle class="pylon-mark-node" cx="20" cy="42" r="4" />
+          <circle class="pylon-mark-node" cx="44" cy="42" r="4" />
+          <path class="pylon-mark-links" d="m30 24.679-8 13.857m20 0-8-13.857M24 42h16" />
+          </svg>
+        </div>
+        <span class="agent-empty-wordmark">PYLON</span>
       </div>
-      <span class="agent-empty-wordmark">PYLON</span>
-    </div>
-    <div class="agent-empty-eyebrow">{model().eyebrow}</div>
-    <h2 class="agent-empty-title">{model().title}</h2>
-  </div>
+    }
+    title={<>
+      <div class="agent-empty-eyebrow">{model().eyebrow}</div>
+      <h2 class="agent-empty-title">{model().title}</h2>
+    </>}
+  />
 }
 
 /** Creation feedback belongs to the chat viewport, not the control-center layout. */

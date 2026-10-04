@@ -17,7 +17,8 @@ describe('workspaceClient', () => {
       { name: 'no-kind', relativePath: '/a/x' },
     ])
     const client = createWorkspaceClient({ invoke: (cmd, args) => invoke.invoke(cmd, args) })
-    const entries = (await client.listEntries('local:一', '/a')) as Array<{ path?: string }>
+    const target = { sessionId: 'session-a', agentId: 'agent-a', source: 'local:一' }
+    const entries = (await client.listEntries(target, '/a')) as Array<{ path?: string }>
     expect(entries.some(entry => entry.path === '/a/b.ts')).toBe(true)
   })
 
@@ -26,9 +27,10 @@ describe('workspaceClient', () => {
       { path: 'a.ts', status: 'M' },
     ])
     const client = createWorkspaceClient({ invoke: (cmd, args) => invoke.invoke(cmd, args) })
-    const status = (await client.gitStatus('local:一')) as Array<{ path?: string }>
+    const target = { sessionId: 'session-a', agentId: 'agent-a', source: 'local:一' }
+    const status = (await client.gitStatus(target)) as Array<{ path?: string }>
     expect(status[0]?.path).toBe('a.ts')
-    expect(invoke.calls).toEqual([{ cmd: 'git_status', args: { source: 'local:一' } }])
+    expect(invoke.calls).toEqual([{ cmd: 'git_status', args: { target } }])
   })
 
   it('gitStatusWithBranch normalize branch + entries（ISSUE-15 W4）', async () => {
@@ -37,7 +39,8 @@ describe('workspaceClient', () => {
       entries: [{ path: 'b.ts', status: ' M', staged: false }],
     }))
     const client = createWorkspaceClient({ invoke: (cmd, args) => invoke.invoke(cmd, args) })
-    const result = (await client.gitStatusWithBranch('local:一')) as {
+    const target = { sessionId: 'session-a', agentId: 'agent-a', source: 'local:一' }
+    const result = (await client.gitStatusWithBranch(target)) as {
       branch: { branch: string | null; detached: boolean; head: string | null }
       entries: Array<{ path?: string }>
     }
@@ -45,7 +48,7 @@ describe('workspaceClient', () => {
     expect(result.branch.detached).toBe(false)
     expect(result.branch.head).toBe('abc123')
     expect(result.entries[0]?.path).toBe('b.ts')
-    expect(invoke.calls).toEqual([{ cmd: 'git_status_with_branch', args: { source: 'local:一' } }])
+    expect(invoke.calls).toEqual([{ cmd: 'git_status_with_branch', args: { target } }])
   })
 
   it('Git 写操作只映射受限命令与结构化 payload', async () => {

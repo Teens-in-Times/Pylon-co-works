@@ -3,16 +3,14 @@ import { createEffect, createMemo, createSignal, lazy, on, onCleanup, onMount, S
 import SheetLayout from './workspace-sheets/SheetLayout.solid.tsx'
 import WorkspaceTitlebar from './workspace-sheets/WorkspaceTitlebar.solid.tsx'
 import { flushIdentityBackend, useIdentityStore } from './domains/identity/identityStore'
-import { logWarn, logError } from './contracts/frontendLogSink'
+import { logError } from './contracts/frontendLogSink'
 import { useRuntimeStore } from './domains/runtime/runtimeStore'
 import { useWorkspaceStore } from './domains/workspace/workspaceStore'
 import { IS_TAURI, isBrowserMockRuntime } from './infrastructure/tauri/env'
 
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { PhysicalSize } from '@tauri-apps/api/dpi'
 import { tauriInvokeTransport } from './infrastructure/acp/tauriTransport.ts'
 import { appClients } from './app/appClients.ts'
-import { loadWindowSize, persistWindowSize } from './infrastructure/persistence/windowSizePersistence'
 import { reportRuntimeError, resolveRuntimeErrors } from './app/runtimeError'
 import { sheetHasLeftColumn } from './workspace-sheets/sheetSidebarState.ts'
 import {
@@ -20,33 +18,24 @@ import {
   closeRightWorkspaces,
   closeWorkspace,
 } from './workspace-sheets/workspaceController.ts'
-import { createSkinSurface } from './infrastructure/skin/useSkinSurface.solid.ts'
-import { projectSkinDocumentRoot } from './infrastructure/skin/skinProjection'
-import { getSkinRuntime, pickThemeBaseline } from './infrastructure/skin/skinRuntimeServices'
 import { listen } from '@tauri-apps/api/event'
-import { normalizeAgentStatus, type AgentStatusPayload } from './contracts/agentTypes'
 import { runRollupTrimBeforeClose } from './infrastructure/events/rollupTrim.ts'
-import { createPermissionController, getPermissionController, registerPermissionController } from './infrastructure/acp/permissionController'
+import { createPermissionController, registerPermissionController } from './infrastructure/acp/permissionController'
 import { createInteractionRejectionController } from './infrastructure/acp/interactionRejectionController.ts'
 import './app/bootstrap/identityCrossDomainWiring'
 import './app/bootstrap/workspaceControllerWiring'
-import { startApplicationBootstrap } from './app/bootstrap/applicationBootstrapRun'
-import { hydrateIdentityAndWorkspace, consumeLegacyProfilePayload } from './app/bootstrap/hydrateIdentityAndWorkspace'
+import { runAppBootstrapTransaction } from './app/bootstrap/appBootstrapTransaction.solid'
 import { useHydrationStore } from './app/bootstrap/hydrationState'
 import { useModalOverlayStore } from './app/modalOverlayStore'
-import { startupMark, reportStartupTiming } from './app/startupTiming'
+import { setupWindowLifecycle } from './app/windowLifecycle.solid'
+import { createAppSkinWiring } from './app/skinWiring.solid'
 import PermissionDialog from './components/PermissionDialog.solid.tsx'
 import ErrorCenter from './components/ErrorCenter.solid.tsx'
 import SessionOwnerRecoveryDialog from './components/SessionOwnerRecoveryDialog.solid.tsx'
 import {
-  applyAgentInstancesThroughPort,
-  applyToolDictionaryThroughPort,
-} from './app/ports/productContributionPorts.ts'
-import {
   getContextPanelRegistry,
   getFontContributionRegistry,
   getInterfaceModeRegistry,
-  getPluginServiceRegistry,
   getShellRecipeRegistry,
 } from './plugin-runtime/runtimeServices.ts'
 import { projectFontContributions } from './infrastructure/fonts/fontProjection.ts'
@@ -60,14 +49,11 @@ import { createActiveInterfaceModeContribution } from './infrastructure/state/so
 import { InterfaceModeSceneHost } from './sheets/interfaceModeScenes.solid.tsx'
 import { drainPersistentStateBeforeClose } from './app/lifecycle/drainPersistentStateBeforeClose.ts'
 import { useRightRailStore } from './domains/workspace/layoutRailsStore.ts'
-import { persistApprovalMode, readPersistedApprovalMode } from './domains/permission/approvalMode.ts'
+import { readPersistedApprovalMode } from './domains/permission/approvalMode.ts'
 import { restoreApprovalModeFromBackendAuthority } from './domains/permission/approvalModeRestore.ts'
-import { hydrateInputPredictionSettingsFromBackend } from './infrastructure/persistence/inputPredictionSettingsRepository.ts'
-import { hydrateCustomPresetsFromBackend } from './infrastructure/persistence/customPresetRepository.ts'
 import { openOrFocusSettingsSheet } from './sheets/settingsSheetNavigation.ts'
 import { useThemeStore } from './domains/theme/themeStore'
 import { createZustandSignal } from './infrastructure/state/solidStoreBridge.ts'
-import { shallowEqual } from './infrastructure/state/solidStoreKernel.ts'
 import { createRegistrySignal } from './infrastructure/state/solidSheetSupport.solid.tsx'
 import type { InterfaceModeContribution } from './plugin-runtime/interface-mode/interfaceModeTypes.ts'
 import type { SettingsDomainId } from './components/settings/settingsDomains.ts'
@@ -85,11 +71,6 @@ const fontContributionRegistry = getFontContributionRegistry()
 const interfaceModeRegistry = getInterfaceModeRegistry()
 const shellRecipeRegistry = getShellRecipeRegistry()
 
-// Bootstrap notification identity is application-scoped and intentionally
-// stable across retries/remounts. Keeping it outside the effect avoids
-// allocating a new matcher while a run is in flight.
-const bootstrapScope = { kind: 'app' as const, id: 'bootstrap' }
-const bootstrapKey = (action: string) => `bootstrap:${action}`
 const approvalModeScope = { kind: 'app' as const, id: 'approval-mode' }
 const approvalModeKey = (action: string) => `app:approval-mode:${action}`
 
@@ -102,14 +83,14 @@ function LazyDialogFallback() {
   )
 }
 
-// FE-AUD-008 / A-V2：组装期统一 client 集（app/appClients），视图层不再自造 client。
-const agentClient = appClients.agent()
-const runtimeClient = appClients.runtime
 // 窗口控制句柄：非 Tauri 环境（浏览器预览）降级为无操作 stub。模块级单例，避免每 render 重建。
 const appWindowSingleton = (() => { try { return getCurrentWindow() } catch { return { minimize() {}, isFullscreen() { return Promise.resolve(false) }, setFullscreen(_v: boolean) { return Promise.resolve() }, destroy() {} } } })()
 
 // 非 Tauri（浏览器预览）时 @tauri-apps/api 的 listen/invoke 会 reject，统一守卫
 
+// App.solid 是纯组合根（#520 S3-P1-3）：bootstrap 事务在 app/bootstrap/appBootstrapTransaction、
+// 窗口生命周期在 app/windowLifecycle、Skin 接线在 app/skinWiring；本文件只剩装配调用、
+// 全局事件监听与 JSX 布局。
 export default function App() {
   const interfaceMode = createZustandSignal(useInterfaceModeStore, state => state.interfaceMode)
   const hydrationStatus = createZustandSignal(useHydrationStore, state => state.status)
@@ -191,104 +172,25 @@ export default function App() {
     })
   })
 
-  // FE-AUD-005：单一 bootstrap 事务（阶段 2）——hydrate domains → agents → prune → listener
-  const [bootstrapRetry, setBootstrapRetry] = createSignal(0)
-  createEffect(() => {
-    // 追踪重试信号（React 期 deps [bootstrapRetry] 同口径）：恢复按钮 +1 重跑整个事务。
-    bootstrapRetry()
-    // #269：App chunk 已加载并进入 bootstrap 事务（打点在前一帧的 shell_mounted
-    // 与本点之间即 chunk 拉取耗时）。
-    startupMark('app_bootstrap_start')
-    const bootstrapRun = startApplicationBootstrap({
-      isTauri: IS_TAURI && !isBrowserMockRuntime(),
-      // I14-W6：bootstrap 等待 identity hydration（Tauri 后端读回 / browser 本地）
-      // 完成后，再恢复 workspace 与 Agent（ISSUE-14 目标行为 #5）。
-      hydrateDomains: async () => {
-        // #448 PR2/PR5：预测设置与自定义预设的同步缓存/独立 store 以后端为权威
-        // hydrate（内部吞错不降级启动；失败时回落 localStorage，等价旧行为）。
-        // 与 identity 无依赖关系——并行执行，避免 identity 失败（degraded 路径直接
-        // return）连带跳过两者，把 degraded 会话的无缓存窗口拉长（审查 C-3）。
-        await Promise.all([
-          hydrateIdentityAndWorkspace(consumeLegacyProfilePayload()),
-          hydrateInputPredictionSettingsFromBackend(),
-          hydrateCustomPresetsFromBackend(),
-        ])
-        startupMark('hydrated')
-      },
-      fetchAgents: () => agentClient.listAgents(),
-      applyAgents: list => {
-        applyAgentInstancesThroughPort(getPluginServiceRegistry(), list)
-        useIdentityStore.getState().setAgents(list)
-      },
-      fetchToolDictionary: () => agentClient.listToolDictionary(),
-      applyToolDictionary: payload => applyToolDictionaryThroughPort(getPluginServiceRegistry(), payload),
-      // 冷启动 Agent 状态快照（方案 A）：listener 注册前先查询一次初始状态，
-      // 避免 titlebar 状态灯/发送能力 gate 因初始状态缺失而全灰/禁用。
-      fetchAgentStatus: () => agentClient.agentStatus(),
-      applyAgentStatus: payload => {
-        const agent = useIdentityStore.getState().activeAgent
-        const status = normalizeAgentStatus(payload as AgentStatusPayload, agent)
-        useRuntimeStore.getState().setAgentStatus(status.agentId || status.agent || agent, status)
-        // #98：冷挂载——agent_status 快照恢复 pending permission 卡（幂等去重）。
-        getPermissionController()?.seedFromSnapshot(payload)
-      },
-      registerListeners: async () => {
-        const unlisten = await listen<AgentStatusPayload>('pylon:agent-status', event => {
-          const agent = useIdentityStore.getState().activeAgent
-          const status = normalizeAgentStatus(event.payload, agent)
-          useRuntimeStore.getState().setAgentStatus(status.agentId || status.agent || agent, status)
-          getPermissionController()?.seedFromSnapshot(event.payload)
-        })
-        // P51：后端 session/load 复活失败而新建会话时广播（Pylon 重启后首次发送）。
-        // 回写新 periId，使下一次发送/重启能继续复活这条新会话而不是再新建。
-        const unlistenRecreated = await listen<{ source: string; periId: string }>('pylon:session-recreated', event => {
-          const { source, periId } = event.payload
-          const session = useIdentityStore.getState().sessions.find(item => item.source === source)
-          if (session && session.periId !== periId) {
-            useIdentityStore.getState().setSessionPeriId(session.id, periId)
-          }
-        })
-        return () => { unlisten(); unlistenRecreated() }
-      },
-      reportError: (action, error) => reportRuntimeError(action, error, undefined, {
-        key: bootstrapKey(action),
-        scope: bootstrapScope,
-        source: 'application.bootstrap',
-        recoveryAction: {
-          label: '重试启动',
-          run: () => { setBootstrapRetry(value => value + 1) },
-        },
-      }),
-      resolveError: action => resolveRuntimeErrors({ key: bootstrapKey(action), scope: bootstrapScope }),
-      // #269：ready 即启动事务终点——打点并一次性上报前后端启动时间线。
-      setStatus: (status, error) => {
-        if (status === 'ready') {
-          startupMark('ready')
-          reportStartupTiming()
-        }
-        useHydrationStore.getState().setStatus(status, error)
-      },
-    })
-    onCleanup(() => { bootstrapRun.dispose() })
-  })
+  // FE-AUD-005：单一 bootstrap 事务——hydrate domains → agents → prune → listener（装配拆至 app/bootstrap）
+  runAppBootstrapTransaction()
 
   // 全局审批模式：后端为持久化权威（#448 PR3/PR4——#321 决议「收敛到后端权威」）。
   // 决策逻辑在 domains/permission/approvalModeRestore（可测事务）：后端持久层在场
   // → 应用权威值；后端从未存过 → localStorage 首次种子（set 自带写穿）；后端不可用
   // → 降级显示本地值。旧「本地有值即推送」分支移除——CLI 桥等不经 webview 的 set
-  // 重启后被前端旧值静默覆盖的漂移路径由此消除。本地 key 降级为缓存（种子读一次 +
-  // 成功路径镜像维护），不再参与决策。
+  // 重启后被前端旧值静默覆盖的漂移路径由此消除。本地 key 已收口为 runtimeStore 侧的
+  // seed + 镜像（#520 S2-P1，browser 模式亦可恢复），此处不再手工维护镜像。
   onMount(() => {
     if (!IS_TAURI || isBrowserMockRuntime()) return
     let disposed = false
     void restoreApprovalModeFromBackendAuthority({
-      loadPersisted: () => runtimeClient.loadApprovalModePersisted(),
-      seedToBackend: mode => runtimeClient.setApprovalMode(mode),
+      loadPersisted: () => appClients.runtime.loadApprovalModePersisted(),
+      seedToBackend: mode => appClients.runtime.setApprovalMode(mode),
       readLocal: () => readPersistedApprovalMode(),
       apply: mode => {
         if (disposed) return
         useRuntimeStore.getState().setApprovalMode(mode)
-        persistApprovalMode(mode)
         resolveRuntimeErrors({ key: approvalModeKey('恢复权限模式'), scope: approvalModeScope })
       },
       applyLocalFallback: mode => {
@@ -344,28 +246,16 @@ export default function App() {
     onCleanup(() => { void controller.dispose() })
   })
 
-  // 窗口尺寸记忆：启动恢复上次尺寸，resize 防抖持久化（纯前端，不依赖后端）
-  onMount(() => {
-    if (!IS_TAURI) return
-    const win = getCurrentWindow()
-    const saved = loadWindowSize(localStorage)
-    if (saved) win.setSize(new PhysicalSize(saved.width, saved.height)).catch(error => logWarn('恢复上次窗口尺寸失败', error))
-    let timer: number | null = null
-    let disposed = false
-    const unlisten = win.onResized(({ payload }) => {
-      if (disposed) return
-      if (timer !== null) window.clearTimeout(timer)
-      timer = window.setTimeout(() => {
-        timer = null
-        persistWindowSize(localStorage, { width: payload.width, height: payload.height })
-      }, 400)
-    })
-    onCleanup(() => {
-      disposed = true
-      if (timer !== null) window.clearTimeout(timer)
-      unlisten.then(stop => stop())
-    })
-  })
+  // 窗口生命周期（尺寸记忆 + 关窗 drain）接线，拆至 app/windowLifecycle（#520 S3-P1-3）
+  const drainBeforeClose = async () => {
+    // #439：canonical 自写轨退役（kernel 严格单写者，前端 pending 恒空），
+    // 关窗 drain 只剩 identity 写穿一条链。
+    await drainPersistentStateBeforeClose({ flushIdentity: flushIdentityBackend })
+    // #81 L3：前端 pending 已清空（kernel 单写者）→ 安全窗口内运行裁剪迁移
+    // （可暂停/续跑；超时不阻塞关窗；trim_rolledup 策略关闭时后端只报告）。
+    await runRollupTrimBeforeClose()
+  }
+  setupWindowLifecycle(drainBeforeClose)
 
   onMount(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -410,38 +300,10 @@ export default function App() {
     })
   })
 
-  // 基线为派生对象：浅等去重（React 期 useShallow 同源语义），避免主题 store 任意
-  // 通知都重投影 Skin 基线。createZustandSignal 无 equality 形态，以 equals memo 包一层。
-  const rawThemeBaseline = createZustandSignal(
-    useThemeStore,
-    s => pickThemeBaseline(s as unknown as Record<string, unknown>),
-  )
-  const themeBaseline = createMemo(() => rawThemeBaseline(), undefined, { equals: shallowEqual })
-  const skinRuntime = getSkinRuntime()
-
-  // Skin Runtime 全局基线 = 当前 Theme Store；启用 Runtime 后现有主题外观不变。
-  createEffect(() => { skinRuntime.setGlobalBaseline(themeBaseline()) })
-
-  // 根 surface 投影：CSS variables / data-skin-* / scoped css 统一由 resolved skin 派生。
-  const appSkin = createSkinSurface<HTMLDivElement>('app', { scope: 'global' }, {}, () => ({
-    layout: { sidebarCollapsed: sidebarCollapsed(), sidebarWidth: sidebarWidth(), sidebarEnabled: sidebarEnabled() },
-  }))
-
-  // Portal 与 body::before 都在 `.app` 外：完整投影全局 Skin，避免二级菜单、
-  // 新建 Sheet 与设置 Dialog 退回默认主题。
-  createEffect(on(appSkin.resolved, resolved => {
-    onCleanup(projectSkinDocumentRoot(document.documentElement, document.body, resolved))
-  }))
+  // Skin 接线（全局基线 + 根 surface + documentRoot 投影）拆至 app/skinWiring（#520 S3-P1-3）
+  const { appSkin } = createAppSkinWiring({ sidebarCollapsed, sidebarWidth, sidebarEnabled })
 
   const appWindow = appWindowSingleton
-  const drainBeforeClose = async () => {
-    // #439：canonical 自写轨退役（kernel 严格单写者，前端 pending 恒空），
-    // 关窗 drain 只剩 identity 写穿一条链。
-    await drainPersistentStateBeforeClose({ flushIdentity: flushIdentityBackend })
-    // #81 L3：前端 pending 已清空（kernel 单写者）→ 安全窗口内运行裁剪迁移
-    // （可暂停/续跑；超时不阻塞关窗；trim_rolledup 策略关闭时后端只报告）。
-    await runRollupTrimBeforeClose()
-  }
   const closeWindowWithFlush = async () => {
     try {
       await drainBeforeClose()
@@ -453,24 +315,6 @@ export default function App() {
     }
     await appWindow.destroy()
   }
-  onMount(() => {
-    if (!IS_TAURI) return
-    const win = getCurrentWindow()
-    let unlisten: (() => void) | undefined
-    void win.onCloseRequested(async event => {
-      event.preventDefault()
-      try {
-        await drainBeforeClose()
-      } catch (error) {
-        reportRuntimeError('关闭前持久化失败，窗口已保持打开', error, undefined, {
-          key: 'app:close-persistence', scope: { kind: 'app', id: 'lifecycle' }, source: 'app.lifecycle',
-        })
-        return
-      }
-      await win.destroy()
-    }).then(fn => { unlisten = fn }).catch(error => logError('注册窗口关闭 flush 失败', error))
-    onCleanup(() => { unlisten?.() })
-  })
   const profilesOpen = createMemo(() => showProfileEdit())
   // #309：原生子视图（浏览器 WebView2 子窗口）在原生层位于 DOM 之上，覆盖层盖不住它。
   // 模态覆盖层打开期间让原生子视图暂时隐藏（页面继续运行），否则覆盖层上的按钮被
@@ -583,4 +427,3 @@ export default function App() {
     </div>
   )
 }
-

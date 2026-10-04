@@ -1,6 +1,5 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
-import { Suspense } from 'solid-js'
 import { getContextPanelRegistry, getPluginSettingOptionsRegistry, getPluginSettingsStore } from '../../plugin-runtime/runtimeServices.ts'
 import { createPluginSettingsValueAdapter } from '../../plugin-runtime/settings/pluginSettingsStore.ts'
 import { resolvePluginSettingOptions } from '../../plugin-runtime/settings/pluginSettingOptionsRegistry.ts'
@@ -9,8 +8,7 @@ import { selectContextPanels, resolveContextPanelDefault } from '../../plugin-ru
 import { useRightRailStore } from '../../domains/workspace/layoutRailsStore.ts'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 import { createRegistrySignal } from '../../infrastructure/state/solidSheetSupport.solid.tsx'
-import { IsolatedPluginSurface } from '../../plugin-runtime/ui/IsolatedPluginSurface.solid.tsx'
-import { PluginContributionBoundary } from '../../plugin-runtime/ui/PluginContributionBoundary.solid.tsx'
+import { PluginContributionBody } from '../../plugin-runtime/ui/PluginContributionBody.solid.tsx'
 import { RendererSettingsSchemaHost } from '../settings/RendererSettingField.solid.tsx'
 import type { ContextPanelHostProps } from './rightPanelTypes.ts'
 
@@ -20,10 +18,11 @@ const EMPTY_ADAPTER_SNAPSHOT = Object.freeze({ values: Object.freeze({}), unavai
  * ContextPanelHost — 右栏宿主（面板外壳：aside/头部/切换器；贡献体直连渲染）。
  *
  * #515 贡献面翻转：插件贡献体自本批起是 **Solid 组件**（React 岛 ContextPanelPluginIsland
- * 退役）。first-party 组件走 PluginContributionBoundary + Suspense 直连；isolated-surface
- * 走 IsolatedPluginSurface（Solid 实体）；schema 设置面直连 RendererSettingsSchemaHost
- * （Solid 实体）。贡献标识（owner 运行实例 + 贡献 id）经 keyed Show 承载——热替换/停用
- * 换实例时整个边界（含错误态）重置。
+ * 退役）。#520 S4-P1-5：贡献体分发（PluginContributionBoundary + isolated/first-party
+ * 分支 + Suspense）收进 PluginContributionBody；schema 设置面直连
+ * RendererSettingsSchemaHost（Solid 实体）并经 `prefix` 与贡献体共处同一错误边界。
+ * 贡献标识（owner 运行实例 + 贡献 id）作为 keyed 粒度传入 body——热替换/停用换实例
+ * 时整个边界（含错误态）重置。
  */
 export default function ContextPanelHost(props: ContextPanelHostProps) {
   const rightWidth = createZustandSignal(useRightRailStore, state => state.width)
@@ -97,56 +96,38 @@ export default function ContextPanelHost(props: ContextPanelHostProps) {
 
   /** 激活面板贡献体：schema 设置面 + 贡献内容（first-party 组件 / isolated surface）。 */
   const PanelBody = () => (
-    // 键 = owner 运行实例 + 贡献：热替换/停用换实例时整个边界（含错误态）重置——
-    // 边界必须落在 keyed 分支**之内**，贡献对象换新时边界随之整体重建。
-    <Show when={active()} keyed>
-      {current => (
-        <PluginContributionBoundary contributionId={current.contributionId}>
-          {(() => {
-            const schemaHost = current.value.schema && adapter() ? (
-              <RendererSettingsSchemaHost
-                schema={current.value.schema}
-                anchorPrefix={`schema:${current.contributionId}`}
-                values={adapterSnapshot().values}
-                unavailable={adapterSnapshot().unavailable}
-                options={schemaOptions()}
-                onChange={(key, value) => { void adapter()?.setValue(key, value) }}
-                onReset={key => { void adapter()?.reset(key) }}
-                onRestoreUnavailable={key => { adapter()?.restoreUnavailable?.(key) }}
-              />
-            ) : null
-            if (current.value.renderKind === 'isolated-surface') {
-              if (!current.value.surfaceId) return null
-              return (
-                <>
-                  {schemaHost}
-                  <IsolatedPluginSurface
-                    surfaceId={current.value.surfaceId}
-                    className="context-panel-plugin-surface"
-                    input={{
-                      workspaceKind: props.sheet.kind,
-                      sheet: { id: props.sheet.id, kind: props.sheet.kind, title: props.sheet.title, agentId: props.sheet.agentId, metadata: props.sheet.metadata },
-                      activeSessionId: props.ctx.activeSession,
-                      values: adapterSnapshot().values,
-                    }}
-                    onEvent={onSurfaceEvent}
-                  />
-                </>
-              )
-            }
-            const Contribution = current.value.component
-            return (
-              <>
-                {schemaHost}
-                <Suspense fallback={null}>
-                  <Contribution sheet={props.sheet} ctx={props.ctx} />
-                </Suspense>
-              </>
-            )
-          })()}
-        </PluginContributionBoundary>
-      )}
-    </Show>
+    // #520 S4-P1-5：分发块收敛进 PluginContributionBody——schema 设置面经 `prefix`
+    // 留在同一错误边界内、贡献体之前；keyed 粒度 = 贡献对象（body 内建）：热替换/
+    // 停用换实例时整个边界（含错误态）重置。
+    <PluginContributionBody
+      contributionId={active()?.contributionId ?? ''}
+      contribution={active()?.value}
+      prefix={() => {
+        const current = active()
+        if (!current?.value.schema || !adapter()) return null
+        return (
+          <RendererSettingsSchemaHost
+            schema={current.value.schema}
+            anchorPrefix={`schema:${current.contributionId}`}
+            values={adapterSnapshot().values}
+            unavailable={adapterSnapshot().unavailable}
+            options={schemaOptions()}
+            onChange={(key, value) => { void adapter()?.setValue(key, value) }}
+            onReset={key => { void adapter()?.reset(key) }}
+            onRestoreUnavailable={key => { adapter()?.restoreUnavailable?.(key) }}
+          />
+        )
+      }}
+      surfaceClass="context-panel-plugin-surface"
+      surfaceInput={() => ({
+        workspaceKind: props.sheet.kind,
+        sheet: { id: props.sheet.id, kind: props.sheet.kind, title: props.sheet.title, agentId: props.sheet.agentId, metadata: props.sheet.metadata },
+        activeSessionId: props.ctx.activeSession,
+        values: adapterSnapshot().values,
+      })}
+      onSurfaceEvent={onSurfaceEvent}
+      componentProps={() => ({ sheet: props.sheet, ctx: props.ctx })}
+    />
   )
 
   return (

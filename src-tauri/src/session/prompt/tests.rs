@@ -131,7 +131,7 @@ use crate::acp::AcpClient;
 
 /// B-02 / C0-OPT：prompt ingest 是 GUI user.message 的唯一 durable owner。
 /// 该 characterization 不经过前端 sink，直接锁定 Rust ingest 的 owner、
-/// identity、provenance 与单行提交语义，供 React/Solid runtime-local echo 对照。
+/// identity、provenance 与单行提交语义，供 Solid runtime-local echo 对照。
 #[tokio::test]
 async fn ingest_prompt_event_commits_one_authoritative_user_row_for_gui_owner() {
     let source = "local:prompt-owner";

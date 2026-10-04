@@ -31,8 +31,7 @@ export interface RendererSettingFieldProps {
  * adapter-backed values. This keeps schema pages on the same control contract
  * as Renderer settings without teaching plugin components about global stores.
  *
- * #515：Solid 实体（原 RendererSettingField.tsx 内同名 React 实现随实体迁移；
- * .tsx 保留同名薄桥供 React 世界消费）。
+ * #515：Solid 实体（schema 页与 Renderer 设置共用同一控件契约）。
  */
 export function RendererSettingsSchemaHost(props: {
   readonly schema: RendererSettingsSchema

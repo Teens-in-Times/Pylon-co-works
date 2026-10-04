@@ -83,7 +83,7 @@ describe('OWNER-05 P3 路由回归矩阵', () => {
     expect(rt.bindingGenerations[toAgentContextKey({ agentId: 'peri', source: 'local:同名' })]).toBe(3)
     expect(rt.bindingGenerations[toAgentContextKey({ agentId: 'hermes', source: 'local:同名' })]).toBe(7)
     // 清理只动自己的 key：删 hermes 会话的 runtime 不影响 peri 的记录
-    useRuntimeStore.getState().clearSessionRuntime({ agentId: 'hermes', source: 'local:同名' })
+    useRuntimeStore.getState().clearSessionSource({ agentId: 'hermes', source: 'local:同名' })
     const after = useRuntimeStore.getState()
     expect(after.bindingGenerations[toAgentContextKey({ agentId: 'peri', source: 'local:同名' })]).toBe(3)
     expect(after.bindingGenerations[toAgentContextKey({ agentId: 'hermes', source: 'local:同名' })]).toBeUndefined()

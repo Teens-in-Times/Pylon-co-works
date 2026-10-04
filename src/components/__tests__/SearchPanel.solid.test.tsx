@@ -3,13 +3,11 @@
 // 改写点登记：
 // - `@testing-library/react` → `@solidjs/testing-library`（render 传函数）；
 // - 受控输入的 `fireEvent.change` → `fireEvent.input`（Solid 的受控 input 走 onInput）。
-import { cleanup, fireEvent, render, screen, within } from '@solidjs/testing-library'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, within } from '@solidjs/testing-library'
+import { describe, expect, it, vi } from 'vitest'
 import SearchPanel from '../sidebar/SearchPanel.solid.tsx'
 import type { AgentSidebarContributionProps } from '../../plugin-runtime/sidebar/sidebarTypes.ts'
 import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
-
-afterEach(cleanup)
 
 function session(overrides: Partial<WorkspaceSession> & { id: string; name: string }): WorkspaceSession {
   return {

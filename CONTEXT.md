@@ -37,11 +37,11 @@ _Avoid_: remoteSessionId, session external id
 当前前后端插件依赖与 Renderer Suite 规划接缝见 [`docs/说明书/Pylon-插件化前后端拓扑全图.md`](docs/说明书/Pylon-插件化前后端拓扑全图.md)；图中 planned 节点不得当作当前实现。
 
 **Presentation Profile**:
-一组可持久化、可由插件贡献的视觉与交互令牌，描述消息布局、输入形态、控制中心材质和配套图形资产；它不决定使用 React、Solid 或隔离 UI。
+一组可持久化、可由插件贡献的视觉与交互令牌，描述消息布局、输入形态、控制中心材质和配套图形资产；它不决定渲染引擎（例如 Solid 或隔离式 Surface，外部引擎不限）。
 _Avoid_: renderer preset, terminal renderer
 
 **Renderer Engine**:
-把宿主语义数据挂载为可见 UI 的技术适配器，例如 React、Solid 或隔离式插件 Surface；引擎与 Presentation Profile 正交。
+把宿主语义数据挂载为可见 UI 的技术适配器，例如 Solid 或隔离式插件 Surface（外部引擎不限）；引擎与 Presentation Profile 正交。
 _Avoid_: visual style, theme preset
 
 **Workbench Renderer**:

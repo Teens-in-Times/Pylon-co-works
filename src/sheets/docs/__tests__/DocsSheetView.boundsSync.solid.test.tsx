@@ -93,8 +93,15 @@ describe('#371 Docs Sheet WebView 同步（bounds / visible）', () => {
   it('非活动不自动 start；转活动后 start 并同步可见性', async () => {
     const [ctx, setCtx] = createSignal<SheetContext>({ ...baseCtx, isActive: false })
     render(() => <DocsSheetView sheet={sheet} ctx={ctx()} />)
-    // 非活动：不自动 start（文档壳无 status 探测，后端 start 幂等去重）
-    await new Promise(resolve => setTimeout(resolve, 50))
+    // 非活动：不自动 start（文档壳无 status 探测，后端 start 幂等去重）。
+    // fake timers 推进 50ms（到期定时器与微任务链全部跑完）再做负断言——
+    // 组件本体不用定时器，任何错误触发的 start 都走 invoke 异步链，逃不过这个窗口。
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await vi.advanceTimersByTimeAsync(50)
+    } finally {
+      vi.useRealTimers()
+    }
     expect(callsOf('docs_sheet_start').length).toBe(0)
 
     setCtx({ ...baseCtx, isActive: true })

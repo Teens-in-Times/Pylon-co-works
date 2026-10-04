@@ -4,8 +4,8 @@
 // - RTL 导入改 @solidjs/testing-library；显式 afterEach(cleanup)。
 // - WorkspaceTitlebar 直连 Solid 实体（latest 隧道形态，照 App.solid.tsx:495 的用法；
 //   React 薄桥 WorkspaceTitlebar.tsx 随本迁移退役）。
-// - Settings 侧的 AgentRuntimePanel 是避让域 React 组件（经 AgentSettingsSection 岛挂载），
-//   岛首渲异步：状态文案断言包 vi.waitFor；断言语义不变、集合不缩减。
+// - Settings 侧的 AgentRuntimePanel 是避让域 Solid 实体（经 AgentSettingsSection 直连挂载），
+//   渲染提交异步：状态文案断言包 vi.waitFor；断言语义不变、集合不缩减。
 import { cleanup, render, screen } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useIdentityStore } from '../../domains/identity/identityStore'

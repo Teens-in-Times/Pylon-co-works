@@ -141,10 +141,11 @@ my-plugin/
       "linux-x86_64": "./bin/linux-x86_64/worker",
       "macos-aarch64": "./bin/macos-aarch64/worker"
     }
-  },
-  "reactVersion": "19"
+  }
 }
 ```
+
+UI 运行时元数据不再写进 manifest：正规形态是插件入口注册 UI Surface 时携带 `runtime: { framework, version }`（见 §6.7），manifest 里的 `reactVersion` 只是已废弃兼容别名（见 §3.1 字段表）。
 
 ### 3.1 字段
 
@@ -167,7 +168,7 @@ my-plugin/
 | `executables` | 否 | executable id → platform → 包内路径 |
 | `capabilities` | 否 | API 1.2 新增：声明所需的宿主能力（封闭词表，当前只有 `plugin.management`），须经用户在授权卡逐项批准后插件才会激活（用户版 §5.1）；1.0/1.1 manifest 出现该字段直接校验失败 |
 | `dangerousHooks` | 否 | API 1.2 新增：声明需要用户确认的危险 Hook 锚点（锚点必须存在于 §6.2 词表且不重复）；宿主当前只做词表与重复校验。1.0/1.1 manifest 出现该字段直接校验失败 |
-| `reactVersion` | 否 | UI surface / React 隔离诊断元数据 |
+| `reactVersion` | 否 | **已废弃兼容别名，新 manifest 勿用**。旧 manifest 用它声明隔离 UI 的 React 版本；宿主会把它归一化为 `runtime: { framework: 'react', version }`。正规形态是入口注册 UI Surface 时的 `runtime: { framework, version }`（framework 取 `solid` / `react` / `webcomponent`） |
 
 已删除字段（任何 API 版本都直接校验失败）：
 
@@ -524,13 +525,13 @@ launch: {
 }
 ```
 
-`icon` 是由 Host 解释的稳定字符串，不是 React 组件。当前内置键包括 `activity`、`agent`、`boxes`、`clock`、`folder-tree`、`globe`、`history`、`layout-dashboard`、`messages`、`plus`、`search`、`settings`、`sliders`、`waypoints`；未知键安全降级为通用 Workspace 图标。**Agent 左栏模块的 `icon` 与 `headerActions[].icon` 消费同一张映射表**（见 §6.8）。`categoryOrder` 与 `order` 只控制 Launcher 排序，不是跨插件视觉 token。
+`icon` 是由 Host 解释的稳定字符串，不是组件。当前内置键包括 `activity`、`agent`、`boxes`、`clock`、`folder-tree`、`globe`、`history`、`layout-dashboard`、`messages`、`plus`、`search`、`settings`、`sliders`、`waypoints`；未知键安全降级为通用 Workspace 图标。**Agent 左栏模块的 `icon` 与 `headerActions[].icon` 消费同一张映射表**（见 §6.8）。`categoryOrder` 与 `order` 只控制 Launcher 排序，不是跨插件视觉 token。
 
 `keywords` 是 Launcher 的**检索词**（大小写不敏感子串匹配）。索引串 = 标题 + 描述 + 种类 + 分类标签 + `keywords`，
 所以中文 `description` 本身就可被搜到；`keywords` 用于补**描述里没出现的同义词与母语词**——
 界面是中文而 `title` 多为英文，插件应同时声明中英检索词（如 `['inspect', '诊断']`），否则中文用户只能靠描述里的字面词命中。
 
-注意：当前外置 UI 插件不共享宿主 React 组件契约。通用第三方 UI 优先使用隔离 UI Surface；第一方 Workspace React 类型属于当前主构建内部契约。
+注意：当前外置 UI 插件不共享宿主组件契约。通用第三方 UI 优先使用隔离 UI Surface；第一方 Workspace `first-party-solid` 类型属于当前主构建内部契约。
 
 ### 6.4 Renderer
 
@@ -553,7 +554,14 @@ onError?(error, input) → fallback | rethrow
 
 工具渲染器可提供 summary、search text、output label 和 diff candidate 判断。代码高亮器返回 HTML 字符串或 `null`。
 
-Renderer Engine 与视觉风格正交。用户可在“设置 → 外观 → 渲染器”选择消息渲染引擎（Renderer Suite 选择器，呈现偏好持久化）；`auto` 按 `priority / fallback / canRender` 解析。宿主向 `RenderSurface.mount/update` 同时提供语义 `messageProps`、可序列化 `appearance` 和兼容第一方 React facade 的 `component/componentProps`。外置渲染器应消费语义载荷，不应执行宿主 React Component。
+★ **双轨正名（#520）**：Renderer 注册有两条**都在役**的轨道，不是新旧替代关系——
+
+- **kind 语义面**：`registerRenderKind` 声明语义 kind 与 fallback 链（`validateInput` / `fixture` / settings schema / `settingsPlacement`），是解析顺序与设置归类的真源；
+- **suite 实现面**：`registerSuite` / `registerSlot` 以「套件 + 槽位」为单位装配完整 Workbench 实现（类型 `RendererSuiteContribution` / `RendererSlotContribution` 已从 SDK 导出）。
+
+上面四个 `register*` 定义面（message/content/tool/highlighter）是**在役兼容轨道**：宿主 `resolveSurface` 按 kind 语义面的 fallback 链在 content/tool 臂中挑选渲染器，message/highlighter 臂由会话消息面消费。它们与 Suite/Slot 面并存，退役前提是 Suite/Slot 面全量承接这两类消费并另行公告；在此之前照常使用，不要把它们当弃用 API。
+
+Renderer Engine 与视觉风格正交。用户可在“设置 → 外观 → 渲染器”选择消息渲染引擎（Renderer Suite 选择器，呈现偏好持久化）；`auto` 按 `priority / fallback / canRender` 解析。宿主向 `RenderSurface.mount/update` 提供语义 `messageProps` 与可序列化 `appearance`。旧 `component/componentProps` 组件载荷已随兼容链删除，宿主不再提供——外置渲染器应消费语义载荷。
 
 ### 6.4.1 Presentation Profile（渲染风格）
 
@@ -573,7 +581,7 @@ context.presentation.registerProfile({
 })
 ```
 
-Profile 只能声明 `themeFieldDefs` 中已验证的结构令牌，不直接挂载 UI，也不决定 React/Solid。★ 本示例**曾含 `inputVariant` / `ccVariant` 两个键，现已移除** —— 那两个字段分别随「输入形态固定命令行」（#266 刀9）与「整体风格整套删除」（#238 刀8）退场，照旧写会因「未知 token」注册失败。写 Profile 前请以 `THEME_FIELD_DEFS` 的当前键集为准。`interfaceMode` 只声明 Profile 在哪个现有模式的选择器中出现，可选 `modern-gui` / `terminal-like`；省略时按兼容规则归入 `terminal-like`。它不能注册或切换新的 Interface Mode。注册项由 owner/scope 管理，并参与 shadow hot-swap。
+Profile 只能声明 `themeFieldDefs` 中已验证的结构令牌，不直接挂载 UI，也不决定渲染引擎。★ 本示例**曾含 `inputVariant` / `ccVariant` 两个键，现已移除** —— 那两个字段分别随「输入形态固定命令行」（#266 刀9）与「整体风格整套删除」（#238 刀8）退场，照旧写会因「未知 token」注册失败。写 Profile 前请以 `THEME_FIELD_DEFS` 的当前键集为准。`interfaceMode` 只声明 Profile 在哪个现有模式的选择器中出现，可选 `modern-gui` / `terminal-like`；省略时按兼容规则归入 `terminal-like`。它不能注册或切换新的 Interface Mode。注册项由 owner/scope 管理，并参与 shadow hot-swap。
 
 Interface Mode 是 Application Shell 的应用级契约，不是 Renderer、Presentation Profile、Theme Preset 或 Skin。插件通过 `context.interfaceModes.registerMode(contribution)` 注册完整模式（`workbench` 支持 `renderer-suite` / `host` / `isolated-surface` 三种渲染来源，激活期做跨注册表引用校验），并随 Scope 回收、参与 shadow hot-swap。
 
@@ -733,7 +741,7 @@ turns.setPluginContext(turnId, patch)
 ```ts
 context.ui.registerSurface({
   id: 'example.panel',
-  reactVersion: '19',
+  runtime: { framework: 'webcomponent', version: '1.0' },
   mount(container, bridge) {
     container.textContent = 'Hello from plugin'
     const off = bridge.on('refresh', detail => { /* update */ })
@@ -745,7 +753,7 @@ context.ui.registerSurface({
 })
 ```
 
-宿主只接收 `mount/unmount`，不接收插件 React Component。插件可以携带自己的 React 版本并创建独立 root。
+宿主只接收 `mount/unmount`，不接收插件组件。`runtime: { framework, version }` 是框架中立的元数据：主流形态是 `solid` 与 `webcomponent`（插件自带运行时、自管 DOM 生命周期）；`react` 为外部自带兼容引擎——React 运行时由插件包自带，宿主不提供 React。
 
 UI Surface Registry 已实现。`surfaceId` 需要由可见贡献点引用；Agent 左栏、Sheet 右栏和插件设置页均是正式可见宿主。
 
@@ -918,14 +926,14 @@ context.titlebar.register({
 context.application.register({ id, component })
 ```
 
-这是第一方 Shell / Application 使用的宿主 React 契约。外置插件不应依赖宿主 React 组件类型；普通第三方 UI 使用 `context.ui.registerSurface()`。
+这是第一方 Shell / Application 使用的 `first-party-solid` 宿主契约。外置插件不应依赖宿主组件类型；普通第三方 UI 使用 `context.ui.registerSurface()`。
 
 ### 6.10 插件设置页与参数
 
 外置插件先注册隔离 Surface，再把它贡献到设置页：
 
 ```ts
-context.ui.registerSurface({ id: 'example.settings.surface', reactVersion: '19', mount })
+context.ui.registerSurface({ id: 'example.settings.surface', runtime: { framework: 'webcomponent', version: '1.0' }, mount })
 context.settings.registerPage({
   id: 'example.settings',
   label: 'GUI 化渲染',
@@ -985,7 +993,7 @@ import {
 - 类型一律 `export type` re-export（`PluginActivationContext`、`CommandDefinition`、`HookDefinition`、`PluginUiSurface`、`WorkspaceTypeDefinition`、renderer/settings/presentation/sessionCreation/process/scope 等），编译期消失；
 - 运行时值仅限常量表与纯函数，禁止 import 宿主运行时模块——SDK 可安全内联进插件 bundle，不会泄漏宿主代码。
 
-**契约类型出口覆盖 API 1.0–1.3 / 2.0–2.4 的全部 context 面**（application/workspace/renderer/commands/hooks/sessions/turns/process/ui/services/sidebar/fileWorkbench/contextPanel/presentation/settings/fonts/sessionCreation/interfaceModes/shellRecipes/titlebar/storage/ccWidget/presets/management），以及按域分组的贡献类型（2.0 region 左栏模块、2.1 `CommandTitlebarContribution` app-menu、cc-widget placement、preset 注册、1.2 管理面投影类型等）。**隔离面 wire 协议**也是 SDK 出口：左栏模块与右栏面板的 `renderKind: 'isolated-surface'` 形态，宿主经 `host:input` 推送的输入类型（`AgentSidebarSurfaceInput` / `ContextPanelSurfaceInput`）与可回传事件词表（`SIDEBAR_SURFACE_EVENTS` / `CONTEXT_PANEL_SURFACE_EVENTS`）——写隔离面插件不必再反推宿主桥接协议。
+**契约类型出口覆盖 API 1.0–1.3 / 2.0–2.4 的全部 context 面**（application/workspace/renderer/commands/hooks/sessions/turns/process/ui/services/sidebar/fileWorkbench/contextPanel/presentation/settings/fonts/sessionCreation/interfaceModes/shellRecipes/titlebar/storage/ccWidget/presets/management），以及按域分组的贡献类型（2.0 region 左栏模块、2.1 `CommandTitlebarContribution` app-menu、cc-widget placement、preset 注册、1.2 管理面投影类型、Renderer Suite/Slot 贡献类型 `RendererSuiteContribution` / `RendererSlotContribution`（#520 补齐）等）。**隔离面 wire 协议**也是 SDK 出口：左栏模块与右栏面板的 `renderKind: 'isolated-surface'` 形态，宿主经 `host:input` 推送的输入类型（`AgentSidebarSurfaceInput` / `ContextPanelSurfaceInput`）与可回传事件词表（`SIDEBAR_SURFACE_EVENTS` / `CONTEXT_PANEL_SURFACE_EVENTS`）——写隔离面插件不必再反推宿主桥接协议。
 
 有一道**防漂移门**看守这份出口：`sdkExports.test.ts` 的 parity 断言强制「activation context 每个成员 ↔ SDK 出口类型」一一对应，宿主新增 context 成员而未补出口时编译期变红。
 
@@ -1583,8 +1591,8 @@ operation inspect
 - storage 为单窗口 localStorage 持久化（无跨端同步、无迁移框架）；Files/Resources 完整 API 仍缺。
 - UI Surface Registry、左右栏与插件设置页挂载点已完成；完整 AgentSheet Workbench 级替换仍是第一方实验边界，第三方当前从 message/content/tool renderer 粒度接入。
 - Host setting-option contribution 已开放；它只能增删改候选项，不能借此注册新的 Interface Mode 或接管宿主设置值。
-- 外置插件不应直接依赖 Pylon 内部 Zustand Store 或第一方 React 组件。
-- `application.register` 和第一方 Workspace React contract 属于主构建内部边界，第三方 UI 应优先走隔离 surface。
+- 外置插件不应直接依赖 Pylon 宿主内部 store（Solid 内核）或第一方组件。
+- `application.register` 和第一方 Workspace `first-party-solid` contract 属于主构建内部边界，第三方 UI 应优先走隔离 surface。
 - 公共 context 尚未提供完整 Files/Resources/Storage API；不要依据施工总书草案调用未进入 `BuiltinPluginActivationContext` 的字段。
 
 ---

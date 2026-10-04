@@ -29,7 +29,7 @@ const BUILTIN_PLUGIN_NAMES: Record<string, string> = {
   'builtin.skin': '主题与皮肤',
 }
 
-export interface PluginManagerProps {
+interface PluginManagerProps {
   service?: PackageInstallationService
   pickDirectory?: () => Promise<string | null>
   /** P53 D6：zip / URL 安装源选择器（默认 tauri dialog / prompt）。 */

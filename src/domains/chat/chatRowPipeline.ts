@@ -13,7 +13,7 @@ import { normalizeToolStatus, resolveToolPresentationState } from '../tool/statu
 import { toolIdFromMessage } from '../tool/id.ts'
 
 export interface ChatRowDescriptor {
-  /** 稳定 key：行与连接线共享（React key 语义不变） */
+  /** 稳定 key：行与连接线共享（key 稳定性语义不变） */
   key: string
   renderMessage: RenderMessage
   /** 当前行的工具视觉状态（动画兼容真实 tool-* id 与浏览器 mock id） */

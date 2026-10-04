@@ -1,19 +1,18 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 
-import type { IconNode } from 'lucide'
 import { FolderSearch } from 'lucide'
 import { appClients } from '../../app/appClients.ts'
 import { LucideIcon } from '../LucideIcon.solid.tsx'
 import { open } from '@tauri-apps/plugin-dialog'
-import { useWorkspaceEntityStore } from '../../infrastructure/persistence/workspaceEntityStore'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
 import type { Workspace } from '../../domains/workspace/workspaceEntities'
 import { isAbsolutePath } from '../../domains/workspace/workspaceEntities'
 import { buildCapabilityOptions } from '../../domains/workspace/capabilityOptions.ts'
 import { getPluginRuntime } from '../../plugin-runtime/pluginCompositionRoot.ts'
 
-export interface CwdSettingsPanelProps {
+interface CwdSettingsPanelProps {
   workspace: Workspace
   onClose: () => void
   showHeader?: boolean
@@ -23,30 +22,6 @@ interface McpOption { id?: string; name?: string; transport?: string; enabled?: 
 
 function parseList(value: string): string[] {
   return [...new Set(value.split(',').map(item => item.trim()).filter(Boolean))]
-}
-
-/** FolderSearch 的本地 svg 渲染（lucide 核心同源路径数据；共享 LucideIcon 登记表
- *  未含该图标且不属本域文件，#515 实体在此内联）。 */
-function FolderSearchIcon(props: { size: number }) {
-  const build = (host: SVGSVGElement) => {
-    const svgNamespace = 'http://www.w3.org/2000/svg'
-    host.setAttribute('xmlns', svgNamespace)
-    host.setAttribute('viewBox', '0 0 24 24')
-    host.setAttribute('fill', 'none')
-    host.setAttribute('stroke', 'currentColor')
-    host.setAttribute('stroke-width', '2')
-    host.setAttribute('stroke-linecap', 'round')
-    host.setAttribute('stroke-linejoin', 'round')
-    for (const [tag, attributes] of FolderSearch as IconNode) {
-      const child = document.createElementNS(svgNamespace, tag)
-      for (const [name, value] of Object.entries(attributes)) {
-        if (name === 'key') continue
-        child.setAttribute(name, String(value))
-      }
-      host.appendChild(child)
-    }
-  }
-  return <svg ref={build} class="lucide lucide-folder-search" width={props.size} height={props.size} />
 }
 
 function ListPreview(props: { value: string; onChange: (value: string) => void; empty: string }) {
@@ -214,7 +189,7 @@ export default function CwdSettingsPanel(props: CwdSettingsPanelProps) {
           <span>工作目录</span>
           <div class="cwd-path-control">
             <input aria-label="工作目录" class="settings-control cwd-root-input" value={rootPath()} onInput={event => setRootPath(event.currentTarget.value)} />
-            <button type="button" class="settings-action cwd-path-picker" onClick={() => void pickRootPath()} aria-label="重新选择工作目录"><FolderSearchIcon size={14} /><span>选择</span></button>
+            <button type="button" class="settings-action cwd-path-picker" onClick={() => void pickRootPath()} aria-label="重新选择工作目录"><LucideIcon node={FolderSearch} name="FolderSearch" size={14} /><span>选择</span></button>
           </div>
           <small>更改后仅影响新建会话；已有会话保留自己的目录快照。</small>
         </label>
