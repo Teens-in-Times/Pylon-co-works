@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T12:03:42.482Z",
+  "generatedAt": "2026-10-04T11:38:02.129Z",
   "source": {
     "builtinPresetIds": [
       "claude",
@@ -4523,7 +4523,7 @@
         "inputRadius": 0,
         "inputFontSize": 12,
         "inputLineHeight": "0.5",
-        "inputShowHistoryHint": "shown",
+        "inputShowHistoryHint": false,
         "inputSubmitButtonMode": "inline",
         "cliLineWidth": 1,
         "cliLineColor": "",
@@ -4804,7 +4804,7 @@
         "inputRadius": 28,
         "inputFontSize": 22,
         "inputLineHeight": "1.5",
-        "inputShowHistoryHint": "hidden",
+        "inputShowHistoryHint": true,
         "inputSubmitButtonMode": "hidden",
         "cliLineWidth": 4,
         "cliLineColor": "#abcdef",

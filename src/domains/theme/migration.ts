@@ -218,12 +218,14 @@ export function normalizeThemeMigrationState(
  * （另一部分是 `normalizeThemeMigrationState` 的缺项合并）。
  */
 function normalizeThemeValues(state: Record<string, unknown>, base: object): Record<string, unknown> {
+  // ★ #266 CC-08：先于通用归一化——类型已布尔，通用 pass 的 boolean case 会把老枚举 'hidden'
+  //   兜成 default true，纠偏必须在这里落定（'shown' 经该式归 true，无需单独处理）。
+  state.inputShowHistoryHint = state.inputShowHistoryHint !== false && state.inputShowHistoryHint !== 'hidden'
   // defs 驱动的通用值归一化（select 枚举/number 范围/boolean/color/text 类型 → def.default）
   Object.assign(state, normalizeThemeState(state))
   // 历史字段特殊规则（与 defs 类型不完全一致，保留既有语义）
   // ★ #266 遗留①②：先搬老枚举（`white`/`black`/`gray`/`mode`）→ 等价颜色，再让下面的规则按颜色值走
   normalizeLegacyCcColorEnums(state)
-  state.inputShowHistoryHint = state.inputShowHistoryHint !== false
   // These select fields historically accepted booleans. Persist the enum
   // values now so the settings control always has a valid selected option.
   state.inputFocusRingEnabled = state.inputFocusRingEnabled === false || state.inputFocusRingEnabled === 'hidden' ? 'hidden' : 'shown'
