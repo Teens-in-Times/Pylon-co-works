@@ -2,21 +2,20 @@
 /**
  * #520 S3-C：SolidControlCenter **直接挂载**测试 —— 此前只有经
  * settingsPreviewControlCenter 预览包装的间接覆盖（该路只锁 DOM 形状，
- * 不锁交互）。先锁行为，再做 C 域拆分（createCcDragController /
- * CcWorkspacePicker / createCcSources），拆分在本文件保护下进行。
+ * 不锁交互）。先锁行为，再做 C 域拆分（createCcDragController / createCcSources），
+ * 拆分在本文件保护下进行。
  *
  * 覆盖：基本渲染（空态/会话态）、空态创建会话提交路径（成功/失败）、
  * 编辑态拖拽提交路径（阈值内/越阈值）、Escape 键盘路径；
- * 工作区创建成功/失败在 CcWorkspacePicker 抽出后由其直挂段承接。
+ * 空态工作区绑定模型（预选 / 侧栏意图）由 mountSolidWorkbench.solid.test.tsx 锁。
  */
-import { createRoot, createSignal, onCleanup } from 'solid-js'
+import { createSignal, onCleanup } from 'solid-js'
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULTS } from '../../../../domains/theme/themeDefaults.ts'
 import { createPreviewWorkbenchServices } from '../../preview/previewWorkbenchServices.ts'
 import { SolidWorkbenchContext, type SolidWorkbenchContextValue } from '../../SolidWorkbenchContext.solid.tsx'
 import { SolidControlCenter } from '../ControlCenter.solid.tsx'
-import { CcWorkspacePicker, createCcWorkspaceSelection } from '../CcWorkspacePicker.solid.tsx'
 
 const servicesList: ReturnType<typeof createPreviewWorkbenchServices>[] = []
 
@@ -165,82 +164,3 @@ describe('SolidControlCenter（直接挂载）', () => {
   })
 })
 
-// ── CcWorkspacePicker（#520 拆出组件直挂）────────────────────────────────────
-// 空态选择器本体被 SHOW_EMPTY_WORKSPACE_CONTROL 门隐藏（04b 拍板「先隐藏」），
-// 但「选择 / 创建工作区」是新会话链路（cwd 绑定）的入口——创建成功/失败路径
-// 在拆出的组件上直接验证，ControlCenter 挂载段锁「门关着时不渲染」。
-
-/** createRoot 挂模型 + 组件；返回 selection 与根销毁缝（模型的事件监听随根清理）。
- *  创建成功后 stub 会把新工作区追加进清单——模拟宿主 input 的 availableWorkspaces 刷新
- *  （自动择一 effect 只认清单内的 id，与生产行为一致）。 */
-function mountPicker() {
-  const errors: string[] = []
-  const workspaces: Array<{ id: string; label: string; path: string }> = []
-  let disposeRoot = () => {}
-  let selection!: ReturnType<typeof createCcWorkspaceSelection>
-  createRoot(dispose => {
-    disposeRoot = dispose
-    const model = createCcWorkspaceSelection({
-      workspaces: () => workspaces,
-      createWorkspace: async (name, path) => {
-        const created = { id: 'ws-new', label: name, path }
-        workspaces.push(created)
-        return created
-      },
-      onError: message => errors.push(message),
-    })
-    render(() => <CcWorkspacePicker selection={model} workspaces={() => workspaces} />)
-    selection = model
-  })
-  return { selection, errors, dispose: disposeRoot }
-}
-
-/** 模拟宿主目录选择器：派发 `pylon:workspace-folder-picked` 事件即可让草稿气泡出现。 */
-function pickFolder(path: string) {
-  window.dispatchEvent(new CustomEvent('pylon:workspace-folder-picked', { detail: { path } }))
-}
-
-describe('CcWorkspacePicker（工作区创建段）', () => {
-  it('ControlCenter 挂载段：空态选择器门关着时不渲染（04b），空态渲染不受影响', () => {
-    renderControlCenter(null)
-    expect(document.querySelector('.cc-empty-workspace-control')).toBeNull()
-    expect(document.querySelector('.control-center.is-empty')).toBeTruthy()
-  })
-
-  it('创建成功：创建新工作区，选中其 id、清草稿与错误', async () => {
-    const { selection, dispose } = mountPicker()
-    pickFolder('/home/repos/beta-repo')
-    const nameInput = await screen.findByRole('textbox', { name: '新工作区名称' }) as HTMLInputElement
-    expect(nameInput.value).toBe('beta-repo') // 路径末段派生默认名
-    fireEvent.input(nameInput, { target: { value: '测试工作区' } })
-    fireEvent.click(screen.getByRole('button', { name: '创建' }))
-
-    await waitFor(() => expect(selection.value()).toBe('ws-new')) // 创建即选中（喂给 createSession 的 workspaceId）
-    await waitFor(() => expect(screen.queryByRole('textbox', { name: '新工作区名称' })).toBeNull()) // 草稿气泡收敛
-    dispose()
-    cleanup()
-  })
-
-  it('创建失败：错误经 onError 上报，草稿保留可重试', async () => {
-    const errors: string[] = []
-    let selection!: ReturnType<typeof createCcWorkspaceSelection>
-    let disposeRoot = () => {}
-    createRoot(dispose => {
-      disposeRoot = dispose
-      selection = createCcWorkspaceSelection({
-        workspaces: () => [],
-        createWorkspace: async () => { throw new Error('目录不可写') },
-        onError: message => errors.push(message),
-      })
-      render(() => <CcWorkspacePicker selection={selection} workspaces={() => []} />)
-    })
-    pickFolder('/home/repos/gamma')
-    fireEvent.click(await screen.findByRole('button', { name: '创建' }))
-
-    await waitFor(() => expect(errors).toContain('目录不可写'))
-    expect(screen.getByRole('textbox', { name: '新工作区名称' })).toBeTruthy() // 草稿没被清掉
-    expect(selection.value()).toBe('')
-    disposeRoot()
-    cleanup()
-  })
-})

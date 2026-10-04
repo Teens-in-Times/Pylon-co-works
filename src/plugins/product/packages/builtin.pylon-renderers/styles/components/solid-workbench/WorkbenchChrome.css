@@ -416,7 +416,6 @@
    空态下仍不显示（空态的几何是另一套规则）。 */
 .solid-workbench-control-center-slot.is-empty .cc-bg,
 .solid-workbench-control-center-slot.is-empty .cc-edit-hdr { display: none; }
-.solid-workbench-control-center-slot.is-empty .cc-widget[data-widget-id='tokens'] { display: none; }
 .solid-workbench-control-center-slot.is-empty .cc-body {
   box-sizing: border-box;
   width: var(--cc-empty-content-width);
@@ -445,11 +444,11 @@
   from { top: 50%; transform: translateY(-50%); }
   to { top: calc(100% - var(--cc-height, 120px)); transform: translateY(0); }
 }
-/* The workspace/model/mode controls are creation-only affordances. Fade that
+/* The model/mode controls are creation-only affordances. Fade that
    layer while the same control-center node travels to its session position;
    the regular session widgets are then revealed by the existing render path. */
 .solid-workbench-control-center-slot.is-session-entering
-  :is(.cc-empty-workspace-control, .solid-model-widget, .solid-permission-widget) {
+  :is(.solid-model-widget, .solid-permission-widget) {
   opacity: 0;
   transition: opacity 220ms ease;
 }
@@ -458,7 +457,7 @@
   .solid-workbench:not([data-session-id]) .solid-workbench-control-center-slot.is-empty { animation: none; }
   .solid-workbench-control-center-slot.is-session-entering { animation: none; }
   .solid-workbench-control-center-slot.is-session-entering
-    :is(.cc-empty-workspace-control, .solid-model-widget, .solid-permission-widget) {
+    :is(.solid-model-widget, .solid-permission-widget) {
     transition: none;
   }
 }
@@ -546,20 +545,6 @@
 .solid-workbench-empty-brand .agent-empty-eyebrow { margin-bottom: var(--ui-space-1); }
 .solid-workbench-empty-brand .agent-empty-title { font-size: clamp(20px, 2.4vw, 28px); }
 .solid-agent-empty-error { color: var(--danger, #dc6372); font: var(--font-size-sm) var(--font); }
-
-/* Empty-state workspace is a normal status widget, not a separate context
-   row. The creation affordance stays compact and the new-workspace editor
-   floats from the same widget so it does not change the control-center grid. */
-.cc-empty-workspace-control { position: relative; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-width: 0; }
-.cc-empty-workspace-select { display: inline-flex; align-items: center; gap: var(--ui-space-1); min-width: 0; color: var(--text-dim); }
-.cc-empty-workspace-select select { min-width: 0; max-width: min(34vw, 240px); height: var(--ui-control-compact, 28px); padding: 0 var(--ui-space-1); color: var(--text); border: 1px solid color-mix(in srgb, var(--border) 86%, transparent); border-radius: 0; background: transparent; font: inherit; }
-.cc-empty-workspace-create { display: inline-grid; width: var(--ui-control-compact, 28px); height: var(--ui-control-compact, 28px); place-items: center; padding: 0; color: var(--text-dim); border: 1px solid var(--border); border-radius: 0; background: transparent; cursor: pointer; }
-.cc-empty-workspace-create:hover { color: var(--accent); border-color: var(--accent); }
-.cc-empty-workspace-popover { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 12; display: grid; grid-template-columns: minmax(120px, 1fr) auto auto; align-items: center; gap: var(--ui-space-1); width: min(420px, 72vw); padding: var(--ui-space-2); border: 1px solid var(--border); border-radius: 0; background: var(--bg-panel); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
-.cc-empty-workspace-popover input { min-width: 0; height: var(--ui-control-compact, 28px); padding: 0 var(--ui-space-1); color: var(--text); border: 1px solid var(--border); border-radius: 0; background: var(--input-bg, var(--bg-input)); }
-.cc-empty-workspace-popover code { max-width: 160px; overflow: hidden; color: var(--text-dim); font-size: var(--font-size-2xs); text-overflow: ellipsis; white-space: nowrap; }
-.cc-empty-workspace-popover button { height: var(--ui-control-compact, 28px); padding: 0 var(--ui-space-2); color: var(--text); border: 1px solid var(--border); border-radius: 0; background: transparent; cursor: pointer; }
-.cc-empty-workspace-popover button:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ── Solid control-center selectors ──
    Keep these menus in the same square, dense visual language as the terminal
