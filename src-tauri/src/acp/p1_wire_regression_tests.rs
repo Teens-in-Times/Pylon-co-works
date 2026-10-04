@@ -127,7 +127,7 @@ async fn build_state_with_logs(
         crate::protocol_adapter::RequestPermissionAdapter { provider: "hermes" },
     ));
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = initial_acp;
+    runtime.install_acp(initial_acp);
     let mut state = crate::test_utils::TestStateBuilder::bare()
         .with_agent(agent.clone())
         .with_runtime(agent.name.clone(), runtime)
@@ -135,7 +135,7 @@ async fn build_state_with_logs(
         .with_gateway(Arc::new(crate::gateway::GatewayCore::new()))
         .with_prism(crate::prism::PrismClient::unavailable("test".to_string()))
         .build();
-    state.runtime_logs = logs.clone();
+    state.runtime_logs = logs;
     state
 }
 

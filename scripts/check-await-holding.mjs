@@ -21,7 +21,8 @@ const SCAN_ROOT = join(ROOT, 'src-tauri')
  * 这里只登记位置与数量。 */
 const INVENTORY = new Map([
   ['src-tauri/pylon-foundations/src/await_guard.rs', 6], // 定义本体（自引用，含文档示例）
-  ['src-tauri/pylon-acp/src/client.rs', 3], // use + Mutex<Receiver> 持锁消费（updates/control 双 lane）
+  // #548：`pylon-acp/src/client.rs` 的两条 Mutex<Receiver> lane 收口已随 inbox
+  // 一次性移交退役，该文件不再持任何跨 await 锁卫——条目移除（原 3 处）。
   ['src-tauri/src/lib.rs', 3], // use + 锁序 switch_lock → agent_lifecycle（后台初始连接双锁）
   ['src-tauri/src/permission.rs', 2], // use + approval_mode_write_lock：内存写→落盘写序
   ['src-tauri/src/dispatcher/crash_reconnect.rs', 2], // use + agent_lifecycle：自动重连入 LifecycleOp 串行
@@ -31,11 +32,15 @@ const INVENTORY = new Map([
   ['src-tauri/src/lifecycle/mod.rs', 7], // use + switch_lock → agent_lifecycle（switch/reconnect/restart 状态机 ×6 守卫）
   ['src-tauri/src/pet/cmds.rs', 2], // use + pet_write_lock：写盘串行
   ['src-tauri/src/plugin_cmds/transaction.rs', 2], // use + 插件写事务锁：install/uninstall 整体串行
-  ['src-tauri/src/session/control.rs', 4], // use + session_creation（close/create 串行）+ acp 锁内 cancel ×2
+  // #549：`src/session/control.rs` 两处 acp 锁内 cancel 已改快照 + 客户端自带
+  // generation 自校验（ADR-0037），该文件仅剩 session_creation 串行（4→2）。
+  ['src-tauri/src/session/control.rs', 2], // use + session_creation（close/create 串行）
   ['src-tauri/src/session/create/mod.rs', 3], // use + session_creation：建立序列整体串行 ×2（#486 项3 自 create.rs 拆分随迁）
   ['src-tauri/src/session/persist/load.rs', 2], // use + session_creation：load/恢复串行（#486 项3 自 persist.rs 拆分随迁）
   ['src-tauri/src/session/mod.rs', 3], // use + agent_lifecycle：双检查懒连接 ×2
-  ['src-tauri/src/session/prompt/wait.rs', 4], // use + prompt_lock + prompt_gate 单飞 + cancel 闭包 acp 锁
+  // #549：cancel 闭包的 acp 锁已改快照自校验，该文件仅剩 prompt_lock +
+  // prompt_gate 单飞（4→3）。
+  ['src-tauri/src/session/prompt/wait.rs', 3], // use + prompt_lock + prompt_gate 单飞
   ['src-tauri/src/session/session_expiry_platform_tests.rs', 2], // use + 测试本体持 prompt_gate
 ])
 

@@ -359,13 +359,13 @@ pub fn spawn_sdk_engine(
     Ok(SdkBackend {
         outbound: outbound_tx,
         next_id: Arc::new(AtomicU64::new(1)),
-        inbound: NotificationInbox::new(updates_rx, control_rx),
+        inbound: std::sync::Mutex::new(Some(NotificationInbox::new(updates_rx, control_rx))),
         telemetry,
         replay_events,
         active_replay_requests,
         pending_requests,
         shutdown: shutdown_tx,
-        join: Some(join),
+        join: std::sync::Mutex::new(Some(join)),
     })
 }
 

@@ -187,7 +187,7 @@ pub(crate) async fn test_agent_connection(
     let duration_ms = started.elapsed().as_millis() as u64;
 
     match result {
-        Ok(Ok(mut client)) => {
+        Ok(Ok(client)) => {
             let _ = client.kill();
             Ok(serde_json::json!({
                 "ok": true,
@@ -257,7 +257,7 @@ pub(crate) async fn test_agent_candidate(
     )
     .await;
     match result {
-        Ok(Ok(mut client)) => {
+        Ok(Ok(client)) => {
             let _ = client.kill();
             let duration_ms = started.elapsed().as_millis() as u64;
             record_verification_voucher(state.inner(), &agent_id, &agent, agent_yaml.is_none());

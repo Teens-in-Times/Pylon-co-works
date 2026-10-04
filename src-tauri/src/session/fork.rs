@@ -288,9 +288,11 @@ mod tests {
         }
         let agent = crate::test_utils::fake_acp_agent(name, &args);
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-            .await
-            .unwrap();
+        runtime.install_acp(
+            crate::acp::AcpClient::connect_with_logs(&agent, None)
+                .await
+                .unwrap(),
+        );
         (runtime, agent)
     }
 

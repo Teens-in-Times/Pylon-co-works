@@ -126,7 +126,7 @@ describe('C09 SolidSubagentCard', () => {
     const cancellable = { ...richNode, capabilities: ['cancel'] } as unknown as WorkbenchActivityNode
     const running = render(() => <SolidSubagentCard activity={cancellable} commands={{ execute, canExecute }} />)
     expect([...running.container.querySelectorAll('button')].map(b => b.title)).toEqual(['取消此子代理'])
-     running.container.querySelector('button')!.click()
+    running.container.querySelector('button')!.click()
     expect(execute).toHaveBeenCalledWith({ type: 'activity.cancel', targetId: 'sub-1' })
 
     // failed 节点：capability 只给了 cancel → retry 按钮仍不可见
@@ -150,7 +150,7 @@ describe('C09 SolidSubagentCard', () => {
     expect([...result.container.querySelectorAll('button')].map(button => button.title)).toEqual([
       '聚焦此子代理', '打开此子代理', '重新连接此子代理',
     ])
-    for (const button of result.container.querySelectorAll('button'))  button.click()
+    for (const button of result.container.querySelectorAll('button')) button.click()
     expect(execute.mock.calls.map(call => call[0])).toEqual([
       { type: 'tool.action', targetId: 'sub-1', payload: { action: 'focus' } },
       { type: 'tool.action', targetId: 'sub-1', payload: { action: 'open' } },
@@ -167,13 +167,13 @@ describe('C09 SolidSubagentCard', () => {
     </div>)
     const cards = result.container.querySelectorAll<HTMLElement>('.term-subagent-card')
     cards[0].focus()
-     fireEvent.keyDown(cards[0], { key: 'ArrowDown' })
+    fireEvent.keyDown(cards[0], { key: 'ArrowDown' })
     expect(document.activeElement).toBe(cards[1])
-     fireEvent.keyDown(cards[1], { key: 'Home' })
+    fireEvent.keyDown(cards[1], { key: 'Home' })
     expect(document.activeElement).toBe(cards[0])
-     fireEvent.keyDown(cards[0], { key: 'End' })
+    fireEvent.keyDown(cards[0], { key: 'End' })
     expect(document.activeElement).toBe(cards[1])
-     fireEvent.keyDown(cards[1], { key: 'ArrowUp' })
+    fireEvent.keyDown(cards[1], { key: 'ArrowUp' })
     expect(document.activeElement).toBe(cards[0])
   })
 

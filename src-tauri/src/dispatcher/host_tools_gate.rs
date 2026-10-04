@@ -4,7 +4,7 @@
 //! `respond_tool_error` 工具错误应答正身。两个分支在主泵中均为纯
 //! `continue` 语义。
 
-use super::{AcpLock, SessionsLock};
+use super::{acp_snapshot, AcpLock, SessionsLock};
 use agent_client_protocol_schema::v1::ErrorCode as WireErrorCode;
 use pylon_acp::fs_policy::FsFailure;
 
@@ -70,7 +70,7 @@ async fn respond_tool_error(
     request_id: crate::acp::RequestId,
     (code, data, message): (WireErrorCode, Option<serde_json::Value>, String),
 ) {
-    let responder = { acp.lock().await.responder() };
+    let responder = { acp_snapshot(acp).responder() };
     let pending = responder
         .pending_requests
         .lock()
@@ -123,7 +123,7 @@ async fn handle_terminal_request(
                 Some(command) => command,
                 None => {
                     return {
-                        let responder = { acp.lock().await.responder() };
+                        let responder = { acp_snapshot(acp).responder() };
                         let _ = responder
                             .respond_error(
                                 request_id,
@@ -226,7 +226,7 @@ async fn handle_terminal_request(
     };
     match result {
         Ok(value) => {
-            let responder = { acp.lock().await.responder() };
+            let responder = { acp_snapshot(acp).responder() };
             let _ = responder.respond(request_id, value).await;
         }
         Err(error) => {
@@ -301,7 +301,7 @@ async fn handle_filesystem_request(
         }
         _ => Err(FsToolError::UnsupportedMethod),
     };
-    let responder = { acp.lock().await.responder() };
+    let responder = { acp_snapshot(acp).responder() };
     match result {
         Ok(value) => {
             let _ = responder.respond(request_id, value).await;
@@ -335,7 +335,7 @@ pub(crate) async fn route_terminal_request(
             )
             .await;
         } else {
-            let responder = { acp.lock().await.responder() };
+            let responder = { acp_snapshot(acp).responder() };
             let _ = responder
                 .respond_error(
                     request_id,
@@ -386,7 +386,7 @@ pub(crate) async fn route_fs_request(
                         ) {
                             Ok(filesystem) => filesystem,
                             Err(_) => {
-                                let responder = { acp.lock().await.responder() };
+                                let responder = { acp_snapshot(acp).responder() };
                                 let _ = responder
                                     .respond_error(
                                         request_id,
@@ -399,7 +399,7 @@ pub(crate) async fn route_fs_request(
                         }
                     }
                     None => {
-                        let responder = { acp.lock().await.responder() };
+                        let responder = { acp_snapshot(acp).responder() };
                         let _ = responder
                             .respond_error(
                                 request_id,
@@ -422,7 +422,7 @@ pub(crate) async fn route_fs_request(
             )
             .await;
         } else {
-            let responder = { acp.lock().await.responder() };
+            let responder = { acp_snapshot(acp).responder() };
             let _ = responder
                 .respond_error(
                     request_id,

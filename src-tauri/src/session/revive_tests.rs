@@ -33,9 +33,12 @@ async fn generation_change_during_recovery_rejects_success_and_failure_without_f
                 ],
             );
             let runtime = AgentRuntime::new_disconnected();
-            *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-                .await
-                .unwrap();
+            runtime.install_acp(
+                crate::acp::AcpClient::connect_with_logs(&agent, None)
+                    .await
+                    .unwrap(),
+            );
+
             let state = crate::test_utils::TestStateBuilder::bare()
                 .with_active_agent("recovery-generation")
                 .with_agent(agent)
@@ -101,9 +104,12 @@ async fn generation_change_during_recovery_rejects_success_and_failure_without_f
 async fn ensure_session_mapping_revives_via_session_load_before_creating() {
     let agent = crate::test_utils::fake_acp_agent("revive-agent", &["--scenario", "revive-echo"]);
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("revive-agent")
         .with_agent(agent)
@@ -150,9 +156,12 @@ async fn ensure_session_mapping_revives_via_session_load_before_creating() {
 async fn ensure_session_mapping_resumes_without_replay_or_recreation() {
     let agent = crate::test_utils::fake_acp_agent("resume-agent", &["--scenario", "resume-only"]);
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("resume-agent")
         .with_agent(agent)
@@ -182,9 +191,12 @@ async fn ensure_session_mapping_resume_failure_falls_back_to_load() {
         &["--scenario", "resume-archived-load-echo"],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("resume-load-agent")
         .with_agent(agent)
@@ -219,9 +231,12 @@ async fn ensure_session_mapping_resume_and_load_failure_creates_new_session() {
         ],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("resume-new-agent")
         .with_agent(agent)
@@ -251,9 +266,12 @@ async fn ensure_session_mapping_malformed_resume_capability_uses_load() {
         &["--scenario", "resume-bool-load-echo"],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("malformed-resume-agent")
         .with_agent(agent)
@@ -289,9 +307,12 @@ async fn ensure_session_mapping_falls_back_to_new_with_notice_when_load_fails() 
         ],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("fallback-agent")
         .with_agent(agent)
@@ -328,9 +349,12 @@ async fn ensure_session_mapping_without_peri_id_creates_directly() {
         &["--scenario", "new-always", "--session-id", "direct-new"],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("direct-agent")
         .with_agent(agent)
@@ -392,9 +416,12 @@ async fn revive_load_registers_replay_capture_and_preinserts_loading_slot() {
         ],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .unwrap();
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .unwrap(),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("revive-capture-agent")
         .with_agent(agent)
@@ -432,9 +459,7 @@ async fn revive_load_registers_replay_capture_and_preinserts_loading_slot() {
         }
         // 同 owner 二次 capture 必须被拒绝 = revive 的 load 已持有登记。
         let second = runtime
-            .acp
-            .lock()
-            .await
+            .snapshot_acp()
             .begin_replay_capture("remote-original");
         assert!(
             matches!(second, Err(crate::acp::AcpError::ReplayLoadInProgress)),
@@ -524,9 +549,12 @@ async fn revive_with_changed_remote_identity_rebinds_explicitly() {
     // 一个新 id（remote-rebound）——正是「远端 identity 变化」这一事件的触发源。
     let agent = crate::test_utils::fake_acp_agent("rebind-identity", &["--scenario", "rebind"]);
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-        .await
-        .unwrap();
+    runtime.install_acp(
+        crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .unwrap(),
+    );
+
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("rebind-identity")
         .with_agent(agent)

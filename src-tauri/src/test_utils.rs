@@ -240,7 +240,7 @@ pub(crate) async fn test_state_with_acp(
     // P3a（#106）：run() 同一注册入口（幂等）——手工镜像退役。
     crate::install_process_registrations();
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = initial_acp;
+    runtime.install_acp(initial_acp);
     TestStateBuilder::bare()
         .with_agent(agent.clone())
         .with_runtime(agent.name.clone(), runtime)
@@ -426,7 +426,7 @@ mod tests {
         assert!(Arc::ptr_eq(&state.gateway, &gateway));
         let runtime = state.runtimes.get("fake-acp").expect("runtime 必须注册");
         assert!(
-            runtime.acp.lock().await.is_crashed(),
+            runtime.snapshot_acp().is_crashed(),
             "注入的 AcpClient 必须挂在 runtime.acp 上（新建 disconnected 默认未崩溃）"
         );
     }

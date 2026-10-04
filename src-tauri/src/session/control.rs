@@ -279,10 +279,11 @@ pub(crate) async fn close_session(
     let peri_id = state.get_peri_id(&runtime, &source)?;
     // 若该 session 有在途 prompt，先发 cancel（fire-and-forget）让 Peri 侧 settle，
     // 否则 pending oneshot 会等到单步闲置超时才结束——close 后 prompt 可能长时卡住。
-    // 方案 5：cancel 在 acp 锁内发送，replacement（同样持 acp 锁）无法插入——
-    // 旧 periId 的 cancel 不会写入新 ACP。
+    // 方案 5（#549/ADR-0037 收口）：cancel 走快照客户端的私有通道——请求只可能
+    // 写入被解析的这一连接，replacement 换装后旧客户端被 kill，通道关闭即失败，
+    // 旧 periId 的 cancel 物理上不会写入新 ACP。
     {
-        let acp = HeldAcrossAwait::new(runtime.acp.lock().await);
+        let acp = runtime.snapshot_acp();
         let _ = acp.cancel_session(&peri_id).await;
     }
     // 方案 6：统一 close RPC 入口（close_via_rpc 判定 + params + method-not-found
@@ -425,13 +426,14 @@ pub(crate) async fn cancel_prompt(
     let runtime = state.inner().resolve_owner_runtime(&owner)?;
     let generation = state.current_generation(&runtime);
     let peri_id = state.get_peri_id(&runtime, &source)?;
-    // ACP-05（§5.7 step 2/3）：generation-bound 发送 session/cancel——acp 锁内
-    // 判 generation 再发送（replacement 持同锁无法插入，旧 periId 的 cancel
-    // 不会写入新 ACP）；发送失败返回结构化错误（cancel≠close：失败不清理会话
+    // ACP-05（§5.7 step 2/3）：generation-bound 发送 session/cancel——发送前对
+    // 快照客户端**自带**代际自校验（#549/ADR-0037：请求只入队被解析的这一连接，
+    // replacement 换装后旧连接必被 kill，旧 periId 的 cancel 不会写入新 ACP）；
+    // 发送失败返回结构化错误（cancel≠close：失败不清理会话
     // 映射，也不假装 agent 已处理——settle 由 prompt 路径异步收敛）。
     {
-        let acp = HeldAcrossAwait::new(runtime.acp.lock().await);
-        if state.current_generation(&runtime) != generation {
+        let acp = runtime.snapshot_acp();
+        if acp.client_generation() != generation {
             return Err(PylonError::Protocol(format!(
                 "stale ACP client generation: expected {generation}"
             )));
@@ -510,9 +512,11 @@ mod delete_session_tests {
         }
         let agent = crate::test_utils::fake_acp_agent(name, &args);
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            crate::acp::AcpClient::connect_with_logs(&agent, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
         (runtime, agent, trace_path)
     }
 

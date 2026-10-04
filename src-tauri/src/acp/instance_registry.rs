@@ -301,9 +301,9 @@ mod tests {
         let beta = echo_agent("beta");
         let gamma = echo_agent("gamma");
 
-        let (mut alpha, alpha_guard) = registered_client(&registry, &alpha, 1).await;
-        let (mut beta, beta_guard) = registered_client(&registry, &beta, 1).await;
-        let (mut gamma, gamma_guard) = registered_client(&registry, &gamma, 1).await;
+        let (alpha, alpha_guard) = registered_client(&registry, &alpha, 1).await;
+        let (beta, beta_guard) = registered_client(&registry, &beta, 1).await;
+        let (gamma, gamma_guard) = registered_client(&registry, &gamma, 1).await;
         assert_eq!(registry.active_count(), 3, "三个实例必须同时在册");
         assert_eq!(registry.available_permits(), MAX_INSTANCES - 3);
 
@@ -342,8 +342,8 @@ mod tests {
         let doomed = crash_agent("doomed");
         let survivor = echo_agent("survivor");
 
-        let (mut doomed, doomed_guard) = registered_client(&registry, &doomed, 1).await;
-        let (mut survivor, survivor_guard) = registered_client(&registry, &survivor, 1).await;
+        let (doomed, doomed_guard) = registered_client(&registry, &doomed, 1).await;
+        let (survivor, survivor_guard) = registered_client(&registry, &survivor, 1).await;
 
         // 崩溃实例 initialize 后进程退出 → crashed 置位（exit watcher）。
         let crashed = tokio::time::timeout(std::time::Duration::from_secs(10), async {

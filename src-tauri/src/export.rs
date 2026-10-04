@@ -168,7 +168,7 @@ pub(crate) async fn export_session(
     let mcp_servers =
         crate::mcp::validate_and_serialize(Some(state.inner().current_mcp_servers()?))?;
     // A-02：锁内原子建立 replay capture，等待在锁外进行——回放最长 30s，不阻塞其他命令。
-    let handles = runtime.acp.lock().await.begin_replay_capture(&peri_id)?;
+    let handles = runtime.snapshot_acp().begin_replay_capture(&peri_id)?;
     let (_, replay) = crate::acp::load_session_with_replay(
         handles,
         &peri_id,

@@ -202,7 +202,16 @@ export function reduceWorkbenchEvent(
   const effective: WorkbenchEventEnvelope = envelope.event.type.startsWith('interaction.')
     ? { ...envelope, event: redactInteractionEvent(envelope.event as unknown as Record<string, unknown>) } as unknown as WorkbenchEventEnvelope
     : envelope
-  const timeline = insertBySequence(document.timeline, timelineEntry(effective, narrowingEnabled(undefined)))
+  const newEntry = timelineEntry(effective, narrowingEnabled(undefined))
+  const timeline = insertBySequence(document.timeline, newEntry)
+  // #551：为新的 timeline 数组增量写入终态序列号——旧值命中 timeline 级记忆（O(1)），
+  // 新值只取决于「本条是否终态」。缺了这一步，读取侧缓存对新数组永远未命中（每帧仍全表扫）。
+  terminalSequenceByTimeline.set(
+    timeline,
+    isTerminalSessionEntry(newEntry)
+      ? Math.max(terminalSessionSequence(document), newEntry.sequence)
+      : terminalSessionSequence(document),
+  )
   let next: WorkbenchDocument = {
     ...document,
     revision: Math.max(document.revision, envelope.sequence),
@@ -1240,7 +1249,10 @@ function insertBySequence<T extends { sequence: number }>(items: readonly T[], i
     if (items[middle]!.sequence <= item.sequence) low = middle + 1
     else high = middle
   }
-  const next = [...items.slice(0, low), item, ...items.slice(low)]
+  // #551：中间插入改为「一次拷贝 + splice 块移动」——原写法切两段再展开 = 3 次分配。
+  // 上方的追加快路径（`[...items, item]`）已是最省形态，不动。
+  const next = items.slice()
+  next.splice(low, 0, item)
   Object.freeze(item)
   return next
 }
@@ -1249,6 +1261,8 @@ function addLateEventDiagnostic(document: WorkbenchDocument, envelope: Workbench
   if (document.diagnostics.some(item => item.code === 'late-event-after-terminal')) return document
   return addDiagnostic(document, envelope, 'late-event-after-terminal', message, 'warning')
 }
+
+const terminalSequenceByTimeline = new WeakMap<readonly WorkbenchTimelineEntry[], number>()
 
 /**
  * Sequence of the timeline entry that drove the session into a terminal
@@ -1259,10 +1273,16 @@ function addLateEventDiagnostic(document: WorkbenchDocument, envelope: Workbench
 function terminalSessionSequence(document: WorkbenchDocument, index?: readonly number[]): number {
   // #205：批量路径把终态 session 条目 sequence 也建成升序索引，取末位即最大值。
   if (index) return index.length > 0 ? index[index.length - 1]! : Number.NEGATIVE_INFINITY
+  // #551：单事件路径拿不到索引，改查 timeline 级记忆——命中即 O(1)，未命中回落扫描并写回。
+  // 键取 timeline 数组引用：timeline 只在插入点被替换，`{...document}` 全程保持同一引用，
+  // 而 document 本身会在 reduceSemanticEvent / refreshOrphans 里被重建多次。
+  const memo = terminalSequenceByTimeline.get(document.timeline)
+  if (memo !== undefined) return memo
   let latest = Number.NEGATIVE_INFINITY
   for (const entry of document.timeline) {
     if (isTerminalSessionEntry(entry)) latest = Math.max(latest, entry.sequence)
   }
+  terminalSequenceByTimeline.set(document.timeline, latest)
   return latest
 }
 

@@ -370,7 +370,7 @@ pub(super) async fn settle_prompt_connection_closed<R: tauri::Runtime>(
         &settle_outcome,
     );
     *failure = Some(PromptFailureMetadata::connection(prompt_started_at));
-    runtime.acp.lock().await.remove_pending(flow.request_id);
+    runtime.snapshot_acp().remove_pending(flow.request_id);
     // 崩溃不在此删除映射：自动重连会先置 Probing，再用无 prompt 的
     // session/load probe 收敛 Attached/Detached；删除会丢失待验证证据。
     // 方案 I：连接关闭日志携带 request/session/agent 上下文，便于
@@ -464,7 +464,7 @@ pub(super) async fn settle_prompt_cancelled_after_timeout<R: tauri::Runtime>(
         turn_key,
         &settle_outcome,
     );
-    runtime.acp.lock().await.remove_pending(flow.request_id);
+    runtime.snapshot_acp().remove_pending(flow.request_id);
     if let Some(cancel_error) = cancel_error {
         tracing::warn!("cancel timed-out prompt {}: {}", flow.peri_id, cancel_error);
     }
