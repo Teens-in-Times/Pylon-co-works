@@ -1,6 +1,6 @@
 [package]
 name = "pylon-canonical-types"
-version = "0.3.6-FIN"
+version = "0.4.0-SLD"
 edition = "2021"
 description = "canonical 事件 wire 契约的单源（issue #220 WP1）"
 publish = false
