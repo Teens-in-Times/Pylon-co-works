@@ -78,7 +78,16 @@ fn log_canonical_ingest_error(error: &crate::session::EventError, agent_id: &str
 }
 
 // R8：拆 handler 后共享状态经显式参数传递（闭包捕获收敛）——别名收敛复杂签名。
-type AcpLock = tokio::sync::Mutex<AcpClient>;
+/// #549/ADR-0037：acp 单元是「短窗换装位」——读侧快照 clone 即放锁，锁内无
+/// await；cancel/kill 的代际原子性由快照客户端的 `client_generation()` 自校验。
+type AcpLock = std::sync::RwLock<Arc<AcpClient>>;
+
+/// #549：acp 单元快照（与 `runtime::AgentRuntime::snapshot_acp` 同语义）。
+fn acp_snapshot(acp: &AcpLock) -> Arc<AcpClient> {
+    acp.read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
 type SessionsLock = std::sync::Mutex<std::collections::HashMap<String, SessionInfo>>;
 
 /// provider 解析正身已迁 interaction_route.rs（#416 W2 步骤①）；permission.rs
@@ -495,7 +504,7 @@ macro_rules! pump_flush_context {
 }
 
 struct NotificationPump<R: tauri::Runtime> {
-    acp: Arc<tokio::sync::Mutex<AcpClient>>,
+    acp: Arc<AcpLock>,
     sessions: Arc<std::sync::Mutex<std::collections::HashMap<String, SessionInfo>>>,
     binding_health: Arc<
         std::sync::Mutex<
@@ -651,10 +660,21 @@ impl<R: tauri::Runtime> NotificationPump<R> {
     /// 主循环骨架（#336/U2b）：代际复核 → 泵取一帧 → 代际复核 → 路由分支；
     /// 循环后为退出统一收口（兜底 flush + 账本代际清理）。
     async fn run(mut self) {
-        let notification_inbox = self.acp.lock().await.notification_inbox();
+        // #549：装配三连取收进一次快照（同一代连接的一致视图）。
+        let client = acp_snapshot(&self.acp);
+        // #548：inbox 一次性移交——泵是每代连接的唯一生产消费者；取到 None =
+        // 同一代被装配了第二个泵（编程错误），fail-fast 退出并留诊断日志。
+        let Some(mut notification_inbox) = client.take_notification_inbox() else {
+            tracing::error!(
+                agent_id = %self.agent_id,
+                generation = self.generation,
+                "notification inbox already taken: pump double-spawned for one connection generation"
+            );
+            return;
+        };
         // A7：崩溃信号独立 watch 通道——broadcast 洪泛 Lagged 时 NOTIF_AGENT_CRASHED
         // 会丢，自动重连依赖本通道（主循环 select! 双路监听，见下）。
-        let mut crashed_rx = self.acp.lock().await.crashed_receiver();
+        let mut crashed_rx = client.crashed_receiver();
         // 订阅即查现值：崩溃发生在订阅之前（connect 成功后立刻 EOF、dispatcher
         // 尚未启动）时 changed() 不会触发，只能靠 watch 保留的最新值兜底。
         if *crashed_rx.borrow_and_update() {
@@ -663,7 +683,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
                 .handle(crate::acp::CrashReason::StdoutClosed.as_str().to_string())
                 .await;
         }
-        self.wire_trace = self.acp.lock().await.wire_trace();
+        self.wire_trace = client.wire_trace();
         // #155 T3：draft 片段持久化节流时钟——interval 需要 tokio 定时器上下文，
         // 在 run()（async）内构造而非 new()（spawn 前同步装配）；首次 tick 立即
         // 消费，与拆分前任务体内的构造时序一致。
@@ -676,7 +696,11 @@ impl<R: tauri::Runtime> NotificationPump<R> {
                 break;
             }
             match self
-                .pump_step(&notification_inbox, &mut crashed_rx, &mut draft_interval)
+                .pump_step(
+                    &mut notification_inbox,
+                    &mut crashed_rx,
+                    &mut draft_interval,
+                )
                 .await
             {
                 PumpStep::Frame(classified) => {
@@ -754,7 +778,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
     /// 同一连接的序列语义。
     async fn pump_step(
         &mut self,
-        inbox: &crate::acp::NotificationInbox,
+        inbox: &mut crate::acp::NotificationInbox,
         crashed_rx: &mut tokio::sync::watch::Receiver<bool>,
         draft_interval: &mut tokio::time::Interval,
     ) -> PumpStep {
@@ -781,11 +805,9 @@ impl<R: tauri::Runtime> NotificationPump<R> {
                 }
                 PumpStep::Skipped
             }
-            raw = inbox.recv_control() => match raw {
-                Some(classified) => PumpStep::Frame(classified),
-                None => PumpStep::Stop,
-            },
-            raw = inbox.recv() => match raw {
+            // #548：biased 优先级下沉进 `recv_biased`（控制帧 > 普通通知，
+            // 任一 lane 关闭即 Stop——与旧双分支语义逐点一致）。
+            raw = inbox.recv_biased() => match raw {
                 Some(classified) => PumpStep::Frame(classified),
                 None => PumpStep::Stop,
             },

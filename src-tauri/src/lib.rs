@@ -295,7 +295,7 @@ impl AppState {
     }
 }
 
-/// acp 意外崩溃判定（P2-3 语义：try_lock 失败视为未崩溃，读路径不等待）。
+/// acp 意外崩溃判定（P2-3 语义：try_read 失败视为未崩溃，读路径不等待换装写锁）。
 /// #163：主动 stop（kill）不算崩溃——`is_crashed` 已区分「主动停」与「意外退出」，
 /// 本函数只用于把意外崩溃写入状态；连接可用性判定请用 `AcpClient::is_dead`。
 /// 收敛 detect_and_record_crashes 与 agent_status_payload 的双写点（G3 §2.2.4）。
@@ -304,7 +304,7 @@ fn acp_is_crashed(runtime: Option<&AgentRuntime>) -> bool {
         .map(|runtime| {
             runtime
                 .acp
-                .try_lock()
+                .try_read()
                 .ok()
                 .map(|acp| acp.is_crashed())
                 .unwrap_or(false)
@@ -423,7 +423,7 @@ impl AppStateHandles {
         // P1（能力协商暴露）：agentCapabilities 原始 Value（try_lock 同步读 acp——
         // 与 acp_is_crashed 同模式；断开/未连接为 null）。前端能力驱动 UI 读此字段。
         let capabilities = runtime
-            .and_then(|runtime| runtime.acp.try_lock().ok())
+            .and_then(|runtime| runtime.acp.try_read().ok())
             .and_then(|acp| acp.agent_capabilities().cloned());
         // #98：结构化能力快照（advertised/negotiated/usable 三层 + 诊断）。
         // 与 session 建立/重连探针消费同一矩阵（negotiated.rs from_parts）——
@@ -431,7 +431,7 @@ impl AppStateHandles {
         // W1 R.4 PR-2（#416 W2 wave2 步骤 8）：拼装经 acp/mod.rs 共享辅助；
         // generation 复用上方单次装载（原闭包内二次 Acquire 收敛为一）。
         let capability_snapshot = runtime.and_then(|runtime| {
-            let acp = runtime.acp.try_lock().ok()?;
+            let acp = runtime.acp.try_read().ok()?;
             Some(crate::acp::negotiated_snapshot_from_client(&acp, generation).wire_value())
         });
         // #98：pending 交互摘要（含事件载荷全文）——前端冷挂载/刷新只凭本快照
@@ -533,7 +533,13 @@ impl AppStateHandles {
         // 旧 source 键，映射清空后在锁外逐个清理（锁序单向：sessions → prompt_locks）。
         // 方案 8：sessions 迁移委托 SessionStore（migrate_or_clear 返回旧 source 键）。
         let (stale_sources, probe_candidates) = {
-            let mut acp = runtime.acp.lock().await;
+            // #549/ADR-0037：换装写锁——块内全为同步操作（激活应用/kill/赋值/
+            // 代际落位），锁内无 await；检查→退役→暴露的整窗原子性由写锁承担，
+            // 与旧 tokio 锁语义一致（std 写锁同样排斥全部快照读）。
+            let mut acp = runtime
+                .acp
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let new_generation = runtime
                 .client_generation
                 .load(Ordering::Acquire)
@@ -567,11 +573,11 @@ impl AppStateHandles {
             // instances during dispatcher startup and allows old stdout to
             // race into the new generation.  The disconnected placeholder
             // keeps the runtime fail-closed while the old process is drained.
-            let mut old_acp = std::mem::replace(&mut *acp, AcpClient::disconnected());
+            let old_acp = std::mem::replace(&mut *acp, Arc::new(AcpClient::disconnected()));
             if let Err(error) = old_acp.kill() {
                 tracing::warn!("kill replaced agent before activation: {}", error);
             }
-            *acp = new_acp;
+            *acp = Arc::new(new_acp);
             runtime
                 .client_generation
                 .store(new_generation, Ordering::Release);

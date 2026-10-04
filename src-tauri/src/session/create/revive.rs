@@ -284,7 +284,7 @@ pub(super) async fn revive_session_slot(
     {
         // Keep the protocol projection as a parity assertion while the typed
         // snapshot is the actual decision source.
-        let acp = runtime.acp.lock().await;
+        let acp = runtime.snapshot_acp();
         debug_assert_eq!(
             capability_snapshot.advertised("resume"),
             crate::acp::resume_capability_advertised(

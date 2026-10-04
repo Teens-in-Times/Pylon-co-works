@@ -36,9 +36,9 @@ pub(crate) async fn stop_agent_runtime(agent_id: &str, inner: &AppState) {
         if cleared > 0 {
             tracing::debug!(agent_id, cleared, "host terminals cleared on runtime stop");
         }
-        let mut acp = old.acp.lock().await;
-        let _ = acp.kill();
-        drop(acp);
+        // #549：kill 走快照——杀的是解析出的这一连接；stop 序列期间即使有并发
+        // 换装（正常不会：stop 持 lifecycle 锁），也只影响旧连接本身。
+        let _ = old.snapshot_acp().kill();
         // B3：实例停止即归还全局预算配额（runtime 仍留在表中，槽位显式清空）。
         if let Ok(mut slot) = old.instance_guard.lock() {
             *slot = None;

@@ -57,6 +57,6 @@ pub async fn capture_negotiated_snapshot(
     let generation = runtime
         .client_generation
         .load(std::sync::atomic::Ordering::Acquire);
-    let acp = runtime.acp.lock().await;
+    let acp = runtime.snapshot_acp();
     Ok(negotiated_snapshot_from_client(&acp, generation))
 }

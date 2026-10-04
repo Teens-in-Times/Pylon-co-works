@@ -64,9 +64,7 @@ pub(crate) async fn probe_unknown_session_continuity(
             let runtime = runtime.clone();
             async move {
                 let handles = runtime
-                    .acp
-                    .lock()
-                    .await
+                    .snapshot_acp()
                     .begin_replay_capture(&candidate.peri_id);
                 let handles = match handles {
                     Ok(handles) => handles,

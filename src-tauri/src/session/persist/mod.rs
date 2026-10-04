@@ -206,7 +206,7 @@ pub(super) async fn run_load_with_replay_capture(
     // A-02/#349 B1：锁内原子建立 replay capture，等待在锁外进行——回放最长 30s，
     // 不阻塞其他命令。若同 owner 已有 load，拒绝新请求并撤销本次临时 slot，避免
     // 失败请求覆盖首个 load 的绑定/状态（ReplayLoadInProgress 是无副作用的拒绝路径）。
-    let handles = match runtime.acp.lock().await.begin_replay_capture(peri_id) {
+    let handles = match runtime.snapshot_acp().begin_replay_capture(peri_id) {
         Ok(handles) => handles,
         Err(error) => {
             if let Err(restore_error) =

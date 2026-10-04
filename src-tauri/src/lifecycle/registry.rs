@@ -50,12 +50,12 @@ pub(crate) async fn list_agents(
         .iter()
         .map(|(id, a)| {
             // O11：crashed 感知——per-agent runtime 的 acp 是否已死
-            // （try_lock：读路径不等待 acp 锁；锁被占用时视为未崩溃）。
+            // （try_read：读路径不等待换装写锁；写锁占用或中毒时视为未崩溃）。
             let runtime = state.runtimes.get(id);
             let crashed = runtime.as_ref().is_some_and(|runtime| {
                 runtime
                     .acp
-                    .try_lock()
+                    .try_read()
                     .map(|acp| acp.is_crashed())
                     .unwrap_or(false)
             });
@@ -137,7 +137,7 @@ pub(crate) async fn acp_wire_trace_snapshot(
 ) -> Result<serde_json::Value, PylonError> {
     let inner = state.inner();
     let runtime = inner.active_runtime().ok_or(PylonError::NoActiveAgent)?;
-    let acp = runtime.acp.lock().await;
+    let acp = runtime.snapshot_acp();
     let trace = acp
         .wire_trace()
         .ok_or_else(|| PylonError::Acp("wire trace unavailable".to_string()))?;

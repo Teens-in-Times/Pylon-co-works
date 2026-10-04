@@ -26,7 +26,9 @@ pub struct SdkBackend {
     pub outbound: mpsc::Sender<SdkOutbound>,
     /// D12：Pylon 相关 id 的本地计数器（wire id 永不暴露）。
     pub next_id: Arc<AtomicU64>,
-    pub inbound: NotificationInbox,
+    /// #548：入站 inbox 一次性移交——`Some` 只在宿主首次 `take_notification_inbox`
+    /// 前存在；std 锁仅护 take 的短窗，锁内无 await。
+    pub inbound: std::sync::Mutex<Option<NotificationInbox>>,
     /// #99：入站投递遥测（ingress 序列 cursor / spill / 过载 gap 计数）。
     pub telemetry: Arc<InboundTelemetry>,
     /// A1b：入站帧的 replay 观察扇出（legacy `rx` 的对应物）。
@@ -37,7 +39,10 @@ pub struct SdkBackend {
     /// `ResponderHandle::Sdk` 在锁外应答。
     pub pending_requests: Arc<Mutex<HashMap<super::RequestId, Responder>>>,
     pub shutdown: watch::Sender<bool>,
-    pub join: Option<tokio::task::JoinHandle<Result<(), agent_client_protocol::Error>>>,
+    /// #549：kill 需 abort 引擎任务，而 kill 已 `&self` 化——`take` 的 `&mut`
+    /// 收进 std 互斥（仅 kill 的短窗触碰）。
+    pub join:
+        std::sync::Mutex<Option<tokio::task::JoinHandle<Result<(), agent_client_protocol::Error>>>>,
     // A1c：`None` = 断开态（`AcpClient::disconnected()`），无引擎任务可 abort。
 }
 
