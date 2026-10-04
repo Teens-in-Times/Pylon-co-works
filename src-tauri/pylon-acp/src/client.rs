@@ -30,6 +30,7 @@ pub struct AcpClient {
     /// #163：主动 stop 标记（[`Self::kill`] 在杀进程前置位）。子进程死亡本身
     /// 无法区分「主动停」与「意外崩溃」（同一 exit watcher / EOF 信号），凭本
     /// 标记判定：`is_crashed()` 只认意外退出，`is_dead()` 认一切连接死亡。
+    /// #451：占位构造 [`Self::disconnected`] 同样置位——占位即死连接。
     stopped: AtomicBool,
     /// A7：EOF 崩溃信号独立 watch 通道（保留最新值，broadcast 洪泛 Lagged 丢消息
     /// 时 NOTIF_AGENT_CRASHED 可能丢失，本通道是自动重连的可靠信号源）。
@@ -296,7 +297,11 @@ impl AcpClient {
                 join: std::sync::Mutex::new(None),
             },
             crashed: Arc::new(AtomicBool::new(false)),
-            stopped: AtomicBool::new(false),
+            // #451：占位即死连接（无子进程、接收端全部已 drop），stopped 如实
+            // 置位使 is_dead()=true——发送路径「无主 Crashed」接管触发集据此
+            // 识别全新 runtime 的预算超时残留。is_crashed() 仍为 false（crashed
+            // 标志未置位），崩溃通知机制不受扰。
+            stopped: AtomicBool::new(true),
             crashed_watch,
             _crashed_watch_rx: crashed_watch_rx,
             wire_trace: None,

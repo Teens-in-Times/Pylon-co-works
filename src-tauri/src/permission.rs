@@ -772,7 +772,8 @@ fn private_interaction_timeout_response(
 ///   （#416 下沉的 `now > deadline` 严格边界，与原 store 级
 ///   `elapsed > 300_000ms` 判据逐 ms 等价）；admit 时注入的 `deadline_ms`
 ///   是唯一判据来源。
-/// - 死亡 runtime（O37/#163：崩溃 ∨ 主动停）：`drain_disconnected` 单点清理
+/// - 死亡 runtime（O37/#163：崩溃 ∨ 主动停；#451 起占位构造亦判死——未连接
+///   的 runtime 不可能承接挂起请求）：`drain_disconnected` 单点清理
 ///   三 store（幂等），不出 outcome。
 /// - 过期条目按 method 分流，各走原应答序：
 ///   - `session/request_permission`：队列先以 TimedOut 终结（drain 已完成），
@@ -1627,12 +1628,15 @@ mod tests {
         let _ = runtime.snapshot_acp().kill();
     }
 
-    /// #356：未到期不动；到期但发送失败（disconnected client）→ 条目回插
-    /// 供下轮重试，队列不终结、不产出 outcome。#423：回插经
-    /// `restore_private`（store + queue 回灌——deadline 已过线，下轮
-    /// drain_expired 可再命中）。
+    /// #356→#451 演进：原用例夹具为占位 client（彼时双标志全 false，is_dead
+    /// =false → sweep 走超时重试路，写入死通道失败 → restore 回插）。#451
+    /// 占位即死连接后，该夹具在生产与测试两端均不可达（无进程的 runtime 本就
+    /// 不可能承接挂起请求），sweep 对死 runtime 走 O37 单点清场。本用例改钉
+    /// 该分支：挂起条目全部清空、不产出 outcome；「到期发送失败 → 回插重试」
+    /// 语义由 `interaction_ledger::tests::restore_private_requeues_for_retry`
+    /// 单测覆盖。
     #[tokio::test]
-    async fn private_interaction_timeout_retains_entry_when_send_fails() {
+    async fn private_interaction_dead_runtime_drains_pending_without_outcome() {
         let runtime = AgentRuntime::new_disconnected();
         let agent_id = "private-timeout-retry-agent";
         let state = crate::test_utils::TestStateBuilder::bare()
@@ -1664,20 +1668,15 @@ mod tests {
 
         let (_, outcomes) = sweep_interaction_timeouts(&state).await;
 
-        assert!(outcomes.is_empty(), "发送失败不得产出 outcome");
+        assert!(outcomes.is_empty(), "死 runtime 清场不产出 outcome");
         let snapshot = runtime.ledger.private().snapshot();
-        assert_eq!(
-            snapshot.len(),
-            2,
-            "未到期保留；发送失败回插重试——两条都不丢"
+        assert!(
+            snapshot.is_empty(),
+            "#451：占位即死连接——挂起条目全部清空（O37 单点清场），实际: {snapshot:?}"
         );
-        assert!(snapshot.iter().any(|(id, _)| *id == RequestId::Number(81)));
-        assert!(snapshot.iter().any(|(id, _)| *id == RequestId::Number(82)));
-        // 回灌后的 queue：81（回插）与 82（未动）都在——下轮 sweep 可再命中 81。
+        // 回灌后的 queue 同步清空（清场覆盖三 store，不再等待下轮 sweep）。
         let entries = runtime.ledger.queue().snapshot().expect("queue snapshot");
-        assert_eq!(entries.len(), 2);
-        assert!(entries.iter().any(|entry| entry.request_id == "81"));
-        assert!(entries.iter().any(|entry| entry.request_id == "82"));
+        assert!(entries.is_empty());
     }
 
     /// #448 PR3：set_approval_mode 写穿 user_data（后端权威）。内存与 SQLite 落盘

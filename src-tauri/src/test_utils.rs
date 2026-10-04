@@ -425,9 +425,15 @@ mod tests {
         assert!(state.agents.lock().unwrap().contains_key("fake-acp"));
         assert!(Arc::ptr_eq(&state.gateway, &gateway));
         let runtime = state.runtimes.get("fake-acp").expect("runtime 必须注册");
+        // #451 起占位构造即 stopped，is_crashed()（= crashed && !stopped）恒
+        // false——注入身份证明改读原始 crashed 标志（占位默认 false，唯注入
+        // 方置位）。
         assert!(
-            runtime.snapshot_acp().is_crashed(),
-            "注入的 AcpClient 必须挂在 runtime.acp 上（新建 disconnected 默认未崩溃）"
+            runtime
+                .snapshot_acp()
+                .crashed
+                .load(std::sync::atomic::Ordering::Acquire),
+            "注入的 AcpClient 必须挂在 runtime.acp 上"
         );
     }
 

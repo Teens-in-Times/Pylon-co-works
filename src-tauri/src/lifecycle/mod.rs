@@ -12,14 +12,16 @@
 //! | `reconnect_agent` | ✓ | ✓（active runtime） | —（强制重连语义，锁已串行） | — |
 //! | 自动重连（dispatcher.rs） | —（无 kill，无交叉清理面） | ✓（本 runtime） | ✓ P2-1 锁后 stale 复查 + 每轮 active 复查 | — |
 //! | `ensure_runtime_ready`（平台懒启动，session.rs） | —（无 kill） | ✓（目标 runtime） | ✓ 双检查 | — |
-//! | `ensure_connected_for_send`（GUI 发送/建会话懒重连，session.rs #379） | —（无 kill） | ✓（目标 runtime） | ✓ 双检查（只认 Disconnected；Crashed 让路自动重连） | — |
+//! | `ensure_connected_for_send`（GUI 发送/建会话懒重连，session.rs #379/#451） | —（无 kill） | ✓（目标 runtime） | ✓ 双检查（Disconnected；或「无主 Crashed」= ¬auto_reconnect_active ∧ acp.is_dead()，状态/标志/is_dead 锁后全重读） | — |
 //!
 //! 状态机（状态载体 = [`AgentLifecycleStatus`]；LifecycleOp 是操作视角的命名，
 //! 不引入平行枚举——状态已由该字段承载，避免双份类型漂移）：
 //! `Idle(Disconnected)` → `Connecting` → `Connected`；`Connected` →
 //! `Reconnecting`（手动/自动重连）→ `Connected`；`Crashed`/`Error` 是
 //! 崩溃/失败终态（崩溃通知、连接失败路径进入），自动重连在 `Crashed` 上以
-//! 退避序列回到 `Reconnecting` → `Connected`。
+//! 退避序列回到 `Reconnecting` → `Connected`。#451：无崩溃通知的「无主
+//! Crashed」（connect 总预算超时残留、自动重连放弃残留）由发送路径
+//! `ensure_connected_for_send` 按上述触发集接管回 `Connecting`。
 //!
 //! 统一序列：**取锁**（switch_lock 串行手动操作避免交叉杀进程；agent_lifecycle
 //! 串行同一 runtime 的所有连接）→ **复查**（锁后按现状决策，不盲杀在途连接）→
@@ -859,6 +861,14 @@ mod tests {
             budgets::connect_budget_secs(),
             budgets::CONNECT_TOTAL_BUDGET_SECS,
             "未注入时解析口必须返回常量默认"
+        );
+        // #451：注入缝已是双消费者，与 session 侧预算链测试共用 INJECTION_LOCK
+        // 串行（进程全局值，并行 set/clear 互相踩——见 budgets.rs 注入缝 doc）。
+        // 锁卫有意跨 await 持有（串行化正是语义），经 HeldAcrossAwait 收口。
+        let _injection_guard = HeldAcrossAwait::new(
+            budgets::connect_budget_override::INJECTION_LOCK
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()),
         );
         budgets::connect_budget_override::set(2);
         struct RestoreBudget;
