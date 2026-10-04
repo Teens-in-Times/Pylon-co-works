@@ -160,4 +160,86 @@ describe('GitPanel 写操作', () => {
     await waitFor(() => expect(screen.getByLabelText('提交说明')).toHaveValue(''))
     expect(screen.queryByDisplayValue('workspace-a-branch')).toBeNull()
   })
+
+  // ── #368：stash 三件套 / 删分支 / 结构化 log 图 ─────────────────────────
+
+  it('stash：列表渲染，pop 按解析索引调用并刷新列表，push 走能力调用', async () => {
+    const stashList = vi.fn()
+      .mockResolvedValueOnce([{ id: 'stash@{0}', subject: 'WIP on main: a1b2c3d subject' }])
+      .mockResolvedValue([])
+    const stashPop = vi.fn().mockResolvedValue(result(status([]), 'restored'))
+    const stashPush = vi.fn().mockResolvedValue(result(status([]), 'Saved'))
+    const git = provider({ stashList, stashPop, stashPush })
+    render(() => <GitPanel target={target} provider={git} onOpenDiff={vi.fn()} />)
+
+    await screen.findByText('WIP on main: a1b2c3d subject')
+    expect(stashList).toHaveBeenCalledWith(target)
+
+    fireEvent.click(screen.getByRole('button', { name: '恢复 stash@{0}' }))
+    await waitFor(() => expect(stashPop).toHaveBeenCalledWith(target, 0))
+    // pop 成功后贮藏列表刷新 → 条目消失
+    await waitFor(() => expect(screen.queryByText('WIP on main: a1b2c3d subject')).toBeNull())
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '贮藏' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '贮藏' }))
+    await waitFor(() => expect(stashPush).toHaveBeenCalledWith(target))
+    await waitFor(() => expect(stashList).toHaveBeenCalledTimes(3))
+  })
+
+  it('logGraph：refs 徽标 + merge 指示 + 加载更多续页；history 不再作为数据源', async () => {
+    const logGraph = vi.fn()
+      .mockResolvedValueOnce({
+        commits: [
+          { hash: 'aaaaaaaaaaa', parents: ['bbbbbbbbbbb', 'ccccccccccc'], author: 'P', date: 1700000000, subject: 'merge side', refs: 'HEAD -> main, origin/main' },
+        ],
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        commits: [
+          { hash: 'ddddddddddd', parents: [], author: 'P', date: 1700000001, subject: 'root', refs: '' },
+        ],
+        hasMore: false,
+      })
+    const history = vi.fn().mockResolvedValue([])
+    const git = provider({ logGraph, history })
+    render(() => <GitPanel target={target} provider={git} onOpenDiff={vi.fn()} />)
+
+    await screen.findByText('merge side')
+    expect(logGraph).toHaveBeenCalledWith(target, { skip: 0, limit: 50 })
+    expect(screen.getByText('HEAD -> main')).toBeTruthy()
+    expect(screen.getByText('origin/main')).toBeTruthy()
+    expect(history).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+    await waitFor(() => expect(logGraph).toHaveBeenLastCalledWith(target, { skip: 1, limit: 50 }))
+    await screen.findByText('root')
+    expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull()
+  })
+
+  it('删除分支经能力调用，成功后草稿清空且编辑器收起', async () => {
+    const deleteBranch = vi.fn().mockResolvedValue(result(status([]), '已删除分支 feature/a'))
+    const git = provider({ deleteBranch })
+    render(() => <GitPanel target={target} provider={git} onOpenDiff={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '分支' }))
+    const del = screen.getByRole('button', { name: '删除分支' })
+    expect(del).toBeDisabled()
+    fireEvent.input(screen.getByLabelText('分支名称'), { target: { value: 'feature/a' } })
+    expect(del).toBeEnabled()
+    fireEvent.click(del)
+    await waitFor(() => expect(deleteBranch).toHaveBeenCalledWith(target, 'feature/a'))
+    await waitFor(() => expect(screen.queryByLabelText('分支名称')).toBeNull())
+  })
+
+  it('能力缺失时 stash/删除/图入口不渲染（设计好的降级路径）', async () => {
+    const git = provider({ createBranch: vi.fn().mockResolvedValue(result(status([]), 'ok')) })
+    render(() => <GitPanel target={target} provider={git} onOpenDiff={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '分支' }))
+    await screen.findByLabelText('分支名称')
+    expect(screen.queryByRole('button', { name: '删除分支' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '贮藏' })).toBeNull()
+    expect(screen.queryByText('STASHES')).toBeNull()
+    expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull()
+  })
 })

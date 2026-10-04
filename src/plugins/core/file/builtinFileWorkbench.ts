@@ -71,6 +71,12 @@ export const builtinGitProvider = {
   push: async (target: Parameters<typeof client.gitPush>[0], _signal?: AbortSignal) => normalizeGitOperationResult(await client.gitPush(target)),
   showFile: async (target: Parameters<typeof client.gitShowFile>[0], input: { rev: string; path: string }) => String(await client.gitShowFile(target, input.rev, input.path)),
   sequenceState: async (target: Parameters<typeof client.gitSequenceState>[0]) => await client.gitSequenceState(target),
+  // #368：stash 三件套 / 删分支（后端未落地保护 + update-ref 比较删除）/ 结构化 log 图
+  stashList: async (target: Parameters<typeof client.gitStashList>[0], _signal?: AbortSignal) => await client.gitStashList(target),
+  stashPush: async (target: Parameters<typeof client.gitStashPush>[0], input?: { message?: string; includeUntracked?: boolean }, _signal?: AbortSignal) => normalizeGitOperationResult(await client.gitStashPush(target, input)),
+  stashPop: async (target: Parameters<typeof client.gitStashPop>[0], index?: number, _signal?: AbortSignal) => normalizeGitOperationResult(await client.gitStashPop(target, index ?? 0)),
+  deleteBranch: async (target: Parameters<typeof client.gitDeleteBranch>[0], name: string, _signal?: AbortSignal) => normalizeGitOperationResult(await client.gitDeleteBranch(target, name)),
+  logGraph: async (target: Parameters<typeof client.gitLogGraph>[0], options?: { skip?: number; limit?: number; firstParent?: boolean; path?: string }, _signal?: AbortSignal) => await client.gitLogGraph(target, options),
 }
 
 export const BUILTIN_FILE_WORKBENCH_CONTRIBUTIONS: readonly FileWorkbenchContribution[] = [

@@ -347,6 +347,82 @@ pub(crate) async fn git_push(
     git::git_push(&root).await.map_err(PylonError::Git)
 }
 
+/// #368：stash 清单（git_stash_list）。
+#[tauri::command]
+pub(crate) async fn git_stash_list(
+    state: tauri::State<'_, AppState>,
+    target: WorkspaceTargetWire,
+) -> Result<Vec<git::GitStashEntry>, PylonError> {
+    let root = git_workspace_root(state.inner(), &target).await?;
+    git::git_stash_list(&root).await.map_err(PylonError::Git)
+}
+
+/// #368：贮藏工作区（git_stash_push；message/include_untracked 可选）。
+#[tauri::command]
+pub(crate) async fn git_stash_push(
+    state: tauri::State<'_, AppState>,
+    target: WorkspaceTargetWire,
+    message: Option<String>,
+    include_untracked: Option<bool>,
+) -> Result<git::GitOperationResult, PylonError> {
+    let root = git_workspace_root(state.inner(), &target).await?;
+    git::git_stash_push(
+        &root,
+        message.as_deref(),
+        include_untracked.unwrap_or(false),
+    )
+    .await
+    .map_err(PylonError::Git)
+}
+
+/// #368：弹出指定 stash（git_stash_pop；index=0 为栈顶）。
+#[tauri::command]
+pub(crate) async fn git_stash_pop(
+    state: tauri::State<'_, AppState>,
+    target: WorkspaceTargetWire,
+    index: usize,
+) -> Result<git::GitOperationResult, PylonError> {
+    let root = git_workspace_root(state.inner(), &target).await?;
+    git::git_stash_pop(&root, index)
+        .await
+        .map_err(PylonError::Git)
+}
+
+/// #368：删除本地分支（git_delete_branch；后端带未落地工作保护与比较删除）。
+#[tauri::command]
+pub(crate) async fn git_delete_branch(
+    state: tauri::State<'_, AppState>,
+    target: WorkspaceTargetWire,
+    name: String,
+) -> Result<git::GitOperationResult, PylonError> {
+    let root = git_workspace_root(state.inner(), &target).await?;
+    git::git_delete_branch(&root, &name)
+        .await
+        .map_err(PylonError::Git)
+}
+
+/// #368：结构化 log 图分页（git_log_graph；parents/refs 交前端算 lane）。
+#[tauri::command]
+pub(crate) async fn git_log_graph(
+    state: tauri::State<'_, AppState>,
+    target: WorkspaceTargetWire,
+    skip: Option<usize>,
+    limit: Option<usize>,
+    first_parent: Option<bool>,
+    path: Option<String>,
+) -> Result<git::GitLogGraphPage, PylonError> {
+    let root = git_workspace_root(state.inner(), &target).await?;
+    git::git_log_graph(
+        &root,
+        skip,
+        limit,
+        first_parent.unwrap_or(false),
+        path.as_deref(),
+    )
+    .await
+    .map_err(PylonError::Git)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

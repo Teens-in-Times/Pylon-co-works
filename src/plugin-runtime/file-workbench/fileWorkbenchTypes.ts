@@ -76,6 +76,8 @@ export interface GitProvider {
   commit?(target: WorkspaceTarget, message: string, signal?: AbortSignal): Promise<GitOperationResult>
   createBranch?(target: WorkspaceTarget, name: string, signal?: AbortSignal): Promise<GitOperationResult>
   switchBranch?(target: WorkspaceTarget, name: string, signal?: AbortSignal): Promise<GitOperationResult>
+  /** #368：删本地分支；后端带「未落地工作」保护（已并入 HEAD 或树相等才可删，探针失败保守拒）。 */
+  deleteBranch?(target: WorkspaceTarget, name: string, signal?: AbortSignal): Promise<GitOperationResult>
   pull?(target: WorkspaceTarget, signal?: AbortSignal): Promise<GitOperationResult>
   push?(target: WorkspaceTarget, signal?: AbortSignal): Promise<GitOperationResult>
 }

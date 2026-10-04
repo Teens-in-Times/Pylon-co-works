@@ -80,6 +80,38 @@ describe('workspaceClient', () => {
       { cmd: 'git_push', args: { target } },
     ])
   })
+
+  it('#368 stash/删分支/log 图命令收口与宽容 normalize', async () => {
+    const opResult = { summary: 'ok', status: { branch: { branch: 'main', detached: false, head: 'abc' }, entries: [] } }
+    const invoke = new FakeInvoke()
+      .register('git_stash_list', () => [{ id: 'stash@{0}', subject: 'WIP on main' }, { id: '', subject: 'broken' }])
+      .register('git_stash_push', () => opResult)
+      .register('git_stash_pop', () => opResult)
+      .register('git_delete_branch', () => opResult)
+      .register('git_log_graph', () => ({
+        commits: [{ hash: 'a1b2c3d4e5', parents: ['f1e2d3c4b5a6'], author: 'P', date: 'not-a-number', subject: 's', refs: 'HEAD -> main' }],
+        hasMore: true,
+      }))
+    const client = createWorkspaceClient({ invoke: (cmd, args) => invoke.invoke(cmd, args) })
+    const target = { sessionId: 'session-a', agentId: 'agent-a', source: 'source-a', legacyWorkdir: 'C:/repo' }
+    const stashes = await client.gitStashList(target)
+    expect(stashes).toEqual([{ id: 'stash@{0}', subject: 'WIP on main' }])
+    await client.gitStashPush(target, { message: 'wip', includeUntracked: true })
+    await client.gitStashPop(target, 2)
+    await client.gitDeleteBranch(target, 'feature/a')
+    const page = await client.gitLogGraph(target, { skip: 5, limit: 50, firstParent: true, path: 'a.ts' })
+    expect(invoke.calls).toEqual([
+      { cmd: 'git_stash_list', args: { target } },
+      { cmd: 'git_stash_push', args: { target, message: 'wip', includeUntracked: true } },
+      { cmd: 'git_stash_pop', args: { target, index: 2 } },
+      { cmd: 'git_delete_branch', args: { target, name: 'feature/a' } },
+      { cmd: 'git_log_graph', args: { target, skip: 5, limit: 50, firstParent: true, path: 'a.ts' } },
+    ])
+    expect(page.hasMore).toBe(true)
+    expect(page.commits[0]?.hash).toBe('a1b2c3d4e5')
+    expect(page.commits[0]?.refs).toBe('HEAD -> main')
+    expect(page.commits[0]?.date).toBe(0)
+  })
 })
 
 describe('gatewayClient', () => {
