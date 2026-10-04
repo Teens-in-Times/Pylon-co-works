@@ -40,18 +40,18 @@ describe('Skin Draft 校验（S5-B）', () => {
     expect(tooHigh.issues).toContainEqual(expect.objectContaining({ path: 'tokens.transparency', code: 'number-out-of-range' }))
   })
 
-  it('select 非法选项报错；select+boolean default 的历史字段接受 boolean 或枚举', () => {
+  it('select 非法选项报错；已布尔化的历史字段拒绝枚举值', () => {
     const invalid = validateSkinDraft(makeDraft({ tokens: { uiScheme: 'blue' } }), schema)
     expect(invalid.issues).toContainEqual(expect.objectContaining({ path: 'tokens.uiScheme', code: 'invalid-option' }))
 
-    // inputShowHistoryHint defs 为 select options + boolean default
-    // ★ #266 CC-07：原样本 `inputShowPlaceholder` 已删除 ⇒ 换同形的 `inputShowHistoryHint`
-    //   （同族、同为 `S(...)` 选项 + `default: true`，锁的是「这种历史写法仍被接受」这件事）。
+    // inputShowHistoryHint 已由 select+boolean default 归一为纯 boolean（★ #266 CC-08）
+    // ★ #266 CC-07：原样本 `inputShowPlaceholder` 已删除 ⇒ 同族 `inputShowHistoryHint` 顶上，
+    //   锁的是「字段仍收 boolean」与「老枚举值不再被接受」这两件事。
     const asBoolean = validateSkinDraft(makeDraft({ tokens: { inputShowHistoryHint: true } }), schema)
     expect(asBoolean.valid).toBe(true)
 
     const asOption = validateSkinDraft(makeDraft({ tokens: { inputShowHistoryHint: 'shown' } }), schema)
-    expect(asOption.valid).toBe(true)
+    expect(asOption.issues).toContainEqual(expect.objectContaining({ path: 'tokens.inputShowHistoryHint', code: 'invalid-type' }))
   })
 
   it('boolean/text/color 类型错误结构化返回', () => {

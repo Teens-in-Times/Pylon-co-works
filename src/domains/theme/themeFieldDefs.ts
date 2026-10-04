@@ -283,7 +283,7 @@ export const THEME_FIELD_DEFS = {
   inputRadius: { ...N('cc', '输入栏圆角', 0, 28), default: 20, group: '输入框本体', unit: 'px', suffix: 'px', cssVar: '--cc-input-radius' },
   inputFontSize: { ...N('cc', '输入字号', 12, 22, 1), tier: 'basic', default: 15, group: '输入框本体', unit: 'px', cssVar: '--cc-input-font-size' },
   inputLineHeight: { ...S('cc', '输入行距', ['0.5', '1', '1.5']), default: '1', group: '输入框本体', cssVar: '--cc-input-line-height' },
-  inputShowHistoryHint: { ...S('cc', '显示历史快捷提示', ['shown', 'hidden']), optionLabels: { shown: '显示', hidden: '隐藏' }, default: true, group: "历史快捷提示", },
+  inputShowHistoryHint: { ...B('cc', '显示历史快捷提示'), default: true, group: "历史快捷提示", },
   inputSubmitButtonMode: { ...S('cc', '发送按钮位置', ['inline', 'external', 'hidden']), optionLabels: { inline: '输入栏内', external: '独立按钮', hidden: '隐藏' }, default: 'inline', group: '按钮本体', },
   cliLineWidth: { ...N('cc', '命令行边框宽度', 1, 4), default: 2, group: "上下两条线", unit: 'px' },
   cliLineColor: { ...C('cc', '命令行边框颜色'), default: '', group: "上下两条线", semanticRole: 'connector.default' },
@@ -483,14 +483,13 @@ export function normalizeThemeValue(def: ThemeFieldDef, value: unknown): string 
 /**
  * 对持久化主题做全字段归一化（migrate 通用 pass）。
  * 跳过与 defs 类型不完全一致的历史字段（由调用方保留既有语义）：
- * - inputShowHistoryHint：boolean 默认 + shown/hidden 枚举混用
  * - inputFocusRingEnabled/inputShadowEnabled：迁移阶段兼容 boolean，归一化为 shown/hidden
  * - toolIndicator：有效值来自 widgetRegistry 动态选项（defs 仅是展示子集）
  */
 export function normalizeThemeState<T extends Record<string, unknown>>(state: T): T {
   const next = { ...state } as Record<string, unknown>
   for (const key of THEME_FIELD_KEYS) {
-    if (key === 'inputShowHistoryHint' || key === 'inputFocusRingEnabled' || key === 'inputShadowEnabled' || key === 'toolIndicator') continue
+    if (key === 'inputFocusRingEnabled' || key === 'inputShadowEnabled' || key === 'toolIndicator') continue
     const def = THEME_FIELD_DEFS[key] as ThemeFieldDef
     if (def.default === undefined) continue
     if (next[key] === undefined) continue
