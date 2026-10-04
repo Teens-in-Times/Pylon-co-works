@@ -9,7 +9,7 @@ mod admit;
 mod hooks;
 
 use super::interaction_route::{reject_interaction_request, resolve_agent_provider};
-use super::{AcpLock, SessionsLock};
+use super::{acp_snapshot, AcpLock, SessionsLock};
 use crate::hook_bridge::HookBridge;
 use crate::permission::{permission_response, pick_option};
 use crate::runtime::AgentRuntimeManager;
@@ -194,10 +194,7 @@ async fn handle_permission_request<R: tauri::Runtime>(
             return;
         };
         // O9/G3 §2.2.2：无 pending 直接应答——锁外发送（同解析失败分支）。
-        let responder = {
-            let acp = acp.lock().await;
-            acp.responder()
-        };
+        let responder = { acp_snapshot(acp).responder() };
         responder
             .respond(request_id, permission_response(option_id))
             .await;

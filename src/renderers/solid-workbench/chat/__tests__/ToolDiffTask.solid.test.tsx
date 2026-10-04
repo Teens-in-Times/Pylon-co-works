@@ -68,7 +68,7 @@ describe('SolidToolCard', () => {
       appearance={TOOL_APPEARANCE}
     />)
 
-     fireEvent.click(result.getByRole('button'))
+    fireEvent.click(result.getByRole('button'))
     expect(result.container.querySelector('.term-ansi-block')).not.toBeNull()
     expect(result.container.querySelector('.term-ansi-block')?.textContent).toContain('PASS build')
     expect(result.container.querySelector('.term-ansi-block script')).toBeNull()
@@ -84,7 +84,7 @@ describe('SolidToolCard', () => {
       })}
       appearance={TOOL_APPEARANCE}
     />)
-     fireEvent.click(result.getByRole('button'))
+    fireEvent.click(result.getByRole('button'))
     expect(result.container.querySelector('[data-diff-card]')).not.toBeNull()
     expect(result.container.textContent).toContain('1 additions · 1 deletions')
   })
@@ -98,7 +98,7 @@ describe('SolidDiffCard', () => {
     expect(result.container.querySelector('[data-diff-word="removed"]')).not.toBeNull()
     expect(result.container.querySelector('[data-diff-word="added"]')).not.toBeNull()
     const button = result.getByRole('button', { name: /变更预览/ })
-     fireEvent.click(button)
+    fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('false')
     expect(result.container.querySelector('.term-collapse')).toHaveAttribute('data-open', 'false')
     expect(result.container.querySelector('.term-collapse')).toHaveAttribute('aria-hidden', 'true')

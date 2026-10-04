@@ -214,9 +214,7 @@ async fn ensure_connected_for_send_takes_over_auto_reconnect_giveup_residue() {
     // 模拟放弃残留：真崩溃标志（exit watcher / reader 线程置位的同一标志）
     // + 状态面 Crashed + 无主。
     runtime
-        .acp
-        .lock()
-        .await
+        .snapshot_acp()
         .crashed
         .store(true, std::sync::atomic::Ordering::Release);
     runtime.agent_runtime.lock().unwrap().status = AgentLifecycleStatus::Crashed;

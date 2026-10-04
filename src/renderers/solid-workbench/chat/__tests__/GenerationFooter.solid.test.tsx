@@ -271,7 +271,7 @@ describe('SolidGenerationFooter', () => {
       running tokenCount={0} startTime={0} summary={null}
       appearance={APPEARANCE} clock={createFakeWorkbenchClock(0)} onStop={onStop}
     />)
-     fireEvent.click(running.getByRole('button', { name: /停止/ }))
+    fireEvent.click(running.getByRole('button', { name: /停止/ }))
     expect(onStop).toHaveBeenCalledTimes(1)
     running.unmount()
 

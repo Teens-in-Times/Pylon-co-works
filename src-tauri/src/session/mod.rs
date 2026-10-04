@@ -147,8 +147,9 @@ impl AppState {
         self.active_runtime().ok_or(PylonError::NoActiveAgent)
     }
 
-    /// 锁外 RPC：短锁仅覆盖同步准备（prepare_rpc），发送与等待在锁外执行——
+    /// 锁外 RPC：同步准备（prepare_rpc）在快照上完成，发送与等待在锁外执行——
     /// Peri 卡顿时不阻塞其他命令（V14「锁外写 prompt」模式推广到全部 RPC）。
+    /// #549：快照解析自「短窗换装位」，读锁仅护 Arc clone。
     pub(crate) async fn acp_rpc(
         &self,
         runtime: &AgentRuntime,
@@ -156,17 +157,19 @@ impl AppState {
         params: serde_json::Value,
     ) -> Result<serde_json::Value, crate::acp::AcpError> {
         let rpc = {
-            let acp = runtime.acp.lock().await;
+            let acp = runtime.snapshot_acp();
             acp.prepare_rpc(method, params)?
         };
         rpc.complete().await
     }
 
-    /// 方案 5：generation-bound 控制 RPC——锁内 prepare 前断言 generation，
+    /// 方案 5：generation-bound 控制 RPC——发送前断言 generation，
     /// stale（客户端已替换）时**不发送**直接返回错误。防止旧 periId 的
     /// session/close、session/cancel 等控制请求写入新 ACP（发送后复核只能
     /// "检测到"竞态，不能"隔离"竞态）。调用方在发送后仍需 ensure_generation
     /// 复核本地状态修改。正常路径（generation 匹配）行为与 acp_rpc 一致。
+    /// #549/ADR-0037：断言对象是快照客户端**自带**的 `client_generation`——
+    /// 请求只会入队被解析的这一连接，物理上不可能落到替换后的新 ACP。
     pub(crate) async fn acp_rpc_generation_checked(
         &self,
         runtime: &AgentRuntime,
@@ -175,8 +178,8 @@ impl AppState {
         expected_generation: u64,
     ) -> Result<serde_json::Value, crate::acp::AcpError> {
         let rpc = {
-            let acp = runtime.acp.lock().await;
-            if self.current_generation(runtime) != expected_generation {
+            let acp = runtime.snapshot_acp();
+            if acp.client_generation() != expected_generation {
                 return Err(crate::acp::AcpError::Rpc(format!(
                     "stale ACP client generation: expected {expected_generation}"
                 )));
@@ -641,7 +644,7 @@ impl AppState {
         if runtime.auto_reconnect_active.load(Ordering::Acquire) {
             return None;
         }
-        if !runtime.acp.lock().await.is_dead() {
+        if !runtime.snapshot_acp().is_dead() {
             return None;
         }
         Some(SessionContinuity::Unknown)
@@ -1337,9 +1340,12 @@ gateway:
             ..Default::default()
         });
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&runtime_def, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            crate::acp::AcpClient::connect_with_logs(&runtime_def, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_active_agent("active-a")
             .with_agent(active_def)
@@ -1383,9 +1389,12 @@ gateway:
         let agent =
             crate::test_utils::fake_acp_agent("p6-agent", &["--scenario", "close-unsupported"]);
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            crate::acp::AcpClient::connect_with_logs(&agent, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         // close_via_rpc=false：跳过 RPC，返回 Ok(false)
         let mut no_rpc_def = agent.clone();
         no_rpc_def.name = "p6-no-rpc".to_string();
@@ -1394,10 +1403,12 @@ gateway:
             ..Default::default()
         });
         let no_rpc_runtime = AgentRuntime::new_disconnected();
-        *no_rpc_runtime.acp.lock().await =
+        no_rpc_runtime.install_acp(
             crate::acp::AcpClient::connect_with_logs(&no_rpc_def, None)
                 .await
-                .expect("fake ACP must initialize");
+                .expect("fake ACP must initialize"),
+        );
+
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_active_agent("p6-agent")
             .with_agent(agent)
@@ -1435,16 +1446,19 @@ gateway:
             ],
         );
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake ACP must initialize");
+        // #549/ADR-0037 契约：generation 权威在客户端本体——连接即挂 gen-1 客户端，
+        // expected_generation=0 的旧控制请求必须被拦截（不再借宿主原子量模拟替换）。
+        runtime.install_acp(
+            crate::acp::AcpClient::connect_with_generation(&agent, None, 1)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_active_agent("p5-agent")
             .with_agent(agent)
             .with_runtime("p5-agent", runtime.clone())
             .build();
-        // 模拟客户端替换：generation 前进（旧 periId 的控制请求必须被拦截）。
-        runtime.client_generation.fetch_add(1, Ordering::AcqRel);
         let result = state
             .acp_rpc_generation_checked(
                 &runtime,
@@ -1510,9 +1524,12 @@ gateway:
             ..Default::default()
         });
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = crate::acp::AcpClient::connect_with_logs(&runtime_def, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            crate::acp::AcpClient::connect_with_logs(&runtime_def, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         let state = crate::test_utils::TestStateBuilder::bare()
             // #97 评审修正：active agent 必须与 runtime 归属 agent **不同**——
             // 旧写法 with_active_agent("runtime-b") 使 active==runtime，即使实现
@@ -1606,9 +1623,12 @@ gateway:
             ..Default::default()
         });
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            AcpClient::connect_with_logs(&agent, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         // #379：已连接夹具如实置 Connected，避免命令入口懒重连在此二次 spawn。
         runtime.agent_runtime.lock().unwrap().status = AgentLifecycleStatus::Connected;
         let state = crate::test_utils::TestStateBuilder::bare()
@@ -1713,7 +1733,7 @@ gateway:
         assert_eq!(reasoning_request["params"]["configId"], "reasoning_effort");
         assert_eq!(reasoning_request["params"]["value"], "high");
 
-        runtime.acp.lock().await.kill().expect("fake ACP cleanup");
+        runtime.snapshot_acp().kill().expect("fake ACP cleanup");
     }
 
     /// A3：Round N 迟到 chunk 在 Round N+1 推进（clear）之后才被 dispatcher 追加
@@ -1999,9 +2019,12 @@ gateway:
             ],
         );
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            AcpClient::connect_with_logs(&agent, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_active_agent("i1-fail-agent")
             .with_agent(agent)
@@ -2057,9 +2080,12 @@ gateway:
             ..Default::default()
         });
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            AcpClient::connect_with_logs(&agent, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_active_agent("i2-hang-agent")
             .with_agent(agent)
@@ -2157,9 +2183,12 @@ gateway:
             ..Default::default()
         });
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake ACP must initialize");
+        runtime.install_acp(
+            AcpClient::connect_with_logs(&agent, None)
+                .await
+                .expect("fake ACP must initialize"),
+        );
+
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_active_agent("i2-stream-agent")
             .with_agent(agent)

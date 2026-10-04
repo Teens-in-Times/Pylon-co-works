@@ -3,7 +3,7 @@
 //! 请求统一回 JSON-RPC Method Not Found（#99 评审 E4：Responder 不得永久滞留）。
 //! 分支在主泵中为纯 `continue` 语义。
 
-use super::AcpLock;
+use super::{acp_snapshot, AcpLock};
 use agent_client_protocol_schema::v1::ErrorCode as WireErrorCode;
 
 /// 未知通知兜底：A1（探查修复）——未知通知不再静默丢弃——记 method，接新 agent 时
@@ -21,7 +21,7 @@ pub(crate) async fn route_unknown_notification(acp: &AcpLock, raw: &crate::acp::
         );
     }
     if let (Some(request_id), Some(method)) = (raw.id.clone(), raw.method.as_deref()) {
-        let responder = { acp.lock().await.responder() };
+        let responder = { acp_snapshot(acp).responder() };
         let _ = responder
             .respond_error(
                 request_id,

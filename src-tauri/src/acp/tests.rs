@@ -79,7 +79,7 @@ async fn intentional_stop_is_not_reported_as_crashed() {
     // exit watcher 随后把 crashed 原始标志置位），is_dead 恒 true，发送守卫拒绝。
     let agent =
         crate::test_utils::fake_acp_agent("fake-acp-intentional-stop", &["--scenario", "alive"]);
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("alive fake ACP must initialize");
     assert!(!client.is_crashed(), "存活连接不得判 crashed");
@@ -789,7 +789,7 @@ async fn user_cancel_flag_converges_sustained_turn_after_late_set() {
 #[tokio::test]
 async fn fake_acp_subprocess_completes_initialize_new_and_prompt_wire() {
     let agent = crate::test_utils::fake_acp_agent("fake-acp", &["--scenario", "alive"]);
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake ACP must initialize");
     let child_id = client.child_id().expect("fake ACP child must exist");
@@ -842,7 +842,7 @@ async fn wire_trace_preserves_id_kinds_and_full_sequence() {
     // OBS-01 验收：fake ACP 发送 number/string/null/无 id 四类报文，trace 保留
     // 四类差异；一次 permission 闭环按 seq 排出完整顺序；方向/身份逐条保留。
     let agent = crate::test_utils::fake_acp_agent("fake-acp-trace", &["--scenario", "id-kinds"]);
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake ACP must initialize");
     let trace = client
@@ -1510,7 +1510,7 @@ async fn writer_failure_signals_watch_and_pending_settles() {
         "fake-acp-writer-fail",
         &["--scenario", "close-stdin-after-init"],
     );
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("initialize 应成功（首行写入正常）");
     let mut crashed_rx = client.crashed_receiver();
@@ -1670,13 +1670,15 @@ async fn send_response_writes_result_with_matching_id() {
             "all",
         ],
     );
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake ACP must initialize");
     // agent 先发一条 id=42 的请求；等它进入 Kernel inbox 后用后端中立 responder 应答。
     // #99 行为变化：agent JSON-RPC 请求走控制 lane（recv_control），不再与
     // session/update 同队——控制帧优先，通知洪泛不饿死交互请求。
-    let inbox = client.notification_inbox();
+    let mut inbox = client
+        .take_notification_inbox()
+        .expect("inbox available exactly once");
     let request = tokio::time::timeout(std::time::Duration::from_secs(5), inbox.recv_control())
         .await
         .expect("agent request must arrive")
@@ -1746,7 +1748,7 @@ async fn fake_acp_initialize_uses_configured_client_capabilities() {
             ..Default::default()
         }),
     };
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake ACP with configured caps must initialize");
     client.kill().expect("cleanup");
@@ -1799,7 +1801,7 @@ async fn fake_acp_initialize_defaults_to_unified_capabilities() {
             "all",
         ],
     );
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake ACP with default caps must initialize");
     client.kill().expect("cleanup");
@@ -1865,7 +1867,7 @@ async fn custom_protocol_version_and_client_info_reach_wire() {
             ..Default::default()
         }),
     };
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake ACP with custom handshake must initialize");
     client.kill().expect("cleanup");
@@ -2001,7 +2003,7 @@ async fn hermes_profile_injects_hermes_home_env() {
     };
     // 绝对路径形态不需要 Hermes home 探测，测试不依赖本机环境。
     agent.hermes_profile = Some(profile_dir.to_string_lossy().into_owned());
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake hermes must initialize");
     client.kill().expect("cleanup");
@@ -2045,7 +2047,7 @@ async fn unset_hermes_profile_does_not_inject_env() {
         acp_args: Vec::new(),
         acp: None,
     };
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake hermes must initialize");
     client.kill().expect("cleanup");
@@ -2115,7 +2117,7 @@ async fn codex_wrapper_connects_through_the_adapter_not_the_vendor_cli() {
         acp_args: Vec::new(),
         acp: None,
     };
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("wrapper 适配器必须能完成 initialize");
     client.kill().expect("cleanup");
@@ -2186,7 +2188,7 @@ async fn claude_wrapper_puts_declared_client_capabilities_on_the_wire() {
             acp_args: Vec::new(),
             acp: None,
         };
-        let mut client = AcpClient::connect_with_logs(&agent, None)
+        let client = AcpClient::connect_with_logs(&agent, None)
             .await
             .expect("fake 适配器必须完成 initialize");
         client.kill().expect("cleanup");

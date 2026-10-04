@@ -929,7 +929,7 @@ async fn create_session_slot(
     // B2：session/new 不得绕过 initialize——未完成握手的客户端直接拒绝（稳定
     // 错误码），而不是把一个注定失败的会话建立发给子进程。
     {
-        let acp = runtime.acp.lock().await;
+        let acp = runtime.snapshot_acp();
         if !acp.session_ready() {
             return Err(PylonError::Protocol(
                 "session_new_before_initialize: ACP 握手未完成，禁止建立会话".to_string(),
@@ -1280,7 +1280,7 @@ pub(crate) async fn probe_agent_selectors(
     // 与 create_session_slot 同款前置：未握手直接拒绝（稳定错误码）；建立期串行化
     // 共用 session_creation 锁（探测与用户建会话不并发打同一个 agent 子进程）。
     {
-        let acp = runtime.acp.lock().await;
+        let acp = runtime.snapshot_acp();
         if !acp.session_ready() {
             return Err(PylonError::Protocol(
                 "session_new_before_initialize: ACP 握手未完成，禁止建立会话".to_string(),

@@ -51,7 +51,7 @@ async fn mode_uses_advertised_config_id_and_validates_before_wire() {
         ],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None).await.unwrap();
+    runtime.install_acp(AcpClient::connect_with_logs(&agent, None).await.unwrap());
     // #379：client 已连接 → lifecycle status 如实置 Connected——否则命令入口的
     // 懒重连（ensure_connected_for_send）会在此真实二次 spawn，换代污染 wire trace。
     runtime.agent_runtime.lock().unwrap().status = AgentLifecycleStatus::Connected;
@@ -152,15 +152,21 @@ async fn rebind_on_other_runtime_starts_with_clean_selector_snapshot() {
         &["--scenario", "empty", "--session-id", "empty-session"],
     );
     let runtime_a = AgentRuntime::new_disconnected();
-    *runtime_a.acp.lock().await = AcpClient::connect_with_logs(&agent_a, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime_a.install_acp(
+        AcpClient::connect_with_logs(&agent_a, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     // #379：同上——已连接夹具如实置 Connected，避免命令入口懒重连二次 spawn。
     runtime_a.agent_runtime.lock().unwrap().status = AgentLifecycleStatus::Connected;
     let runtime_b = AgentRuntime::new_disconnected();
-    *runtime_b.acp.lock().await = AcpClient::connect_with_logs(&agent_b, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime_b.install_acp(
+        AcpClient::connect_with_logs(&agent_b, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     runtime_b.agent_runtime.lock().unwrap().status = AgentLifecycleStatus::Connected;
     let state = TestStateBuilder::bare()
         .with_active_agent("rebind-a")

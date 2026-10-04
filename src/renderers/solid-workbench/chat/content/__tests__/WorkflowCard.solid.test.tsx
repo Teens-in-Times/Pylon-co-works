@@ -133,7 +133,7 @@ describe('C10 workflow activity rendering', () => {
       execute, canExecute: type => type === 'tool.action' || type === 'activity.cancel',
     }} />)
     expect([...live.container.querySelectorAll('button')].map(button => button.textContent)).toEqual(['分离', '取消'])
-    for (const button of live.container.querySelectorAll('button'))  button.click()
+    for (const button of live.container.querySelectorAll('button')) button.click()
     expect(execute.mock.calls.map(call => call[0])).toEqual([
       { type: 'tool.action', targetId: 'workflow-running', payload: { action: 'detach' } },
       { type: 'activity.cancel', targetId: 'workflow-running' },
@@ -144,7 +144,7 @@ describe('C10 workflow activity rendering', () => {
       execute, canExecute: type => type === 'tool.action' || type === 'activity.retry',
     }} />)
     expect([...terminal.container.querySelectorAll('button')].map(button => button.textContent)).toEqual(['重连', '重试'])
-    for (const button of terminal.container.querySelectorAll('button'))  button.click()
+    for (const button of terminal.container.querySelectorAll('button')) button.click()
     expect(execute.mock.calls.slice(2).map(call => call[0])).toEqual([
       { type: 'tool.action', targetId: 'workflow-failed', payload: { action: 'reconnect' } },
       { type: 'activity.retry', targetId: 'workflow-failed' },

@@ -6,7 +6,7 @@
 //! modify 仅接受原选项的过滤/重排（interpret 侧校验），后续 bypass/auto 与
 //! 前端事件均使用过滤后的选项集。
 
-use super::super::AcpLock;
+use super::super::{acp_snapshot, AcpLock};
 use crate::hook_bridge::HookBridge;
 use crate::permission::PendingPermission;
 use crate::permission::{permission_response, pick_allow_option, pick_reject_option};
@@ -80,10 +80,7 @@ pub(super) async fn dispatch_permission_hooks<R: tauri::Runtime>(
                         );
                         return PermissionHookOutcome::Terminated;
                     }
-                    let responder = {
-                        let acp = acp.lock().await;
-                        acp.responder()
-                    };
+                    let responder = { acp_snapshot(acp).responder() };
                     responder
                         .respond(request_id.clone(), permission_response(option_id))
                         .await;
@@ -126,10 +123,7 @@ pub(super) async fn dispatch_permission_hooks<R: tauri::Runtime>(
                             );
                             return PermissionHookOutcome::Terminated;
                         }
-                        let responder = {
-                            let acp = acp.lock().await;
-                            acp.responder()
-                        };
+                        let responder = { acp_snapshot(acp).responder() };
                         responder
                             .respond(request_id.clone(), permission_response(option_id))
                             .await;
@@ -149,10 +143,7 @@ pub(super) async fn dispatch_permission_hooks<R: tauri::Runtime>(
                             );
                             return PermissionHookOutcome::Terminated;
                         }
-                        let responder = {
-                            let acp = acp.lock().await;
-                            acp.responder()
-                        };
+                        let responder = { acp_snapshot(acp).responder() };
                         responder
                             .respond(request_id.clone(), permission_response(option_id))
                             .await;

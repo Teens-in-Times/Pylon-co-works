@@ -271,7 +271,7 @@ async fn wait_for_permission_request(client: &AcpClient) -> super::RequestId {
 /// 驱动一个场景，返回每条连接的 wire 记录（reconnect 场景含两代连接）。
 async fn drive_scenario(scenario: &str) -> Result<Vec<Vec<WireRecord>>, AcpError> {
     let agent = golden_agent(scenario);
-    let mut client = AcpClient::connect_with_generation(&agent, None, 1).await?;
+    let client = AcpClient::connect_with_generation(&agent, None, 1).await?;
     let trace = client
         .wire_trace()
         .expect("golden client must expose wire trace");
@@ -318,7 +318,7 @@ async fn drive_scenario(scenario: &str) -> Result<Vec<Vec<WireRecord>>, AcpError
             new_session(&client).await?;
             let _ = prompt(&client).await;
             client.kill()?;
-            let mut second = AcpClient::connect_with_generation(&agent, None, 2).await?;
+            let second = AcpClient::connect_with_generation(&agent, None, 2).await?;
             let second_trace = second
                 .wire_trace()
                 .expect("golden client must expose wire trace");
@@ -481,10 +481,12 @@ fn golden_trace_normalization_drops_volatile_fields() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn inbound_envelope_agrees_with_wire_capture() {
     let agent = golden_agent("prompt");
-    let mut client = AcpClient::connect_with_generation(&agent, None, 1)
+    let client = AcpClient::connect_with_generation(&agent, None, 1)
         .await
         .expect("connect");
-    let inbox = client.notification_inbox();
+    let mut inbox = client
+        .take_notification_inbox()
+        .expect("inbox available exactly once");
     new_session(&client).await.expect("session/new");
     let mut prompt_rx = client
         .prepare_prompt(SESSION_ID, vec![text_block()])
@@ -579,10 +581,12 @@ async fn replay_boundary_order_is_reconstructible_from_sequences() {
     use crate::agent_config::McpServersMode;
 
     let agent = golden_agent("new_load");
-    let mut client = AcpClient::connect_with_generation(&agent, None, 1)
+    let client = AcpClient::connect_with_generation(&agent, None, 1)
         .await
         .expect("connect");
-    let inbox = client.notification_inbox();
+    let mut inbox = client
+        .take_notification_inbox()
+        .expect("inbox available exactly once");
     new_session(&client).await.expect("session/new");
 
     let capture = client

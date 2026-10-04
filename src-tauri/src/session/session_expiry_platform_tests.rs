@@ -275,7 +275,7 @@ async fn connection_routed_by_the_gateway_is_never_reclaimed() {
     check_session_expiry_with(&state, Some(std::time::Duration::from_secs(60))).await;
 
     assert!(
-        !runtime.acp.lock().await.is_dead(),
+        !runtime.snapshot_acp().is_dead(),
         "gateway 路由指向该 agent 时不得回收连接（{agent_id}）"
     );
     assert_eq!(
@@ -303,12 +303,12 @@ async fn idle_connection_without_sessions_is_reclaimed() {
         // 1970 年 → 任何超时都算闲置
         agent_state.last_connected_at = Some(Timestamp::new(1));
     }
-    assert!(!runtime.acp.lock().await.is_dead(), "前置：连接本来是活的");
+    assert!(!runtime.snapshot_acp().is_dead(), "前置：连接本来是活的");
 
     check_session_expiry_with(&state, Some(std::time::Duration::from_secs(60))).await;
 
     assert!(
-        runtime.acp.lock().await.is_dead(),
+        runtime.snapshot_acp().is_dead(),
         "零会话的闲置连接必须被回收（agent 子进程释放）"
     );
     assert_eq!(
@@ -355,7 +355,7 @@ async fn idle_connection_with_a_pending_interaction_is_exempt() {
 
     check_session_expiry_with(&state, Some(std::time::Duration::from_secs(60))).await;
     assert!(
-        !runtime.acp.lock().await.is_dead(),
+        !runtime.snapshot_acp().is_dead(),
         "有在场交互的连接不得被回收"
     );
 }

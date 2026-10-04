@@ -63,7 +63,7 @@ describe('C05 SolidSearchResultsBlock', () => {
     const before = result.container.querySelectorAll('.term-search-item').length
     expect(before).toBe(3)
     const expand = [...result.container.querySelectorAll('button')].find(b => b.textContent?.includes('展开结果'))
-     expand!.click()
+    expand!.click()
     await Promise.resolve()
     const after = result.container.querySelectorAll('.term-search-item').length
     expect(after).toBe(5)
@@ -113,8 +113,8 @@ describe('C05 SolidLinkBlock', () => {
       { open, copy },
     )
     const buttons = [...result.container.querySelectorAll('button')] as HTMLButtonElement[]
-     buttons.find(b => b.textContent === '打开')!.click()
-     buttons.find(b => b.textContent === '复制')!.click()
+    buttons.find(b => b.textContent === '打开')!.click()
+    buttons.find(b => b.textContent === '复制')!.click()
     expect(open).toHaveBeenCalledWith('https://example.com/guide')
     expect(copy).toHaveBeenCalledWith('https://example.com/guide')
   })

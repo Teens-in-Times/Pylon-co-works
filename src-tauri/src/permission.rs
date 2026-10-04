@@ -186,12 +186,14 @@ async fn resolve_pending(
     expected_tool_call_id: Option<&str>,
     option_id: &str,
 ) -> bool {
-    // 锁内复核 + 取 write_tx 克隆 + claim（发送全部在锁外）。
+    // 快照复核 + 取 responder 克隆 + claim（发送全部在锁外）。
     // #423：复核谓词与移除收进 Ledger 单临界区（canonical 键 + C4 generation
     // + tool_call_id + 选项契约，通过才 remove）。
-    let current_generation = runtime.client_generation.load(Ordering::Acquire);
+    // #549/ADR-0037：身份复核以快照客户端自带代际为准——应答只会写进被解析的
+    // 这一连接，替换后旧连接死亡，不会误写新进程同 id 请求。
     let (responder, claimed, canonical_id) = {
-        let acp = runtime.acp.lock().await;
+        let acp = runtime.snapshot_acp();
+        let current_generation = acp.client_generation();
         let Some((canonical_id, permission)) =
             runtime.ledger.claim_permission(&request_id, |permission| {
                 // C4：身份复核——客户端替换（generation 前进）后不误写新进程同 id 请求。
@@ -454,7 +456,7 @@ pub(crate) async fn respond_interaction(
                 .map_err(PylonError::Protocol)?
             }
         };
-        let responder = { runtime.acp.lock().await.responder() };
+        let responder = { runtime.snapshot_acp().responder() };
         if !responder.respond(request_id.clone(), response).await {
             return Err(PylonError::Protocol(
                 "private interaction response failed".into(),
@@ -788,7 +790,7 @@ pub(crate) async fn sweep_interaction_timeouts(
     for (agent_id, runtime) in state.runtimes.all_with_ids() {
         let dead = runtime
             .acp
-            .try_lock()
+            .try_read()
             .map(|acp| acp.is_dead())
             .unwrap_or(false);
         if dead {
@@ -896,7 +898,7 @@ pub(crate) async fn sweep_interaction_timeouts(
                     continue;
                 }
             };
-            let responder = { runtime.acp.lock().await.responder() };
+            let responder = { runtime.snapshot_acp().responder() };
             if !responder.respond(request_id.clone(), response).await {
                 tracing::warn!("私有交互 {request_id} 超时回包发送失败；回插 pending 下轮重试");
                 runtime.ledger.restore_private(&request_id, claimed);
@@ -1008,8 +1010,8 @@ mod tests {
             .expect("admit 必须成功");
 
         // 置死：主动 stop 标记（disconnected client 的 kill 只置位、无真实子进程）。
-        let _ = runtime.acp.lock().await.kill();
-        assert!(runtime.acp.lock().await.is_dead());
+        let _ = runtime.snapshot_acp().kill();
+        assert!(runtime.snapshot_acp().is_dead());
 
         let (outcomes, _) = sweep_interaction_timeouts(&state).await;
         let _ = outcomes;
@@ -1460,7 +1462,7 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = acp;
+        runtime.install_acp(acp);
         let agent_id = "timeout-agent";
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_runtime(agent_id, runtime.clone())
@@ -1488,7 +1490,7 @@ mod tests {
             runtime.ledger.permissions().lock().unwrap().is_empty(),
             "结算后 pending 必须清空"
         );
-        let _ = runtime.acp.lock().await.kill();
+        let _ = runtime.snapshot_acp().kill();
     }
 
     /// ACP-03：deadline 由后端单一来源（PERMISSION_REQUEST_TIMEOUT_SECS）——
@@ -1586,7 +1588,7 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
         let runtime = AgentRuntime::new_disconnected();
-        *runtime.acp.lock().await = acp;
+        runtime.install_acp(acp);
         let agent_id = "private-timeout-agent";
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_runtime(agent_id, runtime.clone())
@@ -1623,7 +1625,7 @@ mod tests {
             entries.is_empty(),
             "队列条目必须被 settle 收敛（settle = 移除 + 终态返回），不残留悬挂 waiter"
         );
-        let _ = runtime.acp.lock().await.kill();
+        let _ = runtime.snapshot_acp().kill();
     }
 
     /// #356→#451 演进：原用例夹具为占位 client（彼时双标志全 false，is_dead

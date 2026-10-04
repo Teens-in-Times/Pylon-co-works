@@ -1,5 +1,4 @@
 use super::*;
-use pylon_foundations::await_guard::HeldAcrossAwait;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -11,7 +10,9 @@ use super::engine::{
 };
 
 pub struct AcpClient {
-    child: ManagedChild,
+    /// #549：互斥仅护 kill 的 `&mut` 内部态（take child / 关 job）；pid 读取与
+    /// kill 并存时后者持锁阻塞，前者随之等待（终止期诊断延迟，可接受）。
+    child: std::sync::Mutex<ManagedChild>,
     /// G1-02：per-agent 协议行为配置（connect_with_logs 从 agent.protocol() clone；
     /// disconnected() 用默认实例）。超时/限额/握手参数唯一读取点。
     pub protocol: pylon_core::agent_config::AcpProtocolConfig,
@@ -50,6 +51,10 @@ pub struct AcpClient {
     /// `negotiated::NegotiatedCapabilitySnapshot::establishment_channels` 做
     /// 「声明 ∩ 服务端广告」交集。
     establishment_order: Vec<String>,
+    /// OBS-02：本连接所属 client 代际（`connect_with_generation` 传入；断开态 0）。
+    /// #549：客户端自知代际——宿主单元锁退役后，cancel/kill「落在哪一代」由
+    /// 快照解析出的客户端自带 generation 判定（ADR-0037），不再借宿主原子量在锁内比对。
+    client_generation: u64,
 }
 
 /// Default establishment order when no catalog profile declares one: the
@@ -91,15 +96,16 @@ fn declared_establishment_order(provider: Option<&str>) -> Vec<String> {
     }
 }
 
-/// Cloneable handle to the connection's single-consumer Kernel notification streams.
-/// Receiver ownership and locking stay inside ACP; callers only learn ordered recv.
+/// The connection's single-consumer Kernel notification streams（#548 一次性移交）。
 ///
 /// #99：updates 与 control 双通道——控制帧（agent 请求/崩溃广播）走独立有界
 /// 通道，dispatcher 以 `biased` select 优先消费，不被通知洪泛饿死。
-#[derive(Clone)]
+///
+/// 单消费者契约由所有权承载：inbox 只能从 [`AcpClient::take_notification_inbox`]
+/// 取走一次，`recv` 需要 `&mut`——两个任务并发消费同一连接的 lane 在编译期不可表达。
 pub struct NotificationInbox {
-    updates: Arc<tokio::sync::Mutex<mpsc::Receiver<ClassifiedMessage>>>,
-    control: Arc<tokio::sync::Mutex<mpsc::Receiver<ClassifiedMessage>>>,
+    updates: mpsc::Receiver<ClassifiedMessage>,
+    control: mpsc::Receiver<ClassifiedMessage>,
 }
 
 impl NotificationInbox {
@@ -107,22 +113,28 @@ impl NotificationInbox {
         updates: mpsc::Receiver<ClassifiedMessage>,
         control: mpsc::Receiver<ClassifiedMessage>,
     ) -> Self {
-        Self {
-            updates: Arc::new(tokio::sync::Mutex::new(updates)),
-            control: Arc::new(tokio::sync::Mutex::new(control)),
-        }
+        Self { updates, control }
     }
 
     /// 普通通知 lane（session/update 等）。
-    // Mutex<Receiver> 的 recv 必须持锁消费（跨消息串行化），锁卫跨 await 是本结构的工作方式
-    pub async fn recv(&self) -> Option<ClassifiedMessage> {
-        HeldAcrossAwait::new(self.updates.lock().await).recv().await
+    pub async fn recv(&mut self) -> Option<ClassifiedMessage> {
+        self.updates.recv().await
     }
 
     /// 控制帧 lane（agent JSON-RPC 请求 / 崩溃广播；优先消费）。
-    // 同 recv：Mutex<Receiver> 持锁消费
-    pub async fn recv_control(&self) -> Option<ClassifiedMessage> {
-        HeldAcrossAwait::new(self.control.lock().await).recv().await
+    pub async fn recv_control(&mut self) -> Option<ClassifiedMessage> {
+        self.control.recv().await
+    }
+
+    /// #99 biased 双 lane 消费：控制帧优先，通知洪泛不饿死交互请求。
+    /// 任一 lane 返回 `None`（关闭且排空）即原样上抛——与旧泵「两分支各自
+    /// `None => Stop`」语义逐点一致，借用上单点持有 `&mut self`。
+    pub async fn recv_biased(&mut self) -> Option<ClassifiedMessage> {
+        tokio::select! {
+            biased;
+            raw = self.control.recv() => raw,
+            raw = self.updates.recv() => raw,
+        }
     }
 }
 /// B1：消息类型化分类（reader 一次分类，dispatcher 枚举匹配——method 拼写错误
@@ -265,21 +277,24 @@ impl AcpClient {
         let (shutdown, _) = watch::channel(false);
         let (crashed_watch, crashed_watch_rx) = watch::channel(false);
         Self {
-            child: ManagedChild::empty(),
+            child: std::sync::Mutex::new(ManagedChild::empty()),
             protocol: pylon_core::agent_config::AcpProtocolConfig::default(),
             capability_registry: CapabilityRegistry::default(),
             session_ready: AtomicBool::new(false),
             establishment_order: default_establishment_order(),
+            client_generation: 0,
             backend: SdkBackend {
                 outbound,
                 next_id: Arc::new(AtomicU64::new(1)),
-                inbound: NotificationInbox::new(updates_rx, control_rx),
+                inbound: std::sync::Mutex::new(Some(NotificationInbox::new(
+                    updates_rx, control_rx,
+                ))),
                 telemetry: Arc::new(InboundTelemetry::new()),
                 replay_events,
                 active_replay_requests: Arc::new(Mutex::new(HashMap::new())),
                 pending_requests: Arc::new(Mutex::new(HashMap::new())),
                 shutdown,
-                join: None,
+                join: std::sync::Mutex::new(None),
             },
             crashed: Arc::new(AtomicBool::new(false)),
             // #451：占位即死连接（无子进程、接收端全部已 drop），stopped 如实
@@ -354,17 +369,25 @@ impl AcpClient {
     /// 终止、写失败后自行结束。
     /// #163：先置主动 stop 标记再杀——kill 引发的进程退出（exit watcher/EOF）
     /// 与意外崩溃共享同一信号，必须先立「这是主动停」的证词再动手。
-    pub fn kill(&mut self) -> Result<(), AcpError> {
+    /// #549：`&self`——child/join 的 `&mut` 内部态收进 std 互斥（结构体注释），
+    /// 宿主得以用 `Arc<AcpClient>` 快照持连接。
+    pub fn kill(&self) -> Result<(), AcpError> {
         self.stopped.store(true, Ordering::Release);
         // (#260-B6) 语义等价的零分配判定（含「最新行超 512 字节即视为无证据」边界）。
         if !self.stderr_tail.has_recent_evidence(512) {
             tracing::debug!("ACP connection closing without stderr evidence");
         }
         let _ = self.backend.shutdown.send(true);
-        if let Some(join) = self.backend.join.take() {
-            join.abort();
+        if let Ok(mut join) = self.backend.join.lock() {
+            if let Some(handle) = join.take() {
+                handle.abort();
+            }
         }
-        self.child.kill_and_wait()
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| AcpError::Child("acp child guard poisoned".to_string()))?;
+        child.kill_and_wait()
     }
 
     /// Check if the child process has exited unexpectedly.
@@ -403,6 +426,11 @@ impl AcpClient {
         &self.establishment_order
     }
 
+    /// OBS-02：本连接所属 client 代际（#549：快照解析后的 generation 自校验数据源）。
+    pub fn client_generation(&self) -> u64 {
+        self.client_generation
+    }
+
     /// OBS-01：本连接的 ACP wire 只读记录器（断开态为 None）。
     pub fn wire_trace(&self) -> Option<Arc<AcpWireCapture>> {
         self.wire_trace.clone()
@@ -417,12 +445,12 @@ impl AcpClient {
     /// #247：宿主 real_acp_smoke/tests 跨 crate 消费，常态可见（与 instance_pid
     /// 同源的子进程 pid 诊断面）。
     pub fn child_id(&self) -> Option<u32> {
-        self.child.pid()
+        self.child.lock().ok()?.pid()
     }
 
     /// B3：实例注册表登记用的子进程 pid（诊断关联，非安全边界）。
     pub fn instance_pid(&self) -> Option<u32> {
-        self.child.pid()
+        self.child.lock().ok()?.pid()
     }
 
     /// Send a fire-and-forget notification (no id, no response expected).
@@ -536,7 +564,7 @@ impl AcpClient {
                 }
 
                 let mut client = AcpClient {
-                    child,
+                    child: std::sync::Mutex::new(child),
                     protocol: pylon_core::hermes::runtime::effective_protocol(agent),
                     capability_registry: CapabilityRegistry::default(),
                     backend,
@@ -548,6 +576,7 @@ impl AcpClient {
                     stderr_tail: stderr_tail.clone(),
                     session_ready: AtomicBool::new(false),
                     establishment_order: declared_establishment_order(agent.provider.as_deref()),
+                    client_generation,
                 };
                 let stderr_mark = stderr_tail.mark();
                 // #316：宿主门解析一次（YAML+env 单一来源）——结论同时喂
@@ -584,9 +613,9 @@ impl AcpClient {
                     Err(error) => {
                         let exit_code = client
                             .child
-                            .try_wait()
+                            .lock()
                             .ok()
-                            .flatten()
+                            .and_then(|mut child| child.try_wait().ok().flatten())
                             .and_then(|status| status.code());
                         let mut failure = AgentConnectFailure::initialize(error, exit_code);
                         let tail = stderr_tail.tail_since(stderr_mark, 8, 2048);
@@ -640,15 +669,29 @@ impl AcpClient {
         }
     }
 
-    /// Obtain the one Kernel notification inbox for this connection generation.
-    pub fn notification_inbox(&self) -> NotificationInbox {
-        self.backend.inbound.clone()
+    /// Take the one Kernel notification inbox for this connection generation
+    /// （#548 一次性移交：第二次调用返回 `None`——单消费者契约的运行时可证形态）。
+    pub fn take_notification_inbox(&self) -> Option<NotificationInbox> {
+        self.backend.inbound.lock().ok()?.take()
     }
 }
 
 #[cfg(test)]
 mod extension_wrap_tests {
     use super::*;
+
+    #[test]
+    fn notification_inbox_is_take_once() {
+        let client = AcpClient::disconnected();
+        assert!(
+            client.take_notification_inbox().is_some(),
+            "首次 take 必须拿到 inbox"
+        );
+        assert!(
+            client.take_notification_inbox().is_none(),
+            "#548：同一连接第二次 take 必须返回 None（单消费者契约）"
+        );
+    }
 
     #[test]
     fn peri_extension_methods_classify_as_provider_extension() {

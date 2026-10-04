@@ -5,7 +5,7 @@
 //! `match_pending_elicitation` 匹配 / `resolve_agent_provider` provider 解析）
 //! 自 mod.rs 正身迁入，本模块自足。
 
-use super::AcpLock;
+use super::{acp_snapshot, AcpLock};
 use crate::emit_event;
 use crate::runtime::AgentRuntimeManager;
 use agent_client_protocol_schema::v1::ErrorCode as WireErrorCode;
@@ -32,10 +32,7 @@ pub(crate) async fn reject_interaction_request<R: tauri::Runtime>(
 ) {
     let request_id_text = request_id.as_ref().map(ToString::to_string);
     let response_sent = if let Some(id) = request_id {
-        let responder = {
-            let acp = acp.lock().await;
-            acp.responder()
-        };
+        let responder = { acp_snapshot(acp).responder() };
         responder.respond_error(id, rpc_code, message).await
     } else {
         false

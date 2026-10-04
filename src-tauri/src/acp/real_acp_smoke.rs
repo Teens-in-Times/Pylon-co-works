@@ -61,7 +61,7 @@ async fn real_agent_initialize_new_session_and_process_cleanup() {
     tracing::info!("真实 agent session/new -> {session_id}");
 
     // kill → 直接子进程必须退出（R9 进程树清理）
-    let mut client = client;
+    let client = client;
     client.kill().expect("kill 必须成功");
     // P91 批 C1（横切 §5）：固定 300ms sleep 改轮询——子进程退出时刻不定，
     // 轮询既消除慢机器上的假阳性（>300ms 未退出即误判泄漏），也不拖慢快机器。
@@ -155,7 +155,7 @@ async fn real_agent_prompt_round_trip() {
 #[ignore]
 async fn hermes_connect_idle_no_false_crash() {
     let agent = configured_agent("hermes");
-    let mut client = AcpClient::connect_with_logs(&agent, None)
+    let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("Hermes ACP 必须 initialize 成功");
     let mut crashed_rx = client.crashed_receiver();

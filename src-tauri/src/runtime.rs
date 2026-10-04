@@ -112,7 +112,11 @@ pub(crate) type DraftFlushSender =
     Arc<Mutex<Option<(u64, tokio::sync::mpsc::UnboundedSender<DraftFlushRequest>)>>>;
 
 pub struct AgentRuntime {
-    pub acp: Arc<tokio::sync::Mutex<AcpClient>>,
+    /// #549/ADR-0037：acp 单元是「短窗换装位」——std RwLock 锁内**无 await**，
+    /// 读侧经 [`Self::snapshot_acp`] clone Arc 即放锁，写侧仅替换赋值时持锁。
+    /// cancel/kill 等原子性由快照客户端自带的 `client_generation` 自校验承担，
+    /// 不再靠跨 await 持锁。别名形态见 `dispatcher::AcpLock`。
+    pub acp: Arc<std::sync::RwLock<Arc<AcpClient>>>,
     pub notification_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Prompt terminal writes ask the dispatcher to close the preceding
     /// cross-window draft before allocating the terminal sequence.
@@ -204,7 +208,7 @@ impl AgentRuntime {
     /// 以 disconnected 状态新建一个空 runtime（启动/降级路径用）。
     pub fn new_disconnected() -> Arc<Self> {
         Arc::new(Self {
-            acp: Arc::new(tokio::sync::Mutex::new(AcpClient::disconnected())),
+            acp: Arc::new(std::sync::RwLock::new(Arc::new(AcpClient::disconnected()))),
             notification_task: Arc::new(Mutex::new(None)),
             draft_flush_tx: Arc::new(Mutex::new(None)),
             session_creation: Arc::new(tokio::sync::Mutex::new(())),
@@ -228,6 +232,27 @@ impl AgentRuntime {
             probe_sessions: Arc::new(crate::runtime::ProbeSessionRegistry::new()),
             turn_in_flight_anomalies: AtomicU64::new(0),
         })
+    }
+
+    /// #549/ADR-0037：acp 单元快照——读锁仅护 Arc clone（纳秒级，锁内无 await），
+    /// 调用方持 `Arc<AcpClient>` 独立使用；cancel/kill 的代际原子性由快照客户端
+    /// 的 `client_generation()` 自校验承担，不再靠跨 await 持锁。
+    pub fn snapshot_acp(&self) -> Arc<AcpClient> {
+        self.acp
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// #549：安装新客户端（替换赋值是本单元唯一的写窗口）。
+    /// 生产替换不经本方法——`lib.rs::replace_agent_client` 需要「检查→退役→
+    /// 暴露」整窗写锁（含旧进程 kill），语义比单点赋值宽；故本助手仅测试域使用。
+    #[cfg(test)]
+    pub fn install_acp(&self, client: AcpClient) {
+        *self
+            .acp
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Arc::new(client);
     }
 
     /// #316：fs/terminal 分门控策略解析——YAML（`acp.host_tools` /
@@ -347,7 +372,7 @@ impl AgentRuntime {
             .lock()
             .ok()
             .and_then(|state| state.last_error.clone());
-        let sequence = self.acp.lock().await.backend.telemetry.snapshot();
+        let sequence = self.snapshot_acp().backend.telemetry.snapshot();
         let ledger_turn = self
             .turn_ledger
             .latest_session_snapshot(source, &peri_id, generation);

@@ -357,7 +357,7 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
     // E10 拍板接受的行为差异：crashed 早退路径不再刷新 updated_at（发送失败的
     // 消息不再计为活动，仅崩溃路径可见，语义更正确）。
 
-    if runtime.acp.lock().await.is_crashed() {
+    if runtime.snapshot_acp().is_crashed() {
         return Err(PylonError::AgentCrashed);
     }
 
@@ -559,7 +559,7 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
     }
     let prompt_started_at = std::time::Instant::now();
     let rpc = {
-        let acp = runtime.acp.lock().await;
+        let acp = runtime.snapshot_acp();
         acp.prepare_prompt(&flow.peri_id, std::mem::take(&mut flow.prompt_blocks))?
     };
     // 取消/连接关闭分支清理 pending 仍需 request_id（send_keep_rx 会消费 rpc）。
@@ -654,8 +654,15 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
         cancel_requested,
         move || async move {
             // R6e：cancel 闭包契约是 Result<(), String>（wait_prompt_with_recovery 泛型边界）
-            HeldAcrossAwait::new(acp_for_cancel.lock().await)
-                .cancel_session(&peri_id_for_cancel)
+            // #549/ADR-0037：cancel 走快照客户端的私有通道，写入只可能落在被解析
+            // 的这一连接；replacement 换装后旧客户端被 kill，通道关闭即失败返回。
+            // 快照先绑定——读守卫不得活过下方 await（std 守卫非 Send，跨 await
+            // 会直接编译失败）。
+            let acp = acp_for_cancel
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            acp.cancel_session(&peri_id_for_cancel)
                 .await
                 .map_err(|e| e.to_string())
         },
@@ -663,14 +670,11 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
             if !hermes_force_recovery {
                 return;
             }
-            // Take the same ACP lock used by client replacement before checking
-            // generation. Replacement updates the generation while holding this
-            // lock, so checking only before locking would leave a race in which
-            // a reconnect wins between the read and the kill.
-            let mut acp = runtime_for_recovery.acp.lock().await;
-            let current_generation = runtime_for_recovery
-                .client_generation
-                .load(Ordering::Acquire);
+            // #549/ADR-0037：快照解析 + 客户端自带 generation 自校验——要杀的就是
+            // 快照里这个客户端。即使 reconnect 在快照后换装，杀的也是旧连接
+            //（新连接不受影响）；「reconnect 赢了就不杀」由代际自校验保留。
+            let acp = runtime_for_recovery.snapshot_acp();
+            let current_generation = acp.client_generation();
             if current_generation != expected_generation {
                 tracing::debug!(
                     expected_generation,

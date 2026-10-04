@@ -304,9 +304,12 @@ async fn send_prompt_core_success_has_one_authoritative_user_row() {
         ..Default::default()
     });
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let gateway = Arc::new(GatewayCore::new());
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("prompt-success-agent")
@@ -397,9 +400,12 @@ async fn in_flight_turn_ledger_tracks_hanging_prompt_until_timeout() {
         ..Default::default()
     });
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let gateway = Arc::new(GatewayCore::new());
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("prompt-hang-agent")
@@ -625,9 +631,12 @@ async fn before_send_hook_transform_rewrites_wire_but_journal_keeps_original() {
         ],
     );
     let runtime = AgentRuntime::new_disconnected();
-    *runtime.acp.lock().await = AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP must initialize");
+    runtime.install_acp(
+        AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize"),
+    );
+
     let gateway = Arc::new(GatewayCore::new());
     let state = crate::test_utils::TestStateBuilder::bare()
         .with_active_agent("hook-dual-agent")
