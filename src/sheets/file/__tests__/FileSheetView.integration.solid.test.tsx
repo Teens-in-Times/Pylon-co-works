@@ -115,6 +115,9 @@ describe('FileSheetView 版本化 tab 集成（D-02/D-04）', () => {
         return Promise.resolve({ branch: { branch: null, detached: false, head: null }, entries: [{ path: 'src/c.ts', status: 'M', staged: true }] })
       }
       if (cmd === 'git_history') return Promise.resolve([])
+      // #368：builtin provider 带 stash/logGraph 能力，SCM 视图挂载即探测
+      if (cmd === 'git_stash_list') return Promise.resolve([])
+      if (cmd === 'git_log_graph') return Promise.resolve({ commits: [], hasMore: false })
       if (cmd === 'git_diff') return Promise.resolve('--- a/src/c.ts\n+++ b/src/c.ts\n@@ -1,1 +1,1 @@\n-const c = 2\n+const c = 3')
       return Promise.reject(new Error(`unexpected invoke ${cmd}`))
     })

@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, For, Show, type JSX } from 'sol
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
 import { createGitStatus } from './useGitStatus.solid.ts'
 import { advanceSourceContext, type SourceRequestContext } from './sourceRequestGuard'
-import { classifyGitError, normalizeGitHistory, normalizeGitOperationResult, type GitCommit, type GitErrorDetail, type GitOperationResult, type GitStatusEntry } from '../../infrastructure/tauri/gitContracts.ts'
+import { classifyGitError, normalizeGitHistory, normalizeGitLogPage, normalizeGitOperationResult, normalizeGitStashList, type GitCommit, type GitCommitGraph, type GitErrorDetail, type GitOperationResult, type GitStash, type GitStatusEntry } from '../../infrastructure/tauri/gitContracts.ts'
 import { workspaceTargetKey, type WorkspaceTarget } from '../../domains/workspace/workspaceTarget.ts'
 import type { GitProvider } from '../../plugin-runtime/file-workbench/fileWorkbenchTypes.ts'
 import { FileTypeIconSolid, WorkbenchIcon } from './fileIcons.solid.tsx'
@@ -44,6 +44,27 @@ function gitTree(entries: GitStatusEntry[]): GitPathNode[] {
     })
   }
   return root
+}
+
+/** #368：COMMITS 行的公共结构——history 行（无 parents/refs）与图分页行同构。 */
+interface CommitRow {
+  hash: string
+  author: string
+  date: number
+  subject: string
+  parents?: string[]
+  refs?: string
+}
+
+/** #368：从 stash ref（`stash@{N}`）解析栈索引；损坏形态回退栈顶 0。 */
+function stashIndex(id: string): number {
+  const match = /stash@\{(\d+)\}/.exec(id)
+  return match ? Number(match[1]) : 0
+}
+
+/** #368：%D decorations 拆 chip（`HEAD -> main, origin/main` → 逐段徽标）。 */
+function parseRefs(refs: string): string[] {
+  return refs.split(',').map(ref => ref.trim()).filter(Boolean)
 }
 
 function GitStatusTree(props: {
@@ -109,7 +130,12 @@ export default function GitPanel(props: GitPanelProps) {
   const unstaged = createMemo(() => entries().filter(entry => !entry.staged))
   const [history, setHistory] = createSignal<GitCommit[]>([])
   const [historyError, setHistoryError] = createSignal<GitErrorDetail | null>(null)
-  const error = createMemo(() => statusError() ?? historyError())
+  // #368：provider 有 logGraph 时 COMMITS 段走结构化图分页（parents/refs 驱动），
+  // null = 无该能力（回退 history()）
+  const [graphCommits, setGraphCommits] = createSignal<GitCommitGraph[] | null>(null)
+  const [graphHasMore, setGraphHasMore] = createSignal(false)
+  // #368：stash 列表（provider.stashList 能力探测）
+  const [stashes, setStashes] = createSignal<GitStash[]>([])
   const [expandedCommit, setExpandedCommit] = createSignal<string | null>(null)
   const [commitMessage, setCommitMessage] = createSignal('')
   const [branchDraft, setBranchDraft] = createSignal('')
@@ -121,6 +147,89 @@ export default function GitPanel(props: GitPanelProps) {
   let previousTargetKey: string | null | undefined = undefined
   const targetKey = () => workspaceTargetKey(props.target)
   const errorKey = (action: string) => `git:${targetKey() ?? 'none'}:${action}`
+
+  // #368：结构化图分页页大小（与 history 默认 50 同口径）
+  const GRAPH_PAGE_SIZE = 50
+
+  const error = createMemo(() => statusError() ?? historyError())
+  // #368：COMMITS 行数据源——图分页优先（含 parents/refs），否则回退 history()
+  const visibleCommits = createMemo<CommitRow[]>(() => graphCommits() ?? history())
+
+  const loadGraphPage = async (
+    currentTarget: NonNullable<GitPanelProps['target']>,
+    currentProvider: NonNullable<GitPanelProps['provider']>,
+    skip: number,
+    sourceAtStart: string | null,
+    append = false,
+  ) => {
+    try {
+      const page = normalizeGitLogPage(await currentProvider.logGraph!(currentTarget, { skip, limit: GRAPH_PAGE_SIZE }))
+      if (requestContext.source !== sourceAtStart) return
+      setGraphCommits(previous => append && previous ? [...previous, ...page.commits] : page.commits)
+      setGraphHasMore(page.hasMore)
+      setHistoryError(null)
+    } catch (err) {
+      if (requestContext.source !== sourceAtStart) return
+      // 图日志是增强面而非门面：首页失败回退 history()（历史也失败才进面板错误态），
+      // 续页失败保留已加载页可重试——图加载故障不得盖掉工作区树。
+      if (append) {
+        reportRuntimeError('读取 Git 信息', err, undefined, {
+          key: errorKey('读取 Git 信息'),
+          scope: { kind: 'sheet', id: `git:${sourceAtStart ?? 'none'}` },
+          source: 'git.panel',
+        })
+        return
+      }
+      setGraphCommits(null)
+      setGraphHasMore(false)
+      loadHistory(currentTarget, currentProvider, sourceAtStart)
+    }
+  }
+
+  const loadHistory = (
+    currentTarget: NonNullable<GitPanelProps['target']>,
+    currentProvider: NonNullable<GitPanelProps['provider']>,
+    sourceAtStart: string | null,
+  ) => {
+    currentProvider.history(currentTarget).then(historyRaw => {
+      if (requestContext.source !== sourceAtStart) return
+      setHistory(normalizeGitHistory(historyRaw))
+    }).catch(err => {
+      if (requestContext.source !== sourceAtStart) return
+      setHistoryError(classifyGitError(err))
+      reportRuntimeError('读取 Git 信息', err, undefined, {
+        key: errorKey('读取 Git 信息'),
+        scope: { kind: 'sheet', id: `git:${sourceAtStart ?? 'none'}` },
+        source: 'git.panel',
+      })
+    })
+  }
+
+  const refreshStashes = async (
+    currentTarget: NonNullable<GitPanelProps['target']>,
+    currentProvider: NonNullable<GitPanelProps['provider']>,
+    sourceAtStart: string | null,
+  ) => {
+    if (!currentProvider.stashList) {
+      setStashes([])
+      return
+    }
+    try {
+      const list = normalizeGitStashList(await currentProvider.stashList(currentTarget))
+      if (requestContext.source !== sourceAtStart) return
+      setStashes(list)
+    } catch (err) {
+      if (requestContext.source !== sourceAtStart) return
+      setStashes([])
+      // 非仓库场景面板已呈现 not-repo 视图，贮藏清单失败不再追加错误中心噪音
+      if (classifyGitError(err).kind === 'not-repo') return
+      reportRuntimeError('读取贮藏列表', err, undefined, {
+        key: errorKey('读取贮藏列表'),
+        scope: { kind: 'sheet', id: `git:${sourceAtStart ?? 'none'}` },
+        source: 'git.panel',
+      })
+    }
+  }
 
   createEffect(() => {
     const currentTarget = props.target
@@ -139,6 +248,9 @@ export default function GitPanel(props: GitPanelProps) {
       setCommitMessage('')
       setBranchDraft('')
       setBranchEditorOpen(false)
+      setStashes([])
+      setGraphCommits(null)
+      setGraphHasMore(false)
     }
     if (!currentTarget || !currentProvider) {
       setHistory([])
@@ -152,17 +264,16 @@ export default function GitPanel(props: GitPanelProps) {
     setHistoryError(null)
     setFeedback(null)
     setBusyAction(null)
+    void refreshStashes(currentTarget, currentProvider, currentTargetKey)
+    // #368：logGraph 能力探测——有则图分页为 COMMITS 数据源，无则回退 history()
+    if (currentProvider.logGraph) {
+      void loadGraphPage(currentTarget, currentProvider, 0, currentTargetKey)
+      return
+    }
+    setGraphCommits(null)
+    setGraphHasMore(false)
     // 0-C3：status 已由 createGitStatus 拉取，本 effect 只负责 history
-    currentProvider.history(currentTarget).then(historyRaw => {
-      setHistory(normalizeGitHistory(historyRaw))
-    }).catch(err => {
-      setHistoryError(classifyGitError(err))
-      reportRuntimeError('读取 Git 信息', err, undefined, {
-        key: errorKey('读取 Git 信息'),
-        scope: { kind: 'sheet', id: `git:${currentTargetKey ?? 'none'}` },
-        source: 'git.panel',
-      })
-    })
+    loadHistory(currentTarget, currentProvider, currentTargetKey)
   })
 
   const runMutation = async (action: string, request: () => Promise<GitOperationResult>, refreshHistory = false) => {
@@ -177,14 +288,19 @@ export default function GitPanel(props: GitPanelProps) {
       if (requestContext.source !== sourceAtStart) return
       gitStatus.applyStatus(result.status)
       if (refreshHistory) {
-        const nextHistory = normalizeGitHistory(await currentProvider.history(currentTarget))
-        if (requestContext.source !== sourceAtStart) return
-        setHistory(nextHistory)
+        // #368：logGraph 能力下 COMMITS 数据源是图分页，刷新走 loadGraphPage 归零
+        if (currentProvider.logGraph) {
+          await loadGraphPage(currentTarget, currentProvider, 0, sourceAtStart)
+        } else {
+          const nextHistory = normalizeGitHistory(await currentProvider.history(currentTarget))
+          if (requestContext.source !== sourceAtStart) return
+          setHistory(nextHistory)
+        }
       }
       setFeedback({ kind: 'success', message: result.summary || `${action}完成` })
       resolveRuntimeErrors({ key: `git:${sourceAtStart ?? 'none'}:${action}` })
       if (action === '提交') setCommitMessage('')
-      if (action === '创建分支' || action === '切换分支') {
+      if (action === '创建分支' || action === '切换分支' || action === '删除分支') {
         setBranchDraft('')
         setBranchEditorOpen(false)
       }
@@ -199,6 +315,22 @@ export default function GitPanel(props: GitPanelProps) {
     } finally {
       if (requestContext.source === sourceAtStart) setBusyAction(null)
     }
+  }
+
+  // #368：stash 变更后同步刷新贮藏列表（push/pop 都改变列表内容）
+  const runStashMutation = (action: string, request: () => Promise<GitOperationResult>) => {
+    void runMutation(action, request).then(() => {
+      const currentTarget = props.target
+      const currentProvider = props.provider
+      if (currentTarget && currentProvider) void refreshStashes(currentTarget, currentProvider, targetKey())
+    })
+  }
+
+  const loadMoreCommits = () => {
+    const currentTarget = props.target
+    const currentProvider = props.provider
+    if (!currentTarget || !currentProvider?.logGraph) return
+    void loadGraphPage(currentTarget, currentProvider, graphCommits()?.length ?? 0, targetKey(), true)
   }
 
   const writable = createMemo(() => Boolean(props.provider?.stage || props.provider?.unstage || props.provider?.commit || props.provider?.createBranch || props.provider?.switchBranch || props.provider?.pull || props.provider?.push))
@@ -244,7 +376,10 @@ export default function GitPanel(props: GitPanelProps) {
         <button type="button" disabled={Boolean(busyAction())} onClick={() => { gitStatus.refresh(); setRefreshRevision(value => value + 1) }} title="刷新"><WorkbenchIcon name="RefreshCw" size={14} /></button>
         <Show when={props.provider?.pull}><button type="button" disabled={Boolean(busyAction())} onClick={() => void runMutation('拉取', () => props.provider!.pull!(props.target!), true)}><WorkbenchIcon name="Download" size={14} />拉取</button></Show>
         <Show when={props.provider?.push}><button type="button" disabled={Boolean(busyAction())} onClick={() => void runMutation('推送', () => props.provider!.push!(props.target!))}><WorkbenchIcon name="Upload" size={14} />推送</button></Show>
-        <Show when={props.provider?.createBranch || props.provider?.switchBranch}>
+        <Show when={props.provider?.stashPush}>
+          <button type="button" disabled={Boolean(busyAction())} onClick={() => runStashMutation('贮藏', () => props.provider!.stashPush!(props.target!))} title="贮藏工作区变更"><WorkbenchIcon name="Archive" size={14} />贮藏</button>
+        </Show>
+        <Show when={props.provider?.createBranch || props.provider?.switchBranch || props.provider?.deleteBranch}>
           <button type="button" class={branchEditorOpen() ? 'active' : ''} disabled={Boolean(busyAction())} aria-expanded={branchEditorOpen()} onClick={() => setBranchEditorOpen(value => !value)}><WorkbenchIcon name="GitBranch" size={14} />分支</button>
         </Show>
       </div>
@@ -258,6 +393,10 @@ export default function GitPanel(props: GitPanelProps) {
           <div>
             <Show when={props.provider?.createBranch}><button type="submit" disabled={Boolean(busyAction()) || !branchDraft().trim()}>创建并切换</button></Show>
             <Show when={props.provider?.switchBranch}><button type="button" disabled={Boolean(busyAction()) || !branchDraft().trim()} onClick={() => void runMutation('切换分支', () => props.provider!.switchBranch!(props.target!, branchDraft()))}>切换已有分支</button></Show>
+            {/* #368：删除走后端「未落地工作」保护（未并入/树不等的分支被拒并回显原因） */}
+            <Show when={props.provider?.deleteBranch}>
+              <button type="button" class="git-branch-delete" disabled={Boolean(busyAction()) || !branchDraft().trim()} onClick={() => void runMutation('删除分支', () => props.provider!.deleteBranch!(props.target!, branchDraft()))}>删除分支</button>
+            </Show>
           </div>
         </form>
       </Show>
@@ -276,15 +415,42 @@ export default function GitPanel(props: GitPanelProps) {
       </Show>
       {stageSection()}
       {unstagedSection()}
+      <Show when={props.provider?.stashList}>
+        <section class="git-section">
+          <div class="file-panel-heading"><span>STASHES</span><span class="file-panel-count">{stashes().length}</span></div>
+          <Show when={stashes().length > 0} fallback={<p class="file-section-hint file-section-muted">无贮藏</p>}>
+            <ul class="git-stash-list">
+              <For each={stashes()}>{stash => (
+                <li class="git-stash-row">
+                  <span class="git-stash-id">{stash.id}</span>
+                  <span class="git-stash-subject" title={stash.subject}>{stash.subject}</span>
+                  <Show when={props.provider?.stashPop}>
+                    <button type="button" class="git-tree-action" disabled={Boolean(busyAction())} aria-label={`恢复 ${stash.id}`} title="恢复此贮藏到工作区" onClick={() => runStashMutation('恢复贮藏', () => props.provider!.stashPop!(props.target!, stashIndex(stash.id)))}>
+                      <WorkbenchIcon name="RotateCcw" size={13} />
+                    </button>
+                  </Show>
+                </li>
+              )}</For>
+            </ul>
+          </Show>
+        </section>
+      </Show>
       <section class="git-section">
-        <div class="file-panel-heading"><span>COMMITS</span><span class="file-panel-count">{history().length}</span></div>
+        <div class="file-panel-heading"><span>COMMITS</span><span class="file-panel-count">{visibleCommits().length}</span></div>
         <ul class="git-history-list">
-          <For each={history()}>{commit => (
+          <For each={visibleCommits()}>{commit => (
             <li class={`git-history-row ${expandedCommit() === commit.hash ? 'expanded' : ''}`}>
               <button type="button" class="git-history-head" aria-expanded={expandedCommit() === commit.hash} onClick={() => setExpandedCommit(current => current === commit.hash ? null : commit.hash)}>
                 <span class="git-history-caret">{expandedCommit() === commit.hash ? <WorkbenchIcon name="ChevronDown" size={13} /> : <WorkbenchIcon name="ChevronRight" size={13} />}</span>
-                <WorkbenchIcon name="GitCommitHorizontal" size={14} />
+                <Show when={commit.parents && commit.parents.length > 1} fallback={<WorkbenchIcon name="GitCommitHorizontal" size={14} />}>
+                  <WorkbenchIcon name="GitMerge" size={14} />
+                </Show>
                 <span class="git-history-subject" title={commit.subject}>{commit.subject || '无提交说明'}</span>
+                <Show when={commit.refs}>
+                  <span class="git-history-refs">
+                    <For each={parseRefs(commit.refs ?? '')}>{ref => <span class="git-history-ref" title={ref}>{ref}</span>}</For>
+                  </span>
+                </Show>
                 <span class="git-history-hash">{commit.hash.slice(0, 7)}</span>
               </button>
               <Show when={expandedCommit() === commit.hash}>
@@ -292,11 +458,17 @@ export default function GitPanel(props: GitPanelProps) {
                   <span><strong>COMMIT</strong>{commit.hash}</span>
                   <span><strong>AUTHOR</strong>{commit.author || '—'}</span>
                   <span><strong>DATE</strong>{commit.date ? new Date(commit.date * 1000).toLocaleString() : '—'}</span>
+                  <Show when={commit.parents && commit.parents.length > 0}>
+                    <span><strong>PARENTS</strong>{commit.parents!.map(parent => parent.slice(0, 7)).join(' ')}</span>
+                  </Show>
                 </div>
               </Show>
             </li>
           )}</For>
         </ul>
+        <Show when={graphCommits() && graphHasMore()}>
+          <button type="button" class="git-history-more" disabled={Boolean(busyAction())} onClick={loadMoreCommits}>加载更多</button>
+        </Show>
       </section>
     </div>
   )

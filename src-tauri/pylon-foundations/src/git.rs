@@ -139,6 +139,33 @@ async fn run_git_with_timeout_env(
     timeout: Duration,
     host_env: Option<&[(&str, &str)]>,
 ) -> Result<(String, String), String> {
+    let probe = run_git_probe_with_timeout(cwd, args, timeout, host_env).await?;
+    if probe.code == Some(0) {
+        return Ok((probe.stdout, probe.stderr));
+    }
+    let detail = if probe.stderr.trim().is_empty() {
+        probe.stdout.trim()
+    } else {
+        probe.stderr.trim()
+    };
+    let detail = detail.chars().take(512).collect::<String>();
+    Err(if is_git_error(&probe.stderr) {
+        format!("not a git repository: {detail}")
+    } else {
+        format!("git 命令失败 ({detail})")
+    })
+}
+
+/// exit-code 有界探针：同一 runner 纪律（参数数组、固定 cwd、C locale、
+/// `GIT_TERMINAL_PROMPT=0`、超时 kill、有界 drain），但不做成功/失败折叠——
+/// `merge-base --is-ancestor` / `diff --quiet` 以退出码 0/1 编码布尔答案，
+/// 折叠语义会把「1 = 否」误作失败丢弃。退出码语义由调用方解释。
+async fn run_git_probe_with_timeout(
+    cwd: &Path,
+    args: &[&str],
+    timeout: Duration,
+    host_env: Option<&[(&str, &str)]>,
+) -> Result<GitProbe, String> {
     // 审查修复：超时必须 kill 子进程（Command::output 默认 kill_on_drop=false，
     // 超时后 git 会滞留并占用 index 锁）。
     let mut cmd = Command::new("git");
@@ -221,22 +248,18 @@ async fn run_git_with_timeout_env(
     };
     let stdout_bytes = read_stdout_task.await.unwrap_or_default();
     let stderr_bytes = read_stderr_task.await.unwrap_or_default();
-    let stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
-    let stderr = String::from_utf8_lossy(&stderr_bytes).into_owned();
-    if !status.success() {
-        let detail = if stderr.trim().is_empty() {
-            stdout.trim()
-        } else {
-            stderr.trim()
-        };
-        let detail = detail.chars().take(512).collect::<String>();
-        return Err(if is_git_error(&stderr) {
-            format!("not a git repository: {detail}")
-        } else {
-            format!("git 命令失败 ({detail})")
-        });
-    }
-    Ok((stdout, stderr))
+    Ok(GitProbe {
+        code: status.code(),
+        stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
+    })
+}
+
+/// [`run_git_probe_with_timeout`] 的返回：退出码 + 两路输出（有界）。
+struct GitProbe {
+    code: Option<i32>,
+    stdout: String,
+    stderr: String,
 }
 
 async fn run_git(cwd: &Path, args: &[&str]) -> Result<(String, String), String> {
@@ -651,6 +674,335 @@ pub async fn git_push(cwd: &Path) -> Result<GitOperationResult, String> {
         stdout.as_str()
     };
     operation_result(cwd, output, "推送完成").await
+}
+
+// ── #368：stash 三件套 ───────────────────────────────────────────────────
+
+/// stash 条目上限（与 history 同数量级的有界口径）。
+pub const MAX_STASH_ENTRIES: usize = 200;
+
+/// stash 条目（git_stash_list 响应）。
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStashEntry {
+    /// stash ref 形态（`stash@{0}`，%gd）。
+    pub id: String,
+    /// 一行说明（%gs，reflog 原始 subject）。
+    pub subject: String,
+}
+
+/// stash 回执摘要：优先 stdout；git 把 "No local changes to save" 这类
+/// 退出 0 的提示写到 stderr——stdout 为空时以 stderr 为准，而非笼统 fallback。
+fn stash_summary(stdout: &str, stderr: &str, fallback: &str) -> String {
+    let summary = if stdout.trim().is_empty() {
+        stderr.trim()
+    } else {
+        stdout.trim()
+    };
+    if summary.is_empty() {
+        return fallback.to_string();
+    }
+    summary.chars().take(2048).collect()
+}
+
+/// stash 清单：`git stash list --format=%gd%x00%gs`（NUL 分隔，行分隔条目）。
+/// 空 stash 是空列表而非错误（与 history 的空仓库口径一致）。
+pub async fn git_stash_list(cwd: &Path) -> Result<Vec<GitStashEntry>, String> {
+    let (stdout, _) = run_git(cwd, &["stash", "list", "--format=%gd%x00%gs"]).await?;
+    let mut stashes = Vec::new();
+    for line in stdout.lines() {
+        let mut fields = line.split('\0');
+        let (Some(id), Some(subject)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        if id.is_empty() {
+            continue;
+        }
+        if stashes.len() >= MAX_STASH_ENTRIES {
+            break;
+        }
+        stashes.push(GitStashEntry {
+            id: id.to_string(),
+            subject: subject.to_string(),
+        });
+    }
+    Ok(stashes)
+}
+
+/// 贮藏工作区与 index。message 省略时由 git 生成默认说明（"WIP on <branch>…"）；
+/// include_untracked 对应 `-u`（untracked 文件一并入栈）。
+pub async fn git_stash_push(
+    cwd: &Path,
+    message: Option<&str>,
+    include_untracked: bool,
+) -> Result<GitOperationResult, String> {
+    let mut args: Vec<&str> = vec!["stash", "push"];
+    if include_untracked {
+        args.push("--include-untracked");
+    }
+    let message = message.map(str::trim).filter(|m| !m.is_empty());
+    if let Some(message) = message {
+        if message.chars().count() > 10_000 {
+            return Err("贮藏说明不能超过 10000 个字符".to_string());
+        }
+        args.extend(["-m", message]);
+    }
+    let (stdout, stderr) = run_git(cwd, &args).await?;
+    let summary = stash_summary(&stdout, &stderr, "已贮藏工作区变更");
+    Ok(GitOperationResult {
+        summary,
+        status: git_status(cwd).await?,
+    })
+}
+
+/// 弹出指定 stash（默认栈顶 index=0）并恢复为工作区变更；pop 产生冲突时
+/// stash 保留（git 语义），错误经 runner 折叠返回给 UI 展示。
+pub async fn git_stash_pop(cwd: &Path, index: usize) -> Result<GitOperationResult, String> {
+    if index >= MAX_STASH_ENTRIES {
+        return Err(format!("stash 索引超出范围（0..{MAX_STASH_ENTRIES}）"));
+    }
+    let (stdout, stderr) = run_git(cwd, &["stash", "pop", &format!("stash@{{{index}}}")]).await?;
+    let summary = stash_summary(&stdout, &stderr, "已恢复贮藏的变更");
+    Ok(GitOperationResult {
+        summary,
+        status: git_status(cwd).await?,
+    })
+}
+
+// ── #368：删分支（未落地工作保护 + 比较删除）────────────────────────────
+
+/// 本地分支 tip（`refs/heads/<name>` 全限定精确匹配）；`Ok(None)` = 分支不存在。
+///
+/// 不用 `rev-parse <name>`：裸名解析 tag 优先（同名 tag 会冒名回答分支），且其
+/// 非零退出把「分支不存在」与「探针失败」混进同一个 Err。for-each-ref 全限定
+/// 模式 + refname 精确过滤：`<name>/sub` 子命名空间不得冒名（for-each-ref 的
+/// 模式匹配含前缀树，必须逐行比对完整 refname）。
+async fn local_branch_tip(cwd: &Path, name: &str) -> Result<Option<String>, String> {
+    let refname = format!("refs/heads/{name}");
+    let (stdout, _) = run_git(
+        cwd,
+        &[
+            "for-each-ref",
+            "--format=%(refname)\t%(objectname)",
+            &refname,
+        ],
+    )
+    .await?;
+    for line in stdout.lines() {
+        if let Some((ref_name, oid)) = line.split_once('\t') {
+            if ref_name == refname && !oid.trim().is_empty() {
+                return Ok(Some(oid.trim().to_string()));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// `ancestor` 是否可从 `descendant` 到达（`merge-base --is-ancestor` 的退出码
+/// 语义：0 = 是，1 = 否，其余 = 探针失败）。探针失败折为 Err，交调用方保守处置。
+async fn git_is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool, String> {
+    let probe = run_git_probe_with_timeout(
+        cwd,
+        &["merge-base", "--is-ancestor", ancestor, descendant],
+        GIT_TIMEOUT,
+        None,
+    )
+    .await?;
+    match probe.code {
+        Some(0) => Ok(true),
+        // 退出码 1 只有在无任何 stderr 时才是「否」这个答案；带输出的 1 属于
+        // 环境异常，按探针失败保守处理（与 git_trees_equal 同一纪律）。
+        Some(1) if probe.stderr.trim().is_empty() => Ok(false),
+        _ => Err(format!(
+            "git 命令失败 ({})",
+            probe.stderr.trim().chars().take(512).collect::<String>()
+        )),
+    }
+}
+
+/// 两个提交的树是否相等（`diff --quiet` 退出码语义，同 [`git_is_ancestor`]）。
+/// 树相等即 squash 落地形态——commit message 不参与判定。
+///
+/// 陷阱（Windows git 实测）：非仓库目录下 `git diff --quiet a b` 以 **退出码 1**
+/// 退出（stderr "error: Could not access 'a'"）——1 在这里不是「树不等」的答案。
+/// 真实的「树不等」是静默退出 1（--quiet 压掉全部输出），故 exit 1 必须搭配
+/// 空 stderr 才采信，其余一律按探针失败。
+async fn git_trees_equal(cwd: &Path, a: &str, b: &str) -> Result<bool, String> {
+    let probe =
+        run_git_probe_with_timeout(cwd, &["diff", "--quiet", a, b], GIT_TIMEOUT, None).await?;
+    match probe.code {
+        Some(0) => Ok(true),
+        Some(1) if probe.stderr.trim().is_empty() => Ok(false),
+        _ => Err(format!(
+            "git 命令失败 ({})",
+            probe.stderr.trim().chars().take(512).collect::<String>()
+        )),
+    }
+}
+
+/// 删除本地分支（带「未落地工作」保护）。
+///
+/// 保护语义（Codeg `work_task/git.rs` 的 `branch_holds_unlanded_work` 同源）：
+/// 分支 tip 已并入当前 HEAD（`merge-base --is-ancestor`）或与 HEAD 树相等
+/// （`diff --quiet`，squash 落地形态）才可删；两者皆否 = 还有未落地工作，拒绝。
+/// 任何探针失败（git 不可用/超时/中间态）一律按「有未落地工作」保守处理——
+/// 删除是不可逆的一半，不确定性保留分支。base 取当前 HEAD；当前分支自身、
+/// 不存在的分支先行拒绝。删除本体用 `update-ref -d refs/heads/<name> <tip>`：
+/// 比较与删除在单次 git 操作内完成，探针与删除之间 ref 被并发移动时 git 拒绝
+/// 执行（竞态窗口关闭）。
+pub async fn git_delete_branch(cwd: &Path, name: &str) -> Result<GitOperationResult, String> {
+    let name = validate_branch_name(cwd, name).await?;
+    let status = git_status(cwd).await?;
+    if status.branch.branch.as_deref() == Some(name.as_str()) {
+        return Err(format!("分支 {name} 是当前所在分支，不能删除"));
+    }
+    let Some(tip) = local_branch_tip(cwd, &name).await? else {
+        return Err(format!("分支 {name} 不存在"));
+    };
+    // base = 当前 HEAD。分支存在 ⇒ 仓库必有提交 ⇒ HEAD 可解析；解析异常按
+    // 探针失败保守拒绝（unborn 仓库不可能有本地分支，此为防御路径）。
+    let head = run_git_probe_with_timeout(
+        cwd,
+        &["rev-parse", "--verify", "--quiet", "HEAD"],
+        GIT_TIMEOUT,
+        None,
+    )
+    .await?;
+    let base = if head.code == Some(0) {
+        head.stdout.trim().to_string()
+    } else {
+        return Err(format!("无法确认分支 {name} 是否已落地，已保留分支"));
+    };
+    let landed = match git_is_ancestor(cwd, &tip, &base).await {
+        Ok(true) => true,
+        // 非祖先 → 看 squash 形态（树相等）；树探针失败同样保守拒绝
+        Ok(false) => git_trees_equal(cwd, &base, &tip).await.unwrap_or(false),
+        Err(_) => false,
+    };
+    if !landed {
+        return Err(format!(
+            "分支 {name} 还有未落地的提交，未删除；确认不再需要时请先合并或手工处理"
+        ));
+    }
+    let (stdout, _) = run_git(
+        cwd,
+        &["update-ref", "-d", &format!("refs/heads/{name}"), &tip],
+    )
+    .await?;
+    let _ = stdout;
+    Ok(GitOperationResult {
+        summary: format!("已删除分支 {name}"),
+        status: git_status(cwd).await?,
+    })
+}
+
+// ── #368：log 图（结构化 parents/refs 分页）─────────────────────────────
+
+/// log 图单页条目。parents/refs 结构化交给前端算 lane——不传 `--graph`：
+/// 图字符混进行文本会破坏 NUL 分隔解析，且 lane 布局属表现层。
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitGraphEntry {
+    pub hash: String,
+    /// 完整 parent hash（根提交为空；merge 提交 ≥2 个）。
+    pub parents: Vec<String>,
+    pub author: String,
+    /// Unix 秒（%at）。
+    pub date: i64,
+    pub subject: String,
+    /// decorations（%D，如 `HEAD -> main, origin/main`；无装饰为空串）。
+    pub refs: String,
+}
+
+/// log 图单页（hasMore 供前端「加载更多」续页）。
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLogGraphPage {
+    pub commits: Vec<GitCommitGraphEntry>,
+    pub has_more: bool,
+}
+
+/// 结构化 log 分页：`--format=%H%x00%P%x00%an%x00%at%x00%s%x00%D`，多取 1 条
+/// 定 hasMore。limit 上限 MAX_HISTORY，limit=0 返回空页，None 默认 50（与
+/// git_history 同口径）。显式 `--decorate=short`：runner 的 stdout 是管道，
+/// log.decorate=auto 在非 TTY 下不输出 decorations。path 可选（相对且不穿越，
+/// 复用 workspace 语义）；first_parent 对应 `--first-parent`（合并线视图）。
+pub async fn git_log_graph(
+    cwd: &Path,
+    skip: Option<usize>,
+    limit: Option<usize>,
+    first_parent: bool,
+    path: Option<&str>,
+) -> Result<GitLogGraphPage, String> {
+    if let Some(path) = path {
+        if !crate::workspace::is_safe_relative_path(path) {
+            return Err("log path 必须是相对路径且不能穿越".to_string());
+        }
+    }
+    let limit = match limit {
+        Some(0) => {
+            return Ok(GitLogGraphPage {
+                commits: Vec::new(),
+                has_more: false,
+            })
+        }
+        Some(n) => n.min(MAX_HISTORY),
+        None => 50,
+    };
+    let skip_arg = format!("--skip={}", skip.unwrap_or(0));
+    let count_arg = format!("-n{}", limit + 1);
+    let mut args: Vec<&str> = vec![
+        "log",
+        "--format=%H%x00%P%x00%an%x00%at%x00%s%x00%D",
+        "--decorate=short",
+        &skip_arg,
+        &count_arg,
+    ];
+    if first_parent {
+        args.push("--first-parent");
+    }
+    if let Some(path) = path {
+        args.push("--");
+        args.push(path);
+    }
+    let (stdout, _) = match run_git(cwd, &args).await {
+        Ok(result) => result,
+        // 空仓库（无任何 commit）视为空页，而非错误（与 git_history 口径一致）
+        Err(error) if error.contains("does not have any commits") => {
+            return Ok(GitLogGraphPage {
+                commits: Vec::new(),
+                has_more: false,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    let mut commits = Vec::new();
+    for line in stdout.lines() {
+        let mut fields = line.split('\0');
+        let hash = fields.next().unwrap_or("");
+        if hash.is_empty() {
+            continue;
+        }
+        let parents = fields.next().unwrap_or("");
+        let author = fields.next().unwrap_or("");
+        let date = fields.next().unwrap_or("");
+        let subject = fields.next().unwrap_or("");
+        let refs = fields.next().unwrap_or("");
+        commits.push(GitCommitGraphEntry {
+            hash: hash.to_string(),
+            parents: parents.split_whitespace().map(String::from).collect(),
+            author: author.to_string(),
+            date: date.parse().unwrap_or(0),
+            subject: subject.to_string(),
+            refs: refs.to_string(),
+        });
+        if commits.len() > limit {
+            break;
+        }
+    }
+    let has_more = commits.len() > limit;
+    commits.truncate(limit);
+    Ok(GitLogGraphPage { commits, has_more })
 }
 
 #[cfg(test)]
@@ -1498,6 +1850,315 @@ u UU N... 100644 100644 100644 100644 1111111 2222222 3333333 conflicted file.tx
             "feature
 ",
             ":3 = theirs"
+        );
+    }
+
+    // ── #368：stash 三件套 ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn stash_push_pop_list_roundtrip() {
+        let repo = temp_repo("stash-roundtrip");
+        std::fs::write(repo.0.join("a.txt"), "v1").unwrap();
+        run_sync(&repo.0, &["add", "a.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "init"]);
+
+        std::fs::write(repo.0.join("a.txt"), "v2").unwrap();
+        std::fs::write(repo.0.join("untracked.txt"), "u").unwrap();
+        let pushed = git_stash_push(&repo.0, Some("wip changes"), true)
+            .await
+            .expect("stash push must succeed");
+        assert!(
+            pushed.summary.contains("wip changes"),
+            "summary 应含自定义说明: {}",
+            pushed.summary
+        );
+        let status = git_status(&repo.0).await.unwrap();
+        assert!(
+            status.entries.is_empty(),
+            "入栈后工作区应干净: {:?}",
+            status.entries
+        );
+        assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), "v1");
+        assert!(
+            !repo.0.join("untracked.txt").exists(),
+            "-u 应把 untracked 一并入栈"
+        );
+
+        let list = git_stash_list(&repo.0).await.expect("stash list");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "stash@{0}");
+        assert!(list[0].subject.contains("wip changes"));
+
+        let popped = git_stash_pop(&repo.0, 0).await.expect("stash pop");
+        assert_eq!(std::fs::read_to_string(repo.0.join("a.txt")).unwrap(), "v2");
+        assert_eq!(
+            std::fs::read_to_string(repo.0.join("untracked.txt")).unwrap(),
+            "u"
+        );
+        assert!(
+            popped
+                .status
+                .entries
+                .iter()
+                .any(|e| e.path == "a.txt" && !e.staged),
+            "pop 后变更为未暂存工作区形态"
+        );
+        assert!(
+            git_stash_list(&repo.0).await.unwrap().is_empty(),
+            "pop 后栈应清空"
+        );
+    }
+
+    #[tokio::test]
+    async fn stash_push_without_changes_is_noop_success() {
+        let repo = temp_repo("stash-noop");
+        std::fs::write(repo.0.join("a.txt"), "v1").unwrap();
+        run_sync(&repo.0, &["add", "a.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "init"]);
+        let pushed = git_stash_push(&repo.0, None, false)
+            .await
+            .expect("无可贮藏也是成功（git 退出 0）");
+        assert!(
+            pushed.summary.contains("No local changes"),
+            "git 的 stderr 提示应作为回执: {}",
+            pushed.summary
+        );
+        assert!(git_stash_list(&repo.0).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn stash_pop_rejects_out_of_range_index() {
+        let repo = temp_repo("stash-guard");
+        let error = git_stash_pop(&repo.0, MAX_STASH_ENTRIES)
+            .await
+            .expect_err("越界索引必须在守卫层拒绝");
+        assert!(error.contains("索引超出范围"), "unexpected: {error}");
+        let error = git_stash_pop(&repo.0, 0)
+            .await
+            .expect_err("空栈 pop 必须失败（git: No stash entries found）");
+        assert!(error.contains("git 命令失败"), "unexpected: {error}");
+    }
+
+    // ── #368：删分支（未落地保护 + 比较删除）────────────────────────────────
+
+    #[tokio::test]
+    async fn delete_branch_refuses_current_unlanded_and_missing() {
+        let repo = temp_repo("delete-guard");
+        std::fs::write(repo.0.join("a.txt"), "v1").unwrap();
+        run_sync(&repo.0, &["add", "a.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "init"]);
+        let default_branch = run_sync(&repo.0, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        let default_branch = default_branch.trim().to_string();
+
+        run_sync(&repo.0, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(repo.0.join("a.txt"), "feature work").unwrap();
+        run_sync(&repo.0, &["commit", "-q", "-am", "feature work"]);
+        run_sync(&repo.0, &["checkout", "-q", &default_branch]);
+
+        let error = git_delete_branch(&repo.0, &default_branch)
+            .await
+            .expect_err("当前分支必须拒删");
+        assert!(error.contains("当前所在分支"), "unexpected: {error}");
+        let error = git_delete_branch(&repo.0, "feature")
+            .await
+            .expect_err("未落地分支必须拒删");
+        assert!(error.contains("未落地"), "unexpected: {error}");
+        let error = git_delete_branch(&repo.0, "no-such-branch")
+            .await
+            .expect_err("不存在的分支必须报错");
+        assert!(error.contains("不存在"), "unexpected: {error}");
+        assert!(
+            run_sync(&repo.0, &["branch", "--list", "feature"]).contains("feature"),
+            "拒删后分支必须还在"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_branch_allows_merged_and_squash_landed() {
+        let repo = temp_repo("delete-landed");
+        std::fs::write(repo.0.join("a.txt"), "v1").unwrap();
+        run_sync(&repo.0, &["add", "a.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "init"]);
+        let default_branch = run_sync(&repo.0, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        let default_branch = default_branch.trim().to_string();
+
+        // 形态一：真合并落地（tip 是 HEAD 祖先）
+        run_sync(&repo.0, &["checkout", "-q", "-b", "merged-branch"]);
+        std::fs::write(repo.0.join("b.txt"), "b").unwrap();
+        run_sync(&repo.0, &["add", "b.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "b work"]);
+        run_sync(&repo.0, &["checkout", "-q", &default_branch]);
+        run_sync(
+            &repo.0,
+            &[
+                "merge",
+                "-q",
+                "--no-ff",
+                "-m",
+                "merge branch",
+                "merged-branch",
+            ],
+        );
+        let deleted = git_delete_branch(&repo.0, "merged-branch")
+            .await
+            .expect("已并入分支可删");
+        assert!(deleted.summary.contains("已删除分支 merged-branch"));
+        assert!(
+            run_sync(&repo.0, &["branch", "--list", "merged-branch"]).is_empty(),
+            "删除必须真实生效"
+        );
+
+        // 形态二：squash 落地（树相等、非祖先——commit message 不参与判定）
+        run_sync(&repo.0, &["checkout", "-q", "-b", "squash-branch"]);
+        std::fs::write(repo.0.join("c.txt"), "c").unwrap();
+        run_sync(&repo.0, &["add", "c.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "c work"]);
+        run_sync(&repo.0, &["checkout", "-q", &default_branch]);
+        run_sync(&repo.0, &["merge", "--squash", "-q", "squash-branch"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "squash c work"]);
+        git_delete_branch(&repo.0, "squash-branch")
+            .await
+            .expect("树相等的 squash 落地分支可删");
+        assert!(run_sync(&repo.0, &["branch", "--list", "squash-branch"]).is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_probe_failures_surface_as_errors() {
+        // 探针在非仓库目录必然失败——Err 语义存在，git_delete_branch 的
+        // 保守映射（Err => 有未落地工作）据此拒绝删除。
+        let dir =
+            std::env::temp_dir().join(format!("pylon-git-probe-nonrepo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(git_is_ancestor(&dir, "a", "b").await.is_err());
+        assert!(git_trees_equal(&dir, "a", "b").await.is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ── #368：log 图（结构化 parents/refs 分页）─────────────────────────────
+
+    #[tokio::test]
+    async fn log_graph_pagination_parents_and_decorations() {
+        let repo = temp_repo("log-graph");
+        std::fs::write(repo.0.join("a.txt"), "v1").unwrap();
+        run_sync(&repo.0, &["add", "a.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "root"]);
+        let default_branch = run_sync(&repo.0, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        let default_branch = default_branch.trim().to_string();
+
+        run_sync(&repo.0, &["checkout", "-q", "-b", "side"]);
+        std::fs::write(repo.0.join("side.txt"), "s1").unwrap();
+        run_sync(&repo.0, &["add", "side.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "side one"]);
+        run_sync(&repo.0, &["checkout", "-q", &default_branch]);
+        std::fs::write(repo.0.join("a.txt"), "v2").unwrap();
+        run_sync(&repo.0, &["commit", "-q", "-am", "main one"]);
+        run_sync(
+            &repo.0,
+            &["merge", "-q", "--no-ff", "-m", "merge side", "side"],
+        );
+        std::fs::write(repo.0.join("b.txt"), "b").unwrap();
+        run_sync(&repo.0, &["add", "b.txt"]);
+        run_sync(&repo.0, &["commit", "-q", "-m", "main two"]);
+
+        // 分页：limit=2 → 2 条 + hasMore；skip 续页到尽头
+        let page1 = git_log_graph(&repo.0, None, Some(2), false, None)
+            .await
+            .expect("page 1");
+        assert_eq!(page1.commits.len(), 2);
+        assert!(page1.has_more);
+        assert_eq!(page1.commits[0].subject, "main two");
+        assert!(page1.commits[0].date > 0, "date 必须是 Unix 秒数值");
+        let page2 = git_log_graph(&repo.0, Some(2), Some(2), false, None)
+            .await
+            .expect("page 2");
+        assert_eq!(page2.commits.len(), 2);
+        // 仓库共 5 个提交：skip=2 取 2 条后仍有余量 → hasMore
+        assert!(page2.has_more);
+        assert_eq!(page2.commits[0].subject, "main one");
+        let page3 = git_log_graph(&repo.0, Some(4), Some(2), false, None)
+            .await
+            .expect("page 3");
+        assert_eq!(page3.commits.len(), 1);
+        assert!(!page3.has_more);
+        assert_eq!(page3.commits[0].subject, "root");
+
+        // merge 提交双亲 + 根提交无亲
+        let full = git_log_graph(&repo.0, None, Some(50), false, None)
+            .await
+            .expect("full page");
+        let merge = full
+            .commits
+            .iter()
+            .find(|c| c.subject == "merge side")
+            .expect("merge commit");
+        assert_eq!(merge.parents.len(), 2);
+        let root = full.commits.last().unwrap();
+        assert_eq!(root.subject, "root");
+        assert!(root.parents.is_empty());
+        // 装饰：runner 的 stdout 是管道（log.decorate=auto 不生效），必须显式
+        // --decorate=short——HEAD 与当前分支名出现在 tip 的 refs
+        let tip = &full.commits[0];
+        assert!(tip.refs.contains("HEAD"), "refs: {}", tip.refs);
+        assert!(
+            tip.refs.contains(default_branch.as_str()),
+            "refs 应含当前分支名: {}",
+            tip.refs
+        );
+
+        // first_parent：只约束遍历（侧线提交不进入结果）；%P 数据面保持忠实
+        // （merge 的完整双亲原样返回），lane 截断属前端表现层。
+        let fp = git_log_graph(&repo.0, None, Some(50), true, None)
+            .await
+            .expect("first-parent page");
+        assert!(!fp.commits.iter().any(|c| c.subject == "side one"));
+        assert_eq!(
+            fp.commits.len(),
+            4,
+            "遍历收缩为主线：main two/merge side/main one/root"
+        );
+        let fp_merge = fp
+            .commits
+            .iter()
+            .find(|c| c.subject == "merge side")
+            .expect("first-parent 仍含 merge 提交");
+        assert_eq!(fp_merge.parents.len(), 2, "%P 数据面忠实于完整双亲");
+
+        // path 过滤：只看 a.txt 的历史
+        let scoped = git_log_graph(&repo.0, None, Some(50), false, Some("a.txt"))
+            .await
+            .expect("scoped page");
+        assert!(
+            scoped
+                .commits
+                .iter()
+                .all(|c| ["root", "main one"].contains(&c.subject.as_str())),
+            "a.txt 历史不应含侧线/合并提交: {:?}",
+            scoped
+                .commits
+                .iter()
+                .map(|c| &c.subject)
+                .collect::<Vec<_>>()
+        );
+
+        // limit=0 / 越界 skip / path 守卫
+        assert!(git_log_graph(&repo.0, None, Some(0), false, None)
+            .await
+            .unwrap()
+            .commits
+            .is_empty());
+        let beyond = git_log_graph(&repo.0, Some(99), Some(5), false, None)
+            .await
+            .expect("beyond page");
+        assert!(beyond.commits.is_empty() && !beyond.has_more);
+        assert!(
+            git_log_graph(&repo.0, None, None, false, Some("../outside"))
+                .await
+                .is_err()
+        );
+        assert!(
+            git_log_graph(&repo.0, None, None, false, Some("C:\\Windows\\x"))
+                .await
+                .is_err()
         );
     }
 }

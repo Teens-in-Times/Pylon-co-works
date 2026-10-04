@@ -173,6 +173,25 @@ export function normalizeGitLogPage(raw: unknown): GitLogPage {
   return { commits, hasMore: item.hasMore === true }
 }
 
+/** #368：stash 条目（git_stash_list 响应；宽容解析——id 空的条目跳过）。 */
+export interface GitStash {
+  /** stash ref 形态（`stash@{0}`）。 */
+  id: string
+  subject: string
+}
+
+export function normalizeGitStashList(raw: unknown): GitStash[] {
+  if (!Array.isArray(raw)) return []
+  const stashes: GitStash[] = []
+  for (const item of raw) {
+    if (!isPlainObject(item)) continue
+    const id = typeof item.id === 'string' && item.id.length > 0 ? item.id : undefined
+    if (!id) continue
+    stashes.push({ id, subject: typeof item.subject === 'string' ? item.subject : '' })
+  }
+  return stashes
+}
+
 /** 0-C4：blame 行（宽容解析：缺字段的行跳过）。 */
 export interface GitBlameLine {
   hash: string

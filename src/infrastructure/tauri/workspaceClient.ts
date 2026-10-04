@@ -6,7 +6,7 @@
  */
 import type { ClientTransport } from '../acp/agentClient.ts'
 import { normalizeWorkspaceEntries, normalizeWorkspaceFileIndexPage, normalizeWorkspaceText } from './workspaceContracts.ts'
-import { normalizeGitStatus, normalizeGitHistory, normalizeGitOperationResult, normalizeGitSequenceState, normalizeGitStatusWithBranch, normalizeGitText, type GitSequenceState } from './gitContracts.ts'
+import { normalizeGitStatus, normalizeGitHistory, normalizeGitLogPage, normalizeGitOperationResult, normalizeGitSequenceState, normalizeGitStashList, normalizeGitStatusWithBranch, normalizeGitText, type GitLogPage, type GitSequenceState, type GitStash } from './gitContracts.ts'
 import { normalizeWorkspaceSearchResults } from './workspaceSearchContracts.ts'
 import { normalizeWorkspaceShape, type Workspace } from '../../domains/workspace/workspaceEntities.ts'
 import type { WorkspaceTargetWire } from '../../domains/workspace/workspaceTarget.ts'
@@ -59,6 +59,27 @@ export function createWorkspaceClient(transport: ClientTransport) {
       transport.invoke('git_pull', { target }).then(normalizeGitOperationResult),
     gitPush: (target: WorkspaceTargetWire): Promise<unknown> =>
       transport.invoke('git_push', { target }).then(normalizeGitOperationResult),
+    // #368：stash 三件套 / 删分支（后端未落地保护）/ 结构化 log 图分页
+    gitStashList: (target: WorkspaceTargetWire): Promise<GitStash[]> =>
+      transport.invoke('git_stash_list', { target }).then(normalizeGitStashList),
+    gitStashPush: (target: WorkspaceTargetWire, input?: { message?: string; includeUntracked?: boolean }): Promise<unknown> =>
+      transport.invoke('git_stash_push', {
+        target,
+        ...(input?.message === undefined ? {} : { message: input.message }),
+        ...(input?.includeUntracked === undefined ? {} : { includeUntracked: input.includeUntracked }),
+      }).then(normalizeGitOperationResult),
+    gitStashPop: (target: WorkspaceTargetWire, index: number): Promise<unknown> =>
+      transport.invoke('git_stash_pop', { target, index }).then(normalizeGitOperationResult),
+    gitDeleteBranch: (target: WorkspaceTargetWire, name: string): Promise<unknown> =>
+      transport.invoke('git_delete_branch', { target, name }).then(normalizeGitOperationResult),
+    gitLogGraph: (target: WorkspaceTargetWire, options?: { skip?: number; limit?: number; firstParent?: boolean; path?: string }): Promise<GitLogPage> =>
+      transport.invoke('git_log_graph', {
+        target,
+        ...(options?.skip === undefined ? {} : { skip: options.skip }),
+        ...(options?.limit === undefined ? {} : { limit: options.limit }),
+        ...(options?.firstParent === undefined ? {} : { firstParent: options.firstParent }),
+        ...(options?.path === undefined ? {} : { path: options.path }),
+      }).then(normalizeGitLogPage),
     // CWD-03：Workspace 实体命令（方案 C）。get_workspace_root 的 client 包装已删除：
     // 前端零调用方，后端命令保留（IPC_EXEMPT，WebView 外消费者）。
     createWorkspace: (agentId: string, name: string, rootPath: string): Promise<Workspace> =>
