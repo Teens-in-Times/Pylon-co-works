@@ -16,6 +16,13 @@ vi.mock('@tauri-apps/api/event', () => ({
     return Promise.resolve(() => { listeners.delete(event) })
   }),
 }))
+// #542：兜底监听注册守卫改用 IS_TAURI（env.ts 模块级 const，import 时求值）。
+// 本文件验证「注册两条广播兜底」的契约，须以 Tauri 宿主在场为前提——在
+// vi.hoisted（先于所有 import 求值）注入宿主标记；裸 jsdom 下的守卫跳过
+// 行为由 canonicalEventFeed.tauriGuard.test.ts 对偶覆盖。
+vi.hoisted(() => {
+  ;(globalThis as unknown as { window?: { __TAURI_INTERNALS__?: unknown } }).window!.__TAURI_INTERNALS__ = { transformCallback: (cb: unknown) => cb }
+})
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn((..._args: unknown[]) => Promise.resolve({})) }))
 vi.mock('@tauri-apps/api/core', async () => {
   const { tauriCoreMock } = await import('../../test-utils/tauriCoreMock')

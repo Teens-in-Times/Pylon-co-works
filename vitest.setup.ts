@@ -28,37 +28,31 @@ process.on('unhandledRejection', onUnhandledRejection)
 // 全量盘点（bunx vitest run）：75 次 console.error，全部出自下列 36 个文件，分三类：
 //   A 错误路径契约——产品把失败写入 console.error 正是用例断言的可见上报链路
 //     （错误中心、渲染边界、事务回滚、网关写回、Agent 切换/探测失败等）；
-//   B node 环境噪音——canonical feed 兜底监听注册在无 window/Tauri 的 node 工程
-//     里失败（「注册 canonical feed user 兜底监听失败 …」）。根因是产品侧注册无
-//     环境守卫——守卫已落地（canonicalEventFeed.createCanonicalEventFeed 按
-//     `typeof window` 静默跳过注册），B 类 node 组条目已全部移出；jsdom 组
-//     （有 window、无 Tauri 宿主，listen 照旧失败）条目仍在；
+//   B node 环境噪音——canonical feed 兜底监听注册在无 Tauri 宿主的环境里失败
+//     （「注册 canonical feed user 兜底监听失败 …」）。根因是产品侧注册无环境
+//     守卫——守卫已两步收口（#542 前 createCanonicalEventFeed 按 `typeof window`
+//     跳过 node 组；#542 起收窄为 IS_TAURI 探测单点，jsdom 组一并静默跳过），
+//     B 类条目已全部移出；
 //   C Renderer Suite fatal 回退链——「Renderer Suite 回退失败 …（自动重试 N/M）」
 //     是回退机制的过程日志，用例正是断言该回退行为。
 // 白名单外文件出现任何 console.error 一律 fail（fail 消息带首条原文，便于定性）。
-// 回收计划：B 类余量在测试宿主给 jsdom 注入 Tauri 垫片后移出（注册点不宜直接
-// 收窄到 IS_TAURI——canonicalEventFeed.test.ts 在无宿主 jsdom 里断言注册发生，
-// 需先补垫片）；A/C 类在产品改走诊断通道上报后移出；**名单清零后删除整个白
+// 回收计划：A/C 类在产品改走诊断通道上报后移出；**名单清零后删除整个白
 // 名单机制**，afterAll 对 console.error 无条件 throw（即原「阶段 8 硬断言」，
-// 届时本注释一并删除）。
+// 届时本注释一并删除）。（B 类回收已由 #542 守卫收窄兑现。）
 const EXPECTED_CONSOLE_ERROR_FILES: readonly string[] = [
-  // B 类：canonical feed 兜底监听注册噪音。node 组（无 window）条目已随产品侧
-  // window 守卫全部移出；剩余为 jsdom 组（有 window、无 Tauri 宿主，listen 照旧
-  // 失败）——
-  // #376-b：agentWorkbenchSession 族在 jsdom 的 feed 注册噪音（node 同族条目已摘）。
-  'src/__tests__/replay/agentWorkbenchSession.pagedLoad.test.ts',
-  // #515：随实体迁移改名 .solid.test.tsx（同族 feed 注册噪音，白名单跟随）。
-  // 同族的 sheetLayoutSidebarCollapsedReactive.solid.test.tsx 只直连 SheetLayout
-  // （activeSession=null，不构建 feed），噪音实测已消失，条目一并摘除。
-  'src/workspace-sheets/__tests__/agentSuiteKeepAlive.integration.solid.test.tsx',
-  // C 类：Renderer Suite fatal 回退链过程日志（含少量 B 类注册噪音）
+  // B 类（canonical feed 兜底监听注册噪音）已随 #542 守卫收窄到 IS_TAURI 全部
+  // 摘除：jsdom 组两条（#376-b agentWorkbenchSession.pagedLoad、#515
+  // agentSuiteKeepAlive.integration.solid）实测 0 次 console.error 后移出。
+  // C 类：Renderer Suite fatal 回退链过程日志
   // #515：两文件随实体直连改名 .solid.test.tsx（同一错误路径契约，白名单跟随）。
   'src/application/agent-workbench/__tests__/AgentRendererSuiteWorkbench.fatal.solid.test.tsx',
   'src/sheets/__tests__/AgentSheetView.rendererMode.solid.test.tsx',
-  // #515：上项的 Solid 实体直连测试（同族 feed 注册噪音/错误路径契约）。
+  // #515：上项的 Solid 实体直连测试（同族错误路径契约）。
   'src/sheets/__tests__/AgentSheetView.solid.test.tsx',
   // A 类：错误路径契约
   'src/domains/identity/__tests__/identityStore.hydration.test.ts',
+  // #542 前曾兼作 B 类条目；现仅剩「消费 Kernel committed 事件失败」的刻意
+  // 错误路径契约（acceptFrame catch → reportRuntimeError）。
   'src/__tests__/replay/canonicalEventFeed.test.ts',
   'src/application/transactions/__tests__/applyWorkspaceLayoutChange.test.ts',
   // #445：搜索错误路径（searchHits/单行拉取拒绝）刻意触发 reportRuntimeError 的
