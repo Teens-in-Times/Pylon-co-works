@@ -1,5 +1,7 @@
 # L.md · 并行施工协调板
 
+- [kumo] **#368 git 客户端补齐（2026-10-05）**：域＝`src-tauri/pylon-foundations/src/git.rs`（+测试）、`src-tauri/src/workspaces/cmds.rs`、`src-tauri/src/commands.rs`（git 命令注册行）、`src/infrastructure/tauri/{gitContracts.ts,workspaceClient.ts}`、`src/plugin-runtime/file-workbench/fileWorkbenchTypes.ts`、`src/plugins/core/file/builtinFileWorkbench.ts`、`src/sheets/file/GitPanel.solid.tsx`（+相关测试）、`.agents/{spec,records}/368-*`。共享树内施工，pathspec 提交；**不碰** decisions/0035、records/515（#545 在途）、`src/plugins/**` 样式（#410 在途）、`src/domains/workbench/**`（#551 在途）。
+
 - [kumo] **#451 无主 Crashed 发送路径接管（2026-10-05）**：域＝`src-tauri/pylon-acp/src/client.rs`（disconnected 占位 stopped=true）、`src-tauri/src/session/mod.rs`（ensure_connected_for_send 触发集+continuity）、`src-tauri/src/lifecycle/mod.rs`（模块文档表行）、`src-tauri/src/session/lazy_reconnect_tests.rs` 及相关新增测试、`.agents/records/451-*`。**与 #548/#549 域严重交叠（client.rs）——依 §2.1 隔离到独立 worktree（分支 `kumo/451-unowned-crashed`，基于 github/main）施工与提交，不碰共享树任何在途文件**，完工合并后撤条。
 
 - [kumo] **#548/#549 acp 锁面退役批（2026-10-04）**：域＝`src-tauri/pylon-acp/src/{client.rs,engine/mod.rs}`、`src-tauri/src/{runtime.rs,dispatcher/mod.rs,export.rs,permission.rs,acp/mod.rs,lifecycle/**,lib.rs,session/**}` 及其测试、`scripts/check-await-holding.mjs`、`docs/说明书/Pylon-模块维护地图.md`、`.agents/decisions/0037-*`。不碰前端与 #545 在途文件（cli/测试/decisions 0035/records 515）、不碰 `src-tauri/Cargo.toml`。
