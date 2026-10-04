@@ -298,10 +298,10 @@ export function createCliSessionControlPort(): SessionControlPort {
 export function createCliApprovalControlPort(): ApprovalControlPort {
   return {
     async get() {
-      return await invoke<ApprovalModeSnapshot>('get_approval_mode')
+      return invoke<ApprovalModeSnapshot>('get_approval_mode')
     },
     async set(mode) {
-      return await invoke<ApprovalModeSnapshot>('set_approval_mode', { mode })
+      return invoke<ApprovalModeSnapshot>('set_approval_mode', { mode })
     },
   }
 }
@@ -331,19 +331,19 @@ export function createCliInteractionControlPort(): InteractionControlPort {
 export function createCliWorkspaceRegistryControlPort(): WorkspaceRegistryControlPort {
   return {
     async list() {
-      return await invoke('workspace_list')
+      return invoke('workspace_list')
     },
     async create({ agentId, name, rootPath }) {
-      return await invoke('workspace_create', { agentId, name, rootPath })
+      return invoke('workspace_create', { agentId, name, rootPath })
     },
     async update({ workspaceId, name, rootPath }) {
-      return await invoke('workspace_update', { workspaceId, name, rootPath })
+      return invoke('workspace_update', { workspaceId, name, rootPath })
     },
     async remove(workspaceId) {
-      return await invoke('workspace_delete', { workspaceId })
+      return invoke('workspace_delete', { workspaceId })
     },
     async search(query, maxResults) {
-      return await invoke('workspace_search', { query, maxResults })
+      return invoke('workspace_search', { query, maxResults })
     },
   }
 }
@@ -352,7 +352,7 @@ export function createCliWorkspaceRegistryControlPort(): WorkspaceRegistryContro
 export function createCliSessionConfigControlPort(): SessionConfigControlPort {
   return {
     async setOption({ agentId, sessionId, key, value }) {
-      return await invoke('set_config_option', { agentId, source: sessionId, key, value })
+      return invoke('set_config_option', { agentId, source: sessionId, key, value })
     },
     async exportSession({ agentId, periId, format, outputPath }) {
       await invoke('export_session', { agentId, periId, format, outputPath })
