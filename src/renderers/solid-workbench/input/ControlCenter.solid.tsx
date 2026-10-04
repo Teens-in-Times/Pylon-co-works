@@ -14,7 +14,7 @@ import { resolveModeOptionEntries } from './workbenchOptionCatalog.ts'
 import type { WorkbenchAttachment } from '../../../domains/workbench/workbenchCommandFacade.ts'
 import { toCssBackgroundImage } from '../../../infrastructure/skin/backgroundImage.ts'
 import { errorMessage } from '../../../infrastructure/tauri/errorPayload.ts'
-import { CcWorkspacePicker, SHOW_EMPTY_WORKSPACE_CONTROL, createCcWorkspaceSelection } from './CcWorkspacePicker.solid.tsx'
+import { createCcWorkspaceSelection } from './createCcWorkspaceSelection.solid.tsx'
 import { createCcSources } from './createCcSources.ts'
 import { CC_EDIT_TOOLBAR_IDS, createCcDragController } from './createCcDragController.ts'
 
@@ -80,12 +80,17 @@ export function SolidControlCenter() {
   const modeOptions = () => resolveModeOptionEntries(runtime(), mode()).map(item => item.id)
   // 播种优先级（原样保留）：会话活跃模型 > 活跃档案声明。
   const profileModel = () => runtime().activeModel || sources.activeProfileModel()
-  const emptyVisual = () => !input().sessionId || sessionEntering()
+  // ★ CC-28 拆词：「空态」混过的两件事就此分开——
+  //   `hasNoSession` = 会话真值（没有会话）；进场中沿用 `sessionEntering()` 信号（会话建好那一刻起 360ms）。
+  //   名单门与草稿态只认 `hasNoSession`（进场期有会话 ⇒ 元件在场、走实值，2026-10-04 拍板）；
+  //   `emptyVisual` 保留为两者的组合，只服务**视觉挂载**（`is-empty` 类 / 状态行门户），条件一概不变。
+  const hasNoSession = () => !input().sessionId
+  const emptyVisual = () => hasNoSession() || sessionEntering()
 
-  // ── 空态工作区段（选择 / 创建，见 CcWorkspacePicker.solid.tsx）───────────────
+  // ── 空态工作区**绑定模型**（#266 CC-27+28：选择器 UI 壳已删；预选 + 侧栏 new-session
+  //    意图仍由模型承载，见 createCcWorkspaceSelection.solid.tsx）──────────────────
   const workspaceSelection = createCcWorkspaceSelection({
     workspaces: sources.workspaces,
-    createWorkspace: sources.createWorkspace,
     onError: setSubmitError,
   })
   const workspaceId = workspaceSelection.value
@@ -156,8 +161,9 @@ export function SolidControlCenter() {
     isEmpty,
     cliHintMode: appearance().cliHintMode,
   })
-  /** 眼下生效的那一份（门 = `emptyVisual()`，含"正在进场"那一段）—— 画布在场判据与 chip 的 `＋/●` 用它。 */
-  const hiddenWidgetIds = () => hiddenWidgetIdsFor(emptyVisual())
+  /** 眼下生效的那一份（门 = `hasNoSession()`：★ CC-28 拆词——进场那 360ms **有会话**，名单不再生效
+   *  ⇒ 元件在场，2026-10-04 拍板）—— 画布在场判据与 chip 的 `＋/●` 用它。 */
+  const hiddenWidgetIds = () => hiddenWidgetIdsFor(hasNoSession())
   // ★ #266 ⑰：谓词的上下文只剩「隐藏名单（生效的那份切面）」——元件的行上不再有显隐申明，
   //   也不再按运行期条件（有没有会话 / 输入模式 / 详细档）判明。
   //   ★ #266 刀1：编辑态豁免已撤 ⇒ 上下文里不再有编辑态这一项。
@@ -335,18 +341,19 @@ export function SolidControlCenter() {
         </span>
       }
       case 'model':
+        // ★ CC-28 拆词：草稿态只认「无会话」——进场期（有会话）走实值。
         return <SolidModelWidget
-          draftValue={emptyVisual() ? modelId : undefined}
-          onDraftChange={emptyVisual() ? setModelId : undefined}
-          forceDropdown={emptyVisual()}
+          draftValue={hasNoSession() ? modelId : undefined}
+          onDraftChange={hasNoSession() ? setModelId : undefined}
+          forceDropdown={hasNoSession()}
         />
       case 'reasoning':
-        return <SolidReasoningWidget draftValue={emptyVisual() ? reasoningLevel : undefined} onDraftChange={emptyVisual() ? setReasoningLevel : undefined} />
+        return <SolidReasoningWidget draftValue={hasNoSession() ? reasoningLevel : undefined} onDraftChange={hasNoSession() ? setReasoningLevel : undefined} />
       case 'mode':
         return <SolidModeWidget
-          draftValue={emptyVisual() ? mode : undefined}
-          onDraftChange={emptyVisual() ? setMode : undefined}
-          forceDropdown={emptyVisual()}
+          draftValue={hasNoSession() ? mode : undefined}
+          onDraftChange={hasNoSession() ? setMode : undefined}
+          forceDropdown={hasNoSession()}
         />
       case 'cc-command-hint':
         // ★ #238 刀5B：命令行提示从「裸渲染」升格为表里的普通行内元件（本分支就是它的渲染实现）。
@@ -543,7 +550,7 @@ export function SolidControlCenter() {
           （原 peri 分支的 `.cc-footer-peri` 包装 div 与相关 CSS 一并退场）。
           元件位置不新增任何机制：仍由定义表的 layout 声明 + 区域预设记的值决定。 */}
       <div class="cc-input-slot"><For each={idsForLanding(INPUT_LANDING)}>{renderWidget}</For></div>
-      <div class="cc-status-row"><Show when={SHOW_EMPTY_WORKSPACE_CONTROL && emptyVisual()}><CcWorkspacePicker selection={workspaceSelection} workspaces={sources.workspaces} disabled={submitting()} /></Show><Show when={statusRowContent()}>{statusGroup()}</Show></div>
+      <div class="cc-status-row"><Show when={statusRowContent()}>{statusGroup()}</Show></div>
     </div>
   </div>
   {/* ★★ #266 刀5：编辑清单 = **左侧一列**（一列到底 · 行内展开），替换刀4 的底部横栏 + 独立属性面板。

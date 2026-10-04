@@ -1,7 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from 'solid-js'
 import { appClients } from '../../app/appClients.ts'
-import { open } from '@tauri-apps/plugin-dialog'
 import type { Session } from '../../domains/identity/identityStore.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../domains/runtime/runtimeStore.ts'
@@ -276,14 +275,6 @@ export default function AgentRendererSuiteWorkbench(props: AgentRendererSuiteWor
       disposed = true
       unsubscribe()
     })
-  })
-  onMount(() => {
-    const pickWorkspaceFolder = async () => {
-      const selected = await open({ directory: true, multiple: false, title: '选择工作区文件夹' })
-      if (typeof selected === 'string') window.dispatchEvent(new CustomEvent('pylon:workspace-folder-picked', { detail: { path: selected } }))
-    }
-    window.addEventListener('pylon:pick-workspace-folder', pickWorkspaceFolder)
-    onCleanup(() => window.removeEventListener('pylon:pick-workspace-folder', pickWorkspaceFolder))
   })
   // React.StrictMode intentionally runs effect cleanup/setup once during the
   // initial dev mount. Destroying the mutable Workbench runtime in that probe

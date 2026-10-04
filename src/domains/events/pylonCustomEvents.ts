@@ -21,11 +21,9 @@ export interface PylonCustomEventDetailMap {
     agentId?: string
     pluginPageId?: string
   } | undefined
-  'pylon:pick-workspace-folder': undefined
   'pylon:runtime-error': unknown
   'pylon:solid-input-send': undefined
   'pylon:tasks-toggle': undefined
-  'pylon:workspace-folder-picked': { path: string }
 }
 
 export type PylonCustomEventName = keyof PylonCustomEventDetailMap
@@ -42,11 +40,9 @@ export const PYLON_CUSTOM_EVENT_NAMES: readonly PylonCustomEventName[] = [
   'pylon:new-session',
   'pylon:open-runtime-sheet',
   'pylon:open-settings',
-  'pylon:pick-workspace-folder',
   'pylon:runtime-error',
   'pylon:solid-input-send',
   'pylon:tasks-toggle',
-  'pylon:workspace-folder-picked',
 ]
 
 const PYLON_CUSTOM_EVENT_NAME_SET = new Set<string>(PYLON_CUSTOM_EVENT_NAMES)
