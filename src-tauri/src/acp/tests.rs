@@ -67,6 +67,9 @@ fn acp_kind_classification_is_stable() {
 #[test]
 fn disconnected_client_is_not_marked_as_crashed() {
     assert!(!AcpClient::disconnected().is_crashed());
+    // #451：占位即死连接——is_dead() 如实为 true（发送路径「无主 Crashed」
+    // 接管触发集据此识别全新 runtime 的预算超时残留）。
+    assert!(AcpClient::disconnected().is_dead());
 }
 
 #[tokio::test]

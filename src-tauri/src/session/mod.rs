@@ -8,7 +8,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::acp::{self, PromptWaitOutcome};
-use crate::agent::runtime::{session_mapping_matches, AgentLifecycleStatus, AgentRuntimeState};
+use crate::agent::runtime::{
+    session_mapping_matches, AgentLifecycleStatus, AgentRuntimeState, SessionContinuity,
+};
 use crate::agent_config::AgentDef;
 use crate::error::PylonError;
 use crate::gateway::GatewayCore;
@@ -545,18 +547,37 @@ impl AppState {
         .await
     }
 
-    /// #379：GUI 发送/建会话前懒重连——runtime 处于 `Disconnected` 时先重建连接。
+    /// #379：GUI 发送/建会话前懒重连；#451：触发集放宽，接管「无主 Crashed」。
     /// 与平台侧 [`Self::ensure_runtime_ready`] 同形（首查 → agent_lifecycle 串行 →
-    /// 锁后复查 → do_connect_and_replace），三处差异（issue #379 拍板）：
-    /// 1. 只认 `Disconnected`——`Crashed` 不抢 `crash_reconnect` 的退避重连
-    ///    （发送路径既有 `is_crashed → AgentCrashed` 早退语义不变）；
-    /// 2. `announce=true`——重建期间三灯显示 connecting，失败回落 Disconnected +
-    ///    `lastError` 如实播报并上抛（前端既有拒绝面：回滚乐观行 + 错误提示）；
-    /// 3. `log_action="send"`——runtime 日志溯源区分于 platform-ingest。
+    /// 锁后复查 → do_connect_and_replace），重建判据见
+    /// [`Self::send_path_rebuild_continuity`]，三分支：
+    /// 1. `Disconnected`：既有 #379 懒重连（回收/主动停止后重建）；
+    /// 2. `Crashed ∧ ¬auto_reconnect_active ∧ acp.is_dead()`：#451 接管——
+    ///    connect 总预算超时（#421）只播报 Crashed、无崩溃通知，自动重连
+    ///    （唯一入口是崩溃通知）与旧触发集都不接手，第二次发送将硬错误
+    ///    `ConnectionClosed`。防重入标志区分「有主」（退避循环在途，让路，
+    ///    发送命中既有 `is_crashed → AgentCrashed` 早退）与「无主」（超时残留
+    ///    / 自动重连放弃残留，接管）；`is_dead()` 闸保住「手动重连超时但旧
+    ///    client 还活着」变体（活连接不杀，发送照走既有路径）。占位 client
+    ///    构造即 stopped（#451，`AcpClient::disconnected`），全新 runtime 的
+    ///    超时残留同样命中；
+    /// 3. 其余（Connected/Connecting/Reconnecting 在途，或 Crashed 有主）→ 放行。
     ///
-    /// 会话映射：continuity=Invalidated（主动停止/回收后 agent 子进程已死，远端
-    /// 会话必亡，不做 probe）——重连后 ensure_session_mapping 按 `known_peri_id`
-    /// 走 session/load 复活，失败回退 session/new（既有语义，无额外前置）。
+    /// 与 #379 拍板一致处保持不变：`announce=true`——重建期间三灯显示
+    /// connecting，失败回落 + `lastError` 如实播报并上抛（前端既有拒绝面：
+    /// 回滚乐观行 + 错误提示）；`log_action="send"`——runtime 日志溯源区分于
+    /// platform-ingest。锁序不变：仍只跨 await 持 agent_lifecycle；且拿到锁后
+    /// 的复查同时重读状态、防重入标志与 is_dead——崩溃通知入口
+    /// `CrashReconnectHandler::handle` 的 `swap(true)` 不经 agent_lifecycle，
+    /// 锁后重读标志是「恰好一个连接权威」的关键：要么本路径读到标志让路，
+    /// 要么自动重连循环的 P2-1 复查（其拿锁后 status≠Crashed）看到本路径
+    /// announce 的 Connecting 而放弃。
+    ///
+    /// 会话映射：`Disconnected` → continuity=Invalidated（主动停止/回收后
+    /// agent 子进程已死，远端会话必亡，不做 probe）；`Crashed` 接管 →
+    /// Unknown（镜像平台侧与自动重连对 Crashed 的先例：旧映射进 Probing
+    /// 有界验证，死会话自动回退 session/new）。两者重连后均按 `known_peri_id`
+    /// 走 session/load 复活，失败回退 session/new。
     /// agent_id=None：不接管 active_agent（owner 路由的非 active runtime 不抢位）。
     /// 调用点必须在 prompt 锁 / prompt_gate / session_creation 获取之前
     /// （无锁序反转；LifecycleOp 状态机表见 lifecycle/mod.rs 模块文档）。
@@ -567,16 +588,10 @@ impl AppState {
         agent_id: &str,
         window: &tauri::Window<R>,
     ) -> Result<(), String> {
-        let status = runtime
-            .agent_runtime
-            .lock()
-            .map(|s| s.status)
-            .unwrap_or(AgentLifecycleStatus::Disconnected);
-        // 只认 Disconnected：Connected/Connecting/Reconnecting = 可用或在途；
-        // Crashed = 交给 crash_reconnect 自动重连 + 既有 AgentCrashed 早退。
-        if !matches!(status, AgentLifecycleStatus::Disconnected) {
+        // 首查（快速门）：判据在拿锁前后各跑一次，此处竞态由锁后复查吸收。
+        let Some(_) = Self::send_path_rebuild_continuity(runtime).await else {
             return Ok(());
-        }
+        };
         let agent = self
             .agents
             .lock()
@@ -585,15 +600,11 @@ impl AppState {
             .cloned()
             .ok_or_else(|| format!("unknown agent: {agent_id}"))?;
         let _lifecycle_guard = HeldAcrossAwait::new(runtime.agent_lifecycle.lock().await);
-        // 双检查：拿到生命周期锁后重查（并发连接/自动重连已推进状态则让路）
-        let status = runtime
-            .agent_runtime
-            .lock()
-            .map(|s| s.status)
-            .unwrap_or(AgentLifecycleStatus::Disconnected);
-        if !matches!(status, AgentLifecycleStatus::Disconnected) {
+        // 双检查：拿到生命周期锁后重查——状态、防重入标志、is_dead 全部重读
+        // （并发连接/自动重连已推进则让路；见函数 doc「恰好一个连接权威」）。
+        let Some(continuity) = Self::send_path_rebuild_continuity(runtime).await else {
             return Ok(());
-        }
+        };
         let handles = AppStateHandles::from_state(self);
         crate::lifecycle::do_connect_and_replace(
             &handles,
@@ -603,10 +614,40 @@ impl AppState {
             None,
             AgentLifecycleStatus::Connecting,
             "send",
-            crate::agent::runtime::SessionContinuity::Invalidated,
+            continuity,
             true,
         )
         .await
+    }
+
+    /// #451：发送路径重建判据——返回 `Some(continuity)` 表示应重建（continuity
+    /// 随判据带出：`Disconnected` → Invalidated，「无主 Crashed」接管 →
+    /// Unknown，镜像平台侧 [`Self::ensure_runtime_ready`] 与自动重连对
+    /// Crashed 的先例），`None` 表示放行。
+    /// 三次读取（状态 → 防重入标志 → acp 标志）各自短暂持锁、不构成复合
+    /// 原子读：本函数在首查处作快速门，竞态由 agent_lifecycle 锁后的复查
+    /// 吸收；复查持锁期间自动重连循环无法进入其 P2-1 拿锁复查段（见
+    /// [`Self::ensure_connected_for_send`] doc）。
+    async fn send_path_rebuild_continuity(runtime: &AgentRuntime) -> Option<SessionContinuity> {
+        let status = runtime
+            .agent_runtime
+            .lock()
+            .map(|s| s.status)
+            .unwrap_or(AgentLifecycleStatus::Disconnected);
+        if matches!(status, AgentLifecycleStatus::Disconnected) {
+            return Some(SessionContinuity::Invalidated);
+        }
+        if !matches!(status, AgentLifecycleStatus::Crashed) {
+            return None;
+        }
+        // Crashed：有主（退避循环在途）让路；无主再验 acp 确已死。
+        if runtime.auto_reconnect_active.load(Ordering::Acquire) {
+            return None;
+        }
+        if !runtime.snapshot_acp().is_dead() {
+            return None;
+        }
+        Some(SessionContinuity::Unknown)
     }
 }
 
