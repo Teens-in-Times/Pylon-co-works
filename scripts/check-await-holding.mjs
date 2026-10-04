@@ -28,13 +28,14 @@ const INVENTORY = new Map([
   ['src-tauri/src/gateway/instance.rs', 5], // use + lifecycle_lock：实例 start/restart/stop/remove 整体串行
   ['src-tauri/src/gateway/qq/auth.rs', 3], // use + refresh_lock 单飞（生产 + 单飞语义测试本体）
   ['src-tauri/src/lifecycle/config_cmds.rs', 4], // use + agent_lifecycle（reload）+ config_write_lock ×2（写序事务）
-  ['src-tauri/src/lifecycle/mod.rs', 7], // use + switch_lock → agent_lifecycle（switch/reconnect/restart 状态机 ×6 守卫）
+  ['src-tauri/src/lifecycle/mod.rs', 9], // use + switch_lock → agent_lifecycle（switch/reconnect/restart 状态机 ×6 守卫）+ #451 预算注入锁（测试）
   ['src-tauri/src/pet/cmds.rs', 2], // use + pet_write_lock：写盘串行
   ['src-tauri/src/plugin_cmds/transaction.rs', 2], // use + 插件写事务锁：install/uninstall 整体串行
   ['src-tauri/src/session/control.rs', 4], // use + session_creation（close/create 串行）+ acp 锁内 cancel ×2
   ['src-tauri/src/session/create/mod.rs', 3], // use + session_creation：建立序列整体串行 ×2（#486 项3 自 create.rs 拆分随迁）
   ['src-tauri/src/session/persist/load.rs', 2], // use + session_creation：load/恢复串行（#486 项3 自 persist.rs 拆分随迁）
   ['src-tauri/src/session/mod.rs', 3], // use + agent_lifecycle：双检查懒连接 ×2
+  ['src-tauri/src/session/lazy_reconnect_tests.rs', 2], // #451：connect_budget_override.INJECTION_LOCK（hang 测试注入互斥，跨 await 有意持有）
   ['src-tauri/src/session/prompt/wait.rs', 4], // use + prompt_lock + prompt_gate 单飞 + cancel 闭包 acp 锁
   ['src-tauri/src/session/session_expiry_platform_tests.rs', 2], // use + 测试本体持 prompt_gate
 ])

@@ -53,13 +53,18 @@ pub(crate) fn connect_budget_secs() -> u64 {
 }
 
 /// #421 测试注入缝：仅存在于本 crate 单测二进制。0 = 未注入（用默认常量）。
-/// 注入值只被 `connect_total_budget_cuts_hung_agent_and_converges_to_crashed`
-/// 一个测试消费（set/Drop-clear 成对），无并行竞争面。
+/// 消费者（set/Drop-clear 成对）**必须全程持有 [`connect_budget_override::INJECTION_LOCK`]**
+/// ——注入值是进程全局，hang 场景测试并行时 set/clear 会互相踩（#451 批次
+/// 实测：一方 clear 后另一方拿到 60s 预算，或对方「未注入」前置断言读到 2）。
 #[cfg(test)]
 pub(crate) mod connect_budget_override {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static OVERRIDE_SECS: AtomicU64 = AtomicU64::new(0);
+
+    /// 注入互斥：消费者测试在 set 前锁住，Drop guard 里随 clear 一起释放
+    /// （声明顺序：先锁后 RestoreBudget，逆序 drop 保证先清值再放锁）。
+    pub(crate) static INJECTION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     pub(crate) fn set(secs: u64) {
         OVERRIDE_SECS.store(secs, Ordering::Release);
