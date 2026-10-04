@@ -66,7 +66,7 @@ describe('C08 content.plan Solid base Slot', () => {
     expect(result.queryByRole('treeitem', { name: /已完成项/ })).toBeNull()
     expect(result.container.querySelector('.task-tree-status')?.textContent).toBe('•')
 
-    await fireEvent.click(result.getByRole('button', { name: '显示 1 个已完成任务' }))
+     fireEvent.click(result.getByRole('button', { name: '显示 1 个已完成任务' }))
     expect(result.getByRole('treeitem', { name: /已完成项/ })).toBeTruthy()
   })
 

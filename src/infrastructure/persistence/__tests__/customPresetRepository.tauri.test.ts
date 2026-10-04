@@ -190,7 +190,13 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     fakeInvoke.register('user_data_load', () => ({
       version: 1, revision: 4, payload: { version: 1, customPresets: [PRESET_B], zonePresetEntries: [] },
     }))
-    fakeInvoke.register('user_data_save', () => ({ revision: 5 }))
+    // 完成计数：handler 在延迟窗结束后才执行——「派发数==完成数」才是链排干的真终态
+    // （calls 在派发时即记录，链长配合标志判据存在 save#1 完成与 save#2 完成间的瞬态真窗，#545）
+    let completedSaves = 0
+    fakeInvoke.register('user_data_save', () => {
+      completedSaves += 1
+      return { revision: 5 }
+    })
     fakeInvoke.setDelay('user_data_save', 10)
     const { hydrateCustomPresetsFromBackend, useCustomPresetStore } = await load()
     useCustomPresetStore.setState({ customPresets: [PRESET_A as never], zonePresetEntries: [] })
@@ -201,10 +207,15 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     expect(fakeInvoke.calls.some(call => call.cmd === 'user_data_save')).toBe(true)
     useCustomPresetStore.setState({ customPresets: [PRESET_A as never, PRESET_B as never], zonePresetEntries: [] })
     await hydrating
-    // 排干链上重发之后的桥链接
-    await new Promise(resolve => globalThis.setTimeout(resolve, 30))
-    const saves = fakeInvoke.calls.filter(call => call.cmd === 'user_data_save')
-    expect(saves.length).toBeGreaterThanOrEqual(2)
+    // 排干链上重发之后的桥链接：条件等待，且以「未同步标志已清」为终态——
+    // 链尾最后一次保存成功才会清标志，仅等链长会把尾部副作用泄漏进下一用例（#545）
+    const saves = await vi.waitFor(() => {
+      const chain = fakeInvoke.calls.filter(call => call.cmd === 'user_data_save')
+      expect(chain.length).toBeGreaterThanOrEqual(2)
+      expect(completedSaves).toBe(chain.length)
+      expect(localStorage.getItem(FLAG_KEY)).toBeNull()
+      return chain
+    })
     const last = saves.at(-1)!.args as { payload: { customPresets: { id: string }[] } }
     expect(last.payload.customPresets.map(preset => preset.id)).toEqual(['custom-a', 'custom-b'])
     expect(localStorage.getItem(FLAG_KEY)).toBeNull()

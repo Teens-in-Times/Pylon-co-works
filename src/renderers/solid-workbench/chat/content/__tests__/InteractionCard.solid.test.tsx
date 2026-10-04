@@ -39,7 +39,7 @@ describe('C11 SolidInteractionCard', () => {
     // 危险选项 tabindex 后置
     expect(buttons[0]!.getAttribute('tabindex')).toBe('0')
     expect(buttons[1]!.getAttribute('tabindex')).toBe('2')
-    await buttons[0]!.click()
+     buttons[0]!.click()
     expect(execute).toHaveBeenCalledWith({
       type: 'interaction.respond', targetId: 'int-1', payload: { optionId: 'allow', expectedRevision: 1 },
     })
@@ -274,13 +274,13 @@ describe('C11 SolidInteractionCard', () => {
 
     expect(result.container.textContent).toContain('运行模式？')
     expect(result.container.textContent).toContain('影响范围？')
-    await (result.container.querySelector('input[value="safe"]') as HTMLInputElement).click()
-    await (result.container.querySelector('input[value="repo"]') as HTMLInputElement).click()
-    await (result.container.querySelector('input[value="docs"]') as HTMLInputElement).click()
+     ;(result.container.querySelector('input[value="safe"]') as HTMLInputElement).click()
+     ;(result.container.querySelector('input[value="repo"]') as HTMLInputElement).click()
+     ;(result.container.querySelector('input[value="docs"]') as HTMLInputElement).click()
     const freeform = result.container.querySelector('input[placeholder="补充范围"]') as HTMLInputElement
     fireEvent.input(freeform, { target: { value: '配置文件' } })
     const submit = [...result.container.querySelectorAll('button')].find(button => button.textContent === '提交回答')!
-    await submit.click()
+     submit.click()
 
     expect(execute).toHaveBeenCalledWith({
       type: 'interaction.respond', targetId: 'batch-1',

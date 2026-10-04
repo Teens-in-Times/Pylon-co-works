@@ -57,9 +57,9 @@ describe('C02 SolidFileReferenceCard', () => {
     )
     const buttons = [...result.container.querySelectorAll('button.term-file-action')] as HTMLButtonElement[]
     const byLabel = (label: string) => buttons.find(button => button.textContent === label)!
-    await byLabel('打开').click()
+     byLabel('打开').click()
     expect(open).toHaveBeenCalled()
-    await byLabel('复制路径').click()
+     byLabel('复制路径').click()
     expect(copyPath).toHaveBeenCalledWith('/a/b.txt')
     // reveal 未启用——disabled 且点击无效
     const reveal = byLabel('定位')
