@@ -43,7 +43,7 @@ describe('C01 ReasoningBlock states', () => {
     const button = result.getByRole('button')
     expect(button.textContent).toContain('2.4s')
     expect(button.getAttribute('aria-expanded')).toBe('false')
-    await fireEvent.click(button)
+     fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(result.container.textContent).toContain('已完成思考正文')
   })
@@ -70,7 +70,7 @@ describe('C01 ReasoningBlock states', () => {
   it('renders body via C00 MarkdownContent instead of a second pipeline', async () => {
     const result = row({ content: '# 标题思考\n\n- 要点**加粗**', running: false })
     const button = result.getByRole('button')
-    await fireEvent.click(button)
+     fireEvent.click(button)
     // MarkdownContent 异步解析，等待 h1 出现（复用 C00 语义标签，非纯文本行）。
     // 等待对象是 createResource 解析 + Solid 刷帧（微任务级）；统一冲刷预算见
     // solidTestHelpers 的 FLUSH_BUDGET。
@@ -137,7 +137,7 @@ describe('C01 ReasoningBlock states', () => {
     const button = result.getByRole('button')
     const reasoning = result.container.querySelector('.term-reasoning')!
     expect(button.getAttribute('aria-expanded')).toBe('false')
-    await fireEvent.click(button)
+     fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('true')
 
     setSnapshot({

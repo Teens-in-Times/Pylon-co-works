@@ -21,7 +21,7 @@ beforeEach(() => {
 
 async function importFreshStore() {
   vi.resetModules()
-  return await import('../settingsChromeStore.ts')
+  return import('../settingsChromeStore.ts')
 }
 
 describe('settingsChromeStore（A-V12 持久化收敛）', () => {

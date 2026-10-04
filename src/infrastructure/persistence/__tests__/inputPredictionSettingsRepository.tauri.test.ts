@@ -243,7 +243,13 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     fakeInvoke.register('user_data_load', () => ({
       version: 1, revision: 2, payload: { version: 1, mode: 'fork', enabled: true },
     }))
-    fakeInvoke.register('user_data_save', () => ({ revision: 9 }))
+    // 完成计数：handler 在延迟窗结束后才执行——「派发数==完成数」才是链排干的真终态
+    // （calls 在派发时即记录，链长配合标志判据存在 save#1 完成与 save#2 完成间的瞬态真窗，#545）
+    const completedSaves: unknown[] = []
+    fakeInvoke.register('user_data_save', args => {
+      completedSaves.push(args)
+      return { revision: 9 }
+    })
     fakeInvoke.setDelay('user_data_save', 10)
     const lost = { ...DEFAULT_INPUT_PREDICTION_SETTINGS, mode: 'off' as const, apiKey: 'sk-lost' }
     globalThis.localStorage.setItem(INPUT_PREDICTION_SETTINGS_KEY, JSON.stringify(lost))
@@ -254,9 +260,15 @@ describe('#463 前端 C-1：未同步标志对账', () => {
     expect(fakeInvoke.calls.some(call => call.cmd === 'user_data_save')).toBe(true)
     persistInputPredictionSettings({ ...DEFAULT_INPUT_PREDICTION_SETTINGS, mode: 'fork' as const, apiKey: 'sk-new' })
     await hydrating
-    await new Promise(resolve => globalThis.setTimeout(resolve, 30))
-    const saves = fakeInvoke.calls.filter(call => call.cmd === 'user_data_save')
-    expect(saves.length).toBeGreaterThanOrEqual(2)
+    // 排干链上重发之后的桥链接：条件等待，且以「未同步标志已清」为终态——
+    // 链尾最后一次保存成功才会清标志，仅等链长会把尾部副作用泄漏进下一用例（#545）
+    const saves = await vi.waitFor(() => {
+      const chain = fakeInvoke.calls.filter(call => call.cmd === 'user_data_save')
+      expect(chain.length).toBeGreaterThanOrEqual(2)
+      expect(completedSaves).toHaveLength(chain.length)
+      expect(globalThis.localStorage.getItem(UNSYNCED_FLAG_KEY)).toBeNull()
+      return chain
+    })
     expect((saves[0]!.args as { payload: { apiKey: string } }).payload.apiKey).toBe('sk-lost')
     expect((saves.at(-1)!.args as { payload: { apiKey: string } }).payload.apiKey).toBe('sk-new')
     expect(globalThis.localStorage.getItem(UNSYNCED_FLAG_KEY)).toBeNull()

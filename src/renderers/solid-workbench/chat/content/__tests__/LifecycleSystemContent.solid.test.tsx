@@ -42,7 +42,7 @@ describe('C13 lifecycle/system Solid base Slot', () => {
     expect(card).toHaveTextContent('上游限流')
     expect(result.container.querySelector('details.lifecycle-technical')).toHaveAttribute('open')
 
-    await fireEvent.click(result.getByRole('button', { name: '重试' }))
+     fireEvent.click(result.getByRole('button', { name: '重试' }))
     expect(execute).toHaveBeenCalledWith({ type: 'message.retry' })
   })
 
@@ -69,7 +69,7 @@ describe('C13 lifecycle/system Solid base Slot', () => {
     expect(card).toHaveTextContent('组件异常')
     expect(result.container.querySelector('details.lifecycle-technical')).not.toHaveAttribute('open')
 
-    await fireEvent.click(result.getByRole('button', { name: '重新加载插件' }))
+     fireEvent.click(result.getByRole('button', { name: '重新加载插件' }))
     expect(execute).toHaveBeenCalledWith({ type: 'session.recover', payload: { strategy: 'reload-plugin' } })
 
     const denied = render(() => <BuiltinSolidContentSlot

@@ -33,6 +33,7 @@ vi.mock('../markdownRenderModel.ts', async importOriginal => {
 import { MarkdownContent } from '../MarkdownContent.solid.tsx'
 import { clearMarkdownRenderModelCache, getMarkdownRenderModel } from '../markdownRenderModel.ts'
 import { markdownParseCounters, resetMarkdownParseCounters } from '../markdownParseCounters.ts'
+import { flushTask } from '../../../../test/solidTestHelpers.ts'
 
 beforeEach(() => {
   harness.calls.length = 0
@@ -118,7 +119,9 @@ describe('issue 148: 解析请求最新即胜（组件层）', () => {
 
     for (let end = 2; end <= full.length; end += 2) {
       setText(full.slice(0, end))
-      await new Promise(resolve => setTimeout(resolve, 5))
+      // 让出一个宏任务：判据是「解析任务启动时信号文本是否仍等于请求文本」，
+      // 只需 tick 分离，与真实毫秒数无关（#545：原先 5ms 真实休眠是过量预算）。
+      await flushTask()
     }
     await waitFor(() => expect(container.textContent).toContain('标记'))
 

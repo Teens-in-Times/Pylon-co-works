@@ -53,7 +53,7 @@ describe('SolidCodeBlock (C00)', () => {
     const firstFoldVisible = visibleLines()
 
     // 展开一步：增量有界（≤ maxLines + 1），仍处于折叠态
-    await fireEvent.click(result.getByRole('button', { name: /显示更多/ }))
+     fireEvent.click(result.getByRole('button', { name: /显示更多/ }))
     const afterOneStep = visibleLines()
     expect(afterOneStep).toBeGreaterThan(firstFoldVisible)
     expect(afterOneStep - firstFoldVisible).toBeLessThanOrEqual(52)
@@ -61,13 +61,13 @@ describe('SolidCodeBlock (C00)', () => {
     expect(foldedLines()).toBeGreaterThan(0)
 
     // 收起：回到默认折叠态
-    await fireEvent.click(result.getByRole('button', { name: '收起' }))
+     fireEvent.click(result.getByRole('button', { name: '收起' }))
     expect(visibleLines()).toBe(firstFoldVisible)
     expect(block.getAttribute('data-folded')).toBe('true')
 
     // 连续展开到底：可见行 = 全文行数、折叠提示消失、data-folded=false
     for (let step = 0; step < 12 && block.getAttribute('data-folded') === 'true'; step += 1) {
-      await fireEvent.click(result.getByRole('button', { name: /显示更多/ }))
+       fireEvent.click(result.getByRole('button', { name: /显示更多/ }))
     }
     expect(block.getAttribute('data-folded')).toBe('false')
     expect(visibleLines()).toBe(400)
@@ -80,7 +80,7 @@ describe('SolidCodeBlock (C00)', () => {
     let copiedText: string | undefined
     const result = render(() => <SolidCodeBlock code="hello" language="txt" onCopy={text => { copiedText = text }} />)
     const { fireEvent } = await import('@solidjs/testing-library')
-    await fireEvent.click(result.getByRole('button', { name: /复制/ }))
+     fireEvent.click(result.getByRole('button', { name: /复制/ }))
     expect(copiedText).toBe('hello')
     expect(result.getByRole('button', { name: '已复制' })).toBeTruthy()
   })
