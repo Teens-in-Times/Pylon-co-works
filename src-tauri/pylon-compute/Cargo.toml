@@ -1,6 +1,6 @@
 [package]
 name = "pylon-compute"
-version = "0.4.0-SLD"
+version = "0.4.1-XFN"
 edition = "2021"
 description = "Pylon 前端计算核（Rust/WASM）——issue #220"
 publish = false
