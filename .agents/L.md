@@ -1,5 +1,7 @@
 # L.md · 并行施工协调板
 
+- [kumo] **#548/#549 acp 锁面退役批（2026-10-04）**：域＝`src-tauri/pylon-acp/src/{client.rs,engine/mod.rs}`、`src-tauri/src/{runtime.rs,dispatcher/mod.rs,export.rs,permission.rs,acp/mod.rs,lifecycle/**,lib.rs,session/**}` 及其测试、`scripts/check-await-holding.mjs`、`docs/说明书/Pylon-模块维护地图.md`、`.agents/decisions/0037-*`。不碰前端与 #545 在途文件（cli/测试/decisions 0035/records 515）、不碰 `src-tauri/Cargo.toml`。
+
 - [kumo] **#545 前端 await 卫生批（2026-10-04）**：域＝`src/cli/{pylonCliDomainPorts,pylonCliService}.ts`（去 try 外 return await）＋ 9 个既有测试文件的时序原语替换（persistence 2 个 tauri 测试 vi.waitFor 化、issue148 帧节奏、appearance/settingsChromeStore、chat content 的 MediaBlock/InteractionCard/SubagentCard/TerminalBlock/WorkflowCard/TextBlocks 去 await 同步 click）。与 #520 收口批 L2 的 appearance 域**仅交叠 `settingsChromeStore.test.ts` 一处两字符改动**（去 `return await` 中 await）。不碰 `.agents/decisions/*`、`.agents/records/*`、vitest.setup、src-tauri。
 
 - [kumo] **#520 遗留收口批（2026-10-04）**：3 agent 并行。L1＝runtime store `resetAll` 更名收口（4 处生产调用点）+ `workspaceClient` deprecated string 形态退役 + 契约 Props 三处（messageRenderer deprecated mount 链、fileWorkbenchTypes、IsolatedPluginSurfaceProps）；L2＝appearance 双命令处理器等价守卫测试 + settings 诊断导出簇死面手术（rendererSettingsCatalog/settingsContributionCatalog/settingsDomains/configOptionState/mountSolidWorkbench）；L3＝canonicalEventFeed 注册环境守卫 + vitest.setup B 类白名单条目摘除。不 commit，主会话统一 pathspec；不碰 `src-tauri/**`。
