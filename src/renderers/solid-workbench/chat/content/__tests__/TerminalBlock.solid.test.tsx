@@ -106,7 +106,7 @@ describe('C07 SolidTerminalBlock', () => {
     const copy = vi.fn()
     const result = render(() => <SolidTerminalBlock part={terminalPart} actions={{ copy }} />)
     const button = [...result.container.querySelectorAll('button')].find(b => b.textContent === '复制')!
-     button.click()
+    button.click()
     expect(copy).toHaveBeenCalled()
     const copiedText = copy.mock.calls[0]![0] as string
     expect(copiedText).toContain('[err] warning: deprecated')
@@ -228,7 +228,7 @@ describe('C07 built-in content Slot', () => {
     />)
 
     expect(terminal.container.querySelector('.term-terminal-card')).not.toBeNull()
-     terminal.getByRole('button', { name: '复制' }).click()
+    terminal.getByRole('button', { name: '复制' }).click()
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({
       type: 'clipboard.write',
       payload: expect.objectContaining({ text: expect.stringContaining('[err] warning: deprecated') }),

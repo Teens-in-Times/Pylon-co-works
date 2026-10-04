@@ -114,7 +114,7 @@ describe('C06 diff and LSP built-in content Slot', () => {
       appearance={{}}
       commands={{ execute, canExecute: type => type === 'resource.open' }} />)
 
-     fireEvent.click(screen.getByRole('button', { name: '打开 /src/open.ts' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开 /src/open.ts' }))
     expect(execute).toHaveBeenCalledWith({ type: 'resource.open', payload: { path: '/src/open.ts' } })
     enabled.unmount()
 
@@ -169,7 +169,7 @@ describe('C06 diff and LSP built-in content Slot', () => {
     expect(card).toHaveTextContent('TS2345 · typescript')
     expect(card).toHaveTextContent('/src/app.ts:42:13–42:31')
     expect(screen.getByRole('list', { name: '关联诊断位置' })).toHaveTextContent('target declared here')
-     fireEvent.click(screen.getByRole('button', { name: '打开关联位置 /src/types.ts' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开关联位置 /src/types.ts' }))
     expect(execute).toHaveBeenCalledWith({
       type: 'resource.open', payload: { path: '/src/types.ts', range: { start: { line: 7, character: 0 } } },
     })

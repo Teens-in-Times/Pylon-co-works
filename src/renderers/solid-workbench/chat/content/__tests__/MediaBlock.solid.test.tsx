@@ -198,7 +198,7 @@ describe('C03 SolidMediaBlock', () => {
     const openButton = [...result.container.querySelectorAll('button')]
       .find(button => button.textContent === '打开外部链接') as HTMLButtonElement
     expect(openButton).toBeTruthy()
-     openButton.click()
+    openButton.click()
     expect(onOpenExternal).toHaveBeenCalledWith('https://cdn.example.com/a.png')
 
     // base64 来源没有"打开外部链接"

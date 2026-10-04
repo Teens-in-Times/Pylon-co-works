@@ -195,7 +195,7 @@ describe('SolidMessageRow', () => {
     // C01：label 从 chars 计数改为 duration 呈现
     const button = result.getByRole('button', { name: /Thought for 2\.4s/ })
     expect(button.getAttribute('aria-expanded')).toBe('false')
-     fireEvent.click(button)
+    fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     // 正文经 C00 MarkdownContent 异步渲染，等待出现。等待对象是 createResource
     // 解析 + Solid 刷帧（微任务级）；统一冲刷预算见 solidTestHelpers 的 FLUSH_BUDGET。
