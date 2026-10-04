@@ -1,5 +1,7 @@
 # L.md · 并行施工协调板
 
+- [kumo] **#451 无主 Crashed 发送路径接管（2026-10-05）**：域＝`src-tauri/pylon-acp/src/client.rs`（disconnected 占位 stopped=true）、`src-tauri/src/session/mod.rs`（ensure_connected_for_send 触发集+continuity）、`src-tauri/src/lifecycle/mod.rs`（模块文档表行）、`src-tauri/src/session/lazy_reconnect_tests.rs` 及相关新增测试、`.agents/records/451-*`。**与 #548/#549 域严重交叠（client.rs）——依 §2.1 隔离到独立 worktree（分支 `kumo/451-unowned-crashed`，基于 github/main）施工与提交，不碰共享树任何在途文件**，完工合并后撤条。
+
 - [kumo] **#548/#549 acp 锁面退役批（2026-10-04）**：域＝`src-tauri/pylon-acp/src/{client.rs,engine/mod.rs}`、`src-tauri/src/{runtime.rs,dispatcher/mod.rs,export.rs,permission.rs,acp/mod.rs,lifecycle/**,lib.rs,session/**}` 及其测试、`scripts/check-await-holding.mjs`、`docs/说明书/Pylon-模块维护地图.md`、`.agents/decisions/0037-*`。不碰前端与 #545 在途文件（cli/测试/decisions 0035/records 515）、不碰 `src-tauri/Cargo.toml`。
 
 - [kumo] **#520 遗留收口批（2026-10-04）**：3 agent 并行。L1＝runtime store `resetAll` 更名收口（4 处生产调用点）+ `workspaceClient` deprecated string 形态退役 + 契约 Props 三处（messageRenderer deprecated mount 链、fileWorkbenchTypes、IsolatedPluginSurfaceProps）；L2＝appearance 双命令处理器等价守卫测试 + settings 诊断导出簇死面手术（rendererSettingsCatalog/settingsContributionCatalog/settingsDomains/configOptionState/mountSolidWorkbench）；L3＝canonicalEventFeed 注册环境守卫 + vitest.setup B 类白名单条目摘除。不 commit，主会话统一 pathspec；不碰 `src-tauri/**`。
