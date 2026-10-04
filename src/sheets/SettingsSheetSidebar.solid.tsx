@@ -63,7 +63,11 @@ export default function SettingsSheetSidebar(props: WorkspaceViewProps<SettingsS
   const navigate = (partial: { domain?: SettingsDomainId; section?: SettingsSectionId; pluginPageId?: string | null; rendererCategoryId?: string | null }) => {
     useWorkspaceStore.getState().patchSheetState(props.sheet.id, normalizeSettingsSheetState({ ...props.state, ...partial }) as unknown as Record<string, unknown>)
   }
-  const activeDomainConfig = () => SETTINGS_DOMAIN_BY_ID[props.state.domain]
+  // domain → 域配置。兜底第一个域：state 经 slot 响应式 prop 到达，sheet kind 切换的
+  // 瞬间旧侧栏会先收到异 kind 的 state（无合法 domain）——map 直查得 undefined 会在
+  // JSX 求值期抛 TypeError，炸掉整个更新波（实测整层切栏失效 + 应用级崩溃屏），
+  // 必须在读取处收敛（#553）。
+  const activeDomainConfig = () => SETTINGS_DOMAIN_BY_ID[props.state.domain] ?? SETTINGS_DOMAINS[0]!
   // section → 二级项。链A 从 GROUP_ORDER[zone] 派生；无 zone 或 <2 项返回空（不显示箭头）。
   // ★ #266 CC-09：中控台的二级项取**元件名**（`GROUP_ORDER.cc` 的 `heading`，源头是元件定义表
   //   `CC_WIDGET_GROUPS` 的行 label）—— 原先取 `block.groups`（子部件名）会把「中控本体面 /
