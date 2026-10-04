@@ -43,7 +43,6 @@ describe('主题设置展示文案契约', () => {
 
   it('关键枚举保留稳定值，并为每个值提供人类可读名称', () => {
     const expectedOptions = {
-      inputShowHistoryHint: ['shown', 'hidden'],
       inputSubmitButtonMode: ['inline', 'external', 'hidden'],
       cliHintMode: ['hidden', 'compact', 'full'],
       modelSwitchMode: ['menu', 'cycle'],
@@ -52,6 +51,8 @@ describe('主题设置展示文案契约', () => {
       //   **自由选色**（`type: 'color'`，无 options）⇒ 不再属于「关键枚举」这一组。
       // ★ #266 CC-07：`inputShowPlaceholder` / `sendVariant` 两字段真的删除 ⇒ 样本同步移除。
       // ★ #266 刀9~11：`inputMode` / `footerLayout` / `cliOverflowMode` 三字段真的删除 ⇒ 同步移除。
+      // ★ #266 CC-08：`inputShowHistoryHint` 字段仍在，但由 shown/hidden 枚举归布尔
+      //   （`type: 'boolean'`，无 options）⇒ 不再属于「关键枚举」这一组。
     } as const
 
     for (const [key, options] of Object.entries(expectedOptions)) {

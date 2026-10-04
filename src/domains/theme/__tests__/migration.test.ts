@@ -2,7 +2,7 @@
 // ★ #266 刀9：`themeDomainMigrate` 的 `inputVariant↔inputMode` 联动用例已随字段删除退场。
 //   #448 PR5 起该函数重新入列（钉住「预设字段不进最终 migrate 输出」的拆分契约）。
 import { describe, expect, it } from 'vitest'
-import { normalizeThemeMigrationState, themeDomainMigrate } from '../migration.ts'
+import { alignThemeStructure, normalizeThemeMigrationState, themeDomainMigrate } from '../migration.ts'
 import { DEFAULT_CC_LAYOUT } from '../../cc/ccLayoutState.ts'
 import { GLOBAL_PRESETS } from '../presets/index.ts'
 import { effectivePresetTheme } from '../zones/index.ts'
@@ -124,5 +124,16 @@ describe('legacy cc 布局状态迁移（废弃键删除 + v3 归一）', () => 
     expect(migrated).not.toHaveProperty('ccCliCustomized')
     expect(migrated).not.toHaveProperty('ccLayoutVersion')
     expect((migrated.ccLayout as { version: number }).version).toBe(CC_LAYOUT_SCHEMA_VERSION)
+  })
+})
+
+// ★ #266 CC-08：字段已归布尔，老数据里存过的枚举值读盘时必须纠偏
+// （兼容行先于通用归一化落定，否则 'hidden' 会被通用 pass 的 boolean case 兜成 default true）。
+describe('inputShowHistoryHint 布尔化：老枚举值读盘纠偏', () => {
+  it('hidden → false；shown → true；布尔值原样保留', () => {
+    expect(alignThemeStructure({ inputShowHistoryHint: 'hidden' }, defaults).inputShowHistoryHint).toBe(false)
+    expect(alignThemeStructure({ inputShowHistoryHint: 'shown' }, defaults).inputShowHistoryHint).toBe(true)
+    expect(alignThemeStructure({ inputShowHistoryHint: false }, defaults).inputShowHistoryHint).toBe(false)
+    expect(alignThemeStructure({ inputShowHistoryHint: true }, defaults).inputShowHistoryHint).toBe(true)
   })
 })
