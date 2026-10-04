@@ -3,8 +3,8 @@
 ## 元信息
 
 - issue：Teens-in-Times/Pylon-co-works#556（enhancement，方向裁决见 issue 正文）
-- 分支：**Pylon 侧零代码改动**（本记录与本仓 coord 文件是仅有的本仓提交）；代码在**仓外独立仓** `G:\Project\prism-team-workdir\prometheus`（本地 git 仓，8 提交，GitHub 推送待维护者定）
-- 提交范围（新仓）：`c636b35..8f023e2`（main）
+- 分支：**Pylon 侧零代码改动**（本记录与本仓 coord 文件是仅有的本仓提交）；代码在**仓外独立仓** https://github.com/Teens-in-Times/prometheus（私有，本地 `G:\Project\prism-team-workdir\prometheus`，main 已推送）
+- 提交范围（新仓）：`c636b35..9d00fc8`（main，含 ci.yml）
 - 日期：2026-10-05
 - 施工方式：主会话落契约 crate（prom-core）→ 4 子 agent 并行施工（prom-model / prom-tools / prom-store / prom-acp）→ 主会话集成 + 实机验收
 
@@ -86,10 +86,10 @@ Pylon 仓：无测试修改（零代码改动）。prometheus 新仓 203 测试�
 
 ## 未解问题
 
-1. **GitHub 建仓与推送**：本地仓就绪，名称/归属（Teens-in-Times/prometheus?）与时机待维护者裁决；PR 流程在新仓首推后补。
-2. **真 LLM 实弹验收**：需 API key（ANTHROPIC_API_KEY 或 OpenAI 兼容端点）；wire/流式/usage 已由 mock LLM 实机 + fixture 单测覆盖，key 就位后建议跑一轮真端点冒烟。
-3. **ADR-0038 细化默认值复核**：LLM 双原生 / SQLite / 两档权限 / 零私有 caps / TOML 配置均按推荐默认执行（维护者 Ask 未回），可在 ADR 上批注改判，改动面均已模块化。
-4. **Pylon 侧发现（不改本仓代码，另行登记）**：前端时间轴把官方 `current_mode_update` 渲染成「未识别的 current_mode_update 事件」（`wireSemanticCorrespondence.ts` 标准变体表无此键；后端 `dispatcher/reactions.rs` 有消费）。已登记 issue。
+1. **GitHub 建仓推送**：✅ 已完成——`Teens-in-Times/prometheus`（私有，main 已推送，CI：windows 测试+clippy+fmt / ubuntu 测试兼验 unix 分支）。维护者追认授权（2026-10-05「裁决项按照推荐来」）。
+2. **真 LLM 实弹验收**：部分达成——本机 Claude 网关凭证（ANTHROPIC_AUTH_TOKEN + 127.0.0.1:18080）存在但网关进程未运行，transport 连接失败；**重试链路因此获得真实验证**（6 次尝试、指数退避 4.4s→9.9s→17.4s→RetryExhausted→engine model_error stop→宿主 -32603，行为与设计逐项一致）。真回合冒烟脚本已备好（`D:\pylon-tmp\prom-smoke\real_smoke.mjs`，凭证只进环境变量），网关在线时可直接复跑。
+3. **ADR-0038 细化默认值**：✅ 维护者追认按推荐执行（LLM 双原生 / SQLite / 两档权限 / 零私有 caps / TOML 配置），ADR 状态行已更新。
+4. **Pylon 侧发现（不改本仓代码，另行登记）**：前端时间轴把官方 `current_mode_update` 渲染成「未识别的 current_mode_update 事件」（`wireSemanticCorrespondence.ts` 标准变体表无此键；后端 `dispatcher/reactions.rs` 有消费）。已登记 #557。
 
 ## 并行交集
 

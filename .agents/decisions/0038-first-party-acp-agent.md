@@ -1,7 +1,7 @@
 # ADR-0038 一等自研 ACP 编码 agent（prometheus，独立仓）
 
 - **日期**：2026-10-05
-- **状态**：已采用（方向裁决于 issue #556 由维护者确认；实现细化默认值见「决定」节，标注待复核项）
+- **状态**：已采用（方向裁决于 issue #556 由维护者确认；实现细化默认值经维护者 2026-10-05 追认：「裁决项按照推荐来」，下表「待复核」标注解除）
 
 ## 背景与约束
 
@@ -29,15 +29,15 @@ prom-core（零 IO 契约：Model/BaseTool/ThreadStore trait、EngineEvent、Set
 └── prom-acp      官方 SDK Agent::builder + Stdio、ReAct 引擎、审批 broker、bin
 ```
 
-实现细化默认值（**维护者 Ask 未回，按推荐默认执行，均可在 ADR 批注改判**；模块化实现，改判成本低）：
+实现细化默认值（维护者 2026-10-05 追认按推荐执行；模块化实现，后续改判成本低）：
 
 | 项 | 采纳值 |
 | --- | --- |
-| LLM 抽象 | 双原生 + 手写 SSE，零 LLM SDK（待复核） |
-| 持久化 | SQLite rusqlite(bundled)，threads+messages 两表（待复核） |
-| 权限档位 | 两档 Default/Bypass，经官方 configOptions/modes 呈现（待复核） |
-| 私有 caps | v1 零私有 caps——title/usage/回放全走官方 schema；PeriCaps 式 fail-closed 框架预留空载（待复核） |
-| 配置形状 | TOML 单文件 + API key 环境变量优先（待复核） |
+| LLM 抽象 | 双原生 + 手写 SSE，零 LLM SDK |
+| 持久化 | SQLite rusqlite(bundled)，threads+messages 两表 |
+| 权限档位 | 两档 Default/Bypass，经官方 configOptions/modes 呈现 |
+| 私有 caps | v1 零私有 caps——title/usage/回放全走官方 schema；PeriCaps 式 fail-closed 框架预留空载 |
+| 配置形状 | TOML 单文件 + API key 环境变量优先 |
 | Pylon 耦合 | 零依赖（官方 ACP crate 足够；issue 仅约束「若有耦合只能指向纯库 crate」） |
 |ACP 版本钉 | `agent-client-protocol =2.2.0` / `agent-client-protocol-schema =1.9.1` 与宿主逐字节对齐 |
 
