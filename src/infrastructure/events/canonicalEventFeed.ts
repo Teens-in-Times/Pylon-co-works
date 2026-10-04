@@ -328,10 +328,13 @@ export function createCanonicalEventFeed(): CanonicalEventFeed {
   }
 
   // 两条广播兜底都依赖 Tauri 事件宿主（`listen` 需要 window + __TAURI_INTERNALS__）。
-  // node 纯单元环境（无 window）里注册必然失败且失败只化为噪音上报（#228 B 类
-  // console.error 的根因），故按环境守卫静默跳过；浏览器/Tauri 环境 window 恒在，
-  // 守卫不改变任何行为。
-  if (typeof window !== 'undefined') {
+  // 非 Tauri 环境里注册必然失败且失败只化为噪音上报（#228 B 类 console.error 的
+  // 根因），故按环境守卫静默跳过。守卫用探测单点 IS_TAURI 而非裸判 window：
+  // jsdom（solid-dom 测试项目）有 window 无 Tauri，裸判会穿过守卫 → listen 内部
+  // transformCallback undefined → reject → reportRuntimeError，报错被测试看门狗
+  // 记到「当次在跑的测试文件」头上，背锅者随 worker 调度漂移（#542）。
+  // 与本文件 subscribeWindowTerminalFrames/subscribeTurnSettled 的守卫同形。
+  if (IS_TAURI) {
     // B1：user echo 后端已 Channel 优先（send_update_frame 单轨）；本广播兜底
     // 服务未注册 Channel 的来源（平台 ingest / 非 Tauri 环境）。feed 为应用级
     // 单例，监听随 feed 生命周期注册一次；失败仅上报（Channel 主轨不受影响）。
