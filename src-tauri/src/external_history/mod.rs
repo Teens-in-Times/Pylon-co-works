@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use pylon_agent_history::{ClaudeCodeParser, ExternalHistoryParser, ExternalSessionSummary};
-use pylon_session::owner::DurableSessionOwner;
 use pylon_session::event_repo::{EventService, ExternalHistoryImportResult};
+use pylon_session::owner::DurableSessionOwner;
 use serde::Serialize;
 
 use crate::error::PylonError;
@@ -31,8 +31,8 @@ fn parser() -> ClaudeCodeParser {
 }
 
 fn projects_root() -> Result<PathBuf, PylonError> {
-    let home = home_dir()
-        .ok_or_else(|| PylonError::Protocol("home directory unavailable".into()))?;
+    let home =
+        home_dir().ok_or_else(|| PylonError::Protocol("home directory unavailable".into()))?;
     Ok(home.join(pylon_agent_history::CLAUDE_CODE_PROJECTS_DIR))
 }
 
@@ -65,8 +65,7 @@ pub(crate) async fn external_history_import(
     external_ids: Option<Vec<String>>,
     force: bool,
 ) -> Result<Vec<SessionImportOutcome>, PylonError> {
-    let service = crate::session::event_service_of(state.inner())
-        .map_err(PylonError::from)?;
+    let service = crate::session::event_service_of(state.inner()).map_err(PylonError::from)?;
     let root = projects_root()?;
     let summaries = tokio::task::spawn_blocking(move || parser().discover(&root))
         .await
@@ -133,9 +132,8 @@ async fn import_one(
         );
         break;
     }
-    let result = result.ok_or_else(|| {
-        PylonError::Protocol("no free journal slot for external import".into())
-    })?;
+    let result = result
+        .ok_or_else(|| PylonError::Protocol("no free journal slot for external import".into()))?;
     Ok(SessionImportOutcome {
         external_id: summary.external_id.clone(),
         title: summary.title.clone(),
