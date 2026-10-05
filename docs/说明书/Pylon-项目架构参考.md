@@ -244,6 +244,8 @@ GUI 创建、恢复和发送链路会把 `profileId` 送入 Rust runtime 的 `Se
 
 ### 8.3 Workbench 绑定与流式稳定性 seam
 
+Canonical 行读取显式区分解析成功与失败（`readWorkbenchRow`）：成功可以产生零条 Workbench 事件，例如 Peri 的 `goal_snapshot` / `turn_committed` / `state_snapshot` 按 #405 策略不进入时间轴，原始数据仍保存在 journal。实时订阅、冷加载（含分页）和 refresh 只将读取失败计入 `canonical.journal.malformed`；`turn.unit` 内的静默段也遵循该规则。该诊断表示事件无法解析，与是否发生旧数据迁移无关（#563）。
+
 Workbench Renderer 的显示事实源是 `Workbench Runtime` 当前文档；P52 后 `chatEventController` 已删除，canonical committed row 的唯一前端入口是应用级单例 `canonicalEventFeed`（cursor/gap 回填/去重与 durable-before-project 发布），`agentWorkbenchSession` 经 pluginEventBus 消费行投影，并以 TurnClock 作为按 source 隔离的唯一生成时钟（终帧信号直接收敛 TurnClock 终态：主轨是 feed 的 onTerminal，另有 `subscribeWindowTerminalFrames` 订阅 `pylon:done`/`pylon:error` 窗口广播作兜底轨——两条路共用同一信号构造，重复投递由 TurnClock 幂等吸收，终态收敛因此不单点依赖 per-source Channel 注册），不拥有第二份渲染历史。Session metadata 更新（标题、`lastReplyAt`、`periId`、workspace 路径）不得被当作文档身份变化。`workbenchSessionBindingKey` 只由 `(session.id, source, agentId, profileId)` 构成，`agentWorkbenchSession.bind` 对同一 key 幂等；因此终态事件不会因内核 store 的内部对象更新产生新 Session 对象而替换整份文档。需要真正重载时，使用显式 session/reload token seam，而不是依赖对象引用。
 
 终态 document 与 generation metadata 可能在同一事件中连续发布。显示层 `streamingDisplayScheduler` 对同一 owner/session 的 terminal transition 在微任务边界做 latest-wins 合并；结构性会话切换和显式 flush 仍同步。该合并只影响 Renderer 消费节奏，不改变 canonical journal、Workbench Runtime 事实或 legacy Adapter 的职责边界。
