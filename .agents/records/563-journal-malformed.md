@@ -4,6 +4,7 @@
 - issue：[#563](https://github.com/Teens-in-Times/Pylon-co-works/issues/563)
 - 分支：`codex/563-journal-malformed`，隔离 worktree `journal-malformed`
 - 基准：`eb94ae47`（开工 fetch 后的 `github/main`）
+- 实现与测试提交：`80ea8a5f`（协调声明：`26e9c57c`）
 - 日期：2026-10-05
 - 署名：Codex
 
@@ -42,6 +43,7 @@ Peri 的 `goal_snapshot` / `turn_committed` / `state_snapshot` 是已知簿记�
 - 相关 Vitest：3 files / 63 tests passed，exit 0（包含 Peri normalizer 既有静默策略测试）。
 - 全量 Vitest：667 files passed / 1 skipped，5217 tests passed / 1 skipped。`check:frontend` 随后在新分页 fixture 的类型推断处报 TS2322，已将原 helper 返回类型明确为 `CanonicalConversationEvent`；重新通过定向测试与完整 `check:frontend:static`（包含 tsc/build/包预算/docs 等），exit 0。未改动运行时行为以通过测试。
 - `check:solid`：exit 0（类型与全部 Solid/领域边界门禁）。
+- 新开发记录落地后补跑 `check:docs`：exit 0，文档链接检查 4 项通过，维护审计通过。
 - `bun run check:clippy`：exit 0；6 个受管 crate 的 `added:[]`（基线外新增诊断为 0）。`check-await-holding` 通过，17 文件 / 55 处 HeldAcrossAwait，裸 allow 0 处。初跑受新 worktree 缺少 `dist` 阻断（Tauri generate_context 的 frontendDist 前置），前端生产构建成功后重跑通过；Rust 源码零改动。
 - 自行复审：diff 与调用点核验，无残留旧行读取数组长度判定；`git diff --check` exit 0。未派发子 agent。
 - 未运行修复后二进制的真实 Agent 发送验收。此次改动为纯行读取结果分类与文案，不涉及 IPC、时序、布局或持久化写入；运行时行为测试与真实 journal 段重放覆盖错误判定 seam。已安装发行程序未替换。
