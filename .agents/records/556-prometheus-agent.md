@@ -4,7 +4,7 @@
 
 - issue：Teens-in-Times/Pylon-co-works#556（enhancement，方向裁决见 issue 正文）
 - 分支：**Pylon 侧零代码改动**（本记录与本仓 coord 文件是仅有的本仓提交）；代码在**仓外独立仓** https://github.com/Teens-in-Times/prometheus（私有，本地 `G:\Project\prism-team-workdir\prometheus`，main 已推送）
-- 提交范围（新仓）：`c636b35..9d00fc8`（main，含 ci.yml）
+- 提交范围（新仓）：`c636b35..0998c5a`（main，含 ci.yml 与 CI 首跑三修复）
 - 日期：2026-10-05
 - 施工方式：主会话落契约 crate（prom-core）→ 4 子 agent 并行施工（prom-model / prom-tools / prom-store / prom-acp）→ 主会话集成 + 实机验收
 
@@ -75,6 +75,12 @@ Pylon 仓：无测试修改（零代码改动）。prometheus 新仓 203 测试�
 1. **CJK 字节截断 panic**（`String::truncate(48)` 切多字节字符）：ASCII 单测全绿、中文首条消息即崩（`assertion failed: self.is_char_boundary`）。修：`prom_core::truncate_chars` 字符安全截断，prom-acp 三处 title 截断同批换用。
 2. **未知方法错误码 -32603 → -32601**：宿主 session/close 防御降级、session/list 探针按 -32601 判定。修：`Error::method_not_found()`。
 3. **标题取到宿主前言**：Pylon 把人格前言 + `---` + 用户输入拼同一文本块，标题变成「你是 XXX 助手…」。修：取最后一个分隔行之后文本。
+
+## CI 首跑揪出的缺陷（环境相关，均已修复；新仓 CI windows+ubuntu 双作业全绿）
+
+1. **golden 基线 CRLF**：无 `.gitattributes` 时全新 checkout 被 autocrlf 转 CRLF，逐字节比对必炸（CI windows 实证：仅 golden 挂，其余全绿）。修：`* text=auto eol=lf` + renormalize。
+2. **路径字面量比对 vs 8.3 短路径**：CI 的 tempfile 给长路径（`runneradmin`）、canonicalize 返回短路径（`RUNNER~1`）。生产裁决两侧同走 canonicalize 本就自洽，测试期望改为与实现同构的规范化管道（含 deverbatim）。
+3. **Linux zombie 挂死（最有价值的一个）**：SIGKILL 后直接子进程先变 zombie，含 zombie 的组 `kill(-pgid,0)` 返回 0 而非 ESRCH——bash 工具超时/取消路径的 `wait_for_exit` 纯轮询在 Linux 上无限循环（CI ubuntu 三个 run 全部 40–75 分钟挂死；本机 Windows 的 Job accounting 掩盖了它，Peri 移植的两条 unix 测试恰好先 reap 也未暴露）。修：`wait_for_exit(&mut Child)` 轮询里 `try_wait` 收尸；CI ubuntu 作业随即通过（热缓存 2m04s 全 run 绿）。另加作业级 timeout 护栏（windows 20m / ubuntu 30m）防挂死占满 6h 默认。
 
 ## 与 spec 的偏差
 
