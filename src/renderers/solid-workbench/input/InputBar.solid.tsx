@@ -52,7 +52,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
   const [attachments, setAttachments] = createSessionUiSignal<readonly WorkbenchAttachment[]>(workbench.sessionUi, sessionId, 'attachments', [])
   const [sendError, setSendError] = createSessionUiSignal(workbench.sessionUi, sessionId, 'input-error', '')
   const [queueSendingSessions, setQueueSendingSessions] = createSignal<ReadonlySet<string>>(new Set())
-  // #394：原生预测的消费标记（per-session）——接受/拒绝后 ghost 与卡片同时收敛。
+  // #394：原生预测的消费标记（per-session）——接受/拒绝后输入框 ghost 收敛。
   const [consumedPrediction, setConsumedPrediction] = createSessionUiSignal(workbench.sessionUi, sessionId, ASSIST_PREDICTION_CONSUMED_KEY, '')
   let textarea: HTMLTextAreaElement | undefined
   let inputBar: HTMLDivElement | undefined
@@ -407,7 +407,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
     if (currentPrediction && (event.key === 'Tab' || (event.key === 'ArrowRight' && atEnd))) {
       event.preventDefault()
       setDraft(currentPrediction.text)
-      // #394：接受＝消费该预测实例（卡片与 ghost 同时收敛，不再横在会话流里）。
+      // #394：接受＝消费该预测实例；新实例仍可进入输入框 ghost。
       if (currentPrediction.instanceKey) setConsumedPrediction(currentPrediction.instanceKey)
       predictionController.clearDismissed()
       setHistoryIndex(-1)

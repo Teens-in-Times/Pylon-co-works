@@ -194,7 +194,7 @@ export const PERI_COVERAGE: readonly CoverageItemDraft[] = [
     status: 'normalized',
     firstClassFields: ['text→placeholder（#394 起接进输入框 ghost：Tab 接受 / 退格·输入分歧拒绝）', 'actions[]→actions（仍只携带不解释）'],
     retainedOnlyFields: ['FileSuggestions.files 无对应通道（仍 not-transported 语义）', 'actions[].kind=set_title 是 title 通知的重复通道（标题另经 session_info_update 到达，见 #393）'],
-    pylonAnchors: ['peri/prediction_ready→periNormalizer(assist.prediction)→document.assist.prediction(eventId)→InputBar ghost / SessionSurfaceCard'],
+    pylonAnchors: ['peri/prediction_ready→periNormalizer(assist.prediction)→document.assist.prediction(eventId)→InputBar ghost（#394 修订：不挂聊天卡）'],
     fixtures: ['periNormalizer.test.ts(#315 extension channel mapping + set_title-only 空文本帧)', 'InputBar.solid.test.tsx(#394 原生预测 6 例)'], followUp: 'ACP-UP-04(FileSuggestions.files 补发)' },
   { id: 'peri-27', provider: 'peri', dictionarySection: '§四 L192', wireSymbol: 'Progress/AskUser/RewindPreview/Plugin* event_data',
     semanticEvent: '', renderKind: '',

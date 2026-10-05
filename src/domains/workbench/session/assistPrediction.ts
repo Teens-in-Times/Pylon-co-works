@@ -8,8 +8,8 @@ import type { SessionUiKey, SessionUiScope } from '../sessionUiStore.ts'
  * （实测点「忽略」后卡片原样），于是同一张预测会在输入框 ghost 与会话卡上反复出现。
  *
  * 消费标记记为**实例键**（见 `assistPredictionInstanceKey`），存在 per-session 的
- * `sessionUi` 里：接受/拒绝写它，ghost 与卡片都读它 ⇒ 两侧同时收敛；新预测带新 eventId，
- * 自然不再命中旧标记、重新呈现。
+ * `sessionUi` 里：输入框接受/拒绝写它，ghost 读它；新预测带新 eventId，
+ * 自然不再命中旧标记、重新呈现。#394 修订 1 起内置工作台不再挂载预测卡。
  */
 export const ASSIST_PREDICTION_CONSUMED_KEY: SessionUiKey = 'assist-prediction-consumed'
 
