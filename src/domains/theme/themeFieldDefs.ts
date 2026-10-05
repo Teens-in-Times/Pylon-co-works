@@ -153,7 +153,6 @@ export const THEME_FIELD_DEFS = {
   toolRun: { ...C('chat', '工具运行状态'), default: '#93A5FF', group: "指示器与连接线", semanticRole: 'accent' },
   toolErr: { ...C('chat', '工具错误状态'), default: '#FF6B80', group: "指示器与连接线", semanticRole: 'state.danger', semanticSource: true },
   userTagBg: { ...C('chat', '用户标签背景'), default: 'rgba(168,85,247,0.08)', group: "用户标签", },
-  userTagText: { ...C('chat', '用户标签文字'), default: '#a855f7', group: "用户标签", },
   diffAdded: { ...C('chat', '新增行'), default: '#4EBA65', group: "代码差异", semanticRole: 'state.success' },
   diffRemoved: { ...C('chat', '删除行'), default: '#FF6B80', group: "代码差异", semanticRole: 'state.danger' },
   diffAddedWord: { ...C('chat', '行内新增片段'), default: '#3EA15E', group: "代码差异", advanced: true },

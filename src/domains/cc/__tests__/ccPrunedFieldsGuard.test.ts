@@ -65,18 +65,21 @@ const factorySources = [
  * 刀 1~6（四个）：`sendVariant` / `inputShowPlaceholder` / `prismOnColor` / `pillText`
  * 刀 7~13（七个）：`cliLinePadding` / `cliContentOffsetY` / `inputMode` / `inputVariant` /
  *   `cliOverflowMode` / `footerLayout` / `inputMinHeight`
+ * CC-31（一个）：`userTagText`（设置项「用户标签文字」；唯一消费者是死类名 `.term-user-tag`，
+ *   单 23 删该类名后 check-css-var-consumption 暴露 `--user-tag-text` 死注入 ⇒ 字段整体退役）
  */
 const PRUNED_FIELD_KEYS = [
   'sendVariant', 'inputShowPlaceholder', 'prismOnColor', 'pillText',
   'cliLinePadding', 'cliContentOffsetY', 'inputMode', 'inputVariant',
   'cliOverflowMode', 'footerLayout', 'inputMinHeight',
+  'userTagText',
 ] as const
 
 /**
  * 刀 7~13 里三个 number 字段的**派生 CSS 变量**（`--<kebab>`，由 `THEME_CSS_VAR_MAP` 自动产出）。
  * camelCase 键扫描抓不到 `var(--cli-content-offset-y)` 这类**悬空变量引用**，故单列一份。
  */
-const PRUNED_CSS_VARIABLES = ['--cli-line-padding', '--cli-content-offset-y', '--input-min-height'] as const
+const PRUNED_CSS_VARIABLES = ['--cli-line-padding', '--cli-content-offset-y', '--input-min-height', '--user-tag-text'] as const
 
 /**
  * 命中判据（两条择一命中即算回归）：
@@ -124,11 +127,11 @@ describe('#266 CC-07 · 被删的中控字段不得回归', () => {
     expect([...paths].some(path => path.includes('__fixtures__')), 'fixture 目录没被排除').toBe(false)
   })
 
-  it('★ 十一个字段键 + 三个派生变量在**全 `src/` 生产源码**里零命中（任何一项回来即红）', () => {
+  it('★ 十二个字段键 + 四个派生变量在**全 `src/` 生产源码**里零命中（任何一项回来即红）', () => {
     expect(hitsOf(sources), 'CC-07 删掉的字段又回到了生产源码；若确要用，改这条测试是显式动作').toEqual([])
   })
 
-  it('十一个键都不在字段定义表里（换个地方重新加回定义表也红）', () => {
+  it('十二个键都不在字段定义表里（换个地方重新加回定义表也红）', () => {
     for (const key of PRUNED_FIELD_KEYS) {
       expect(Object.hasOwn(THEME_FIELD_DEFS, key), `${key} 又回到了 THEME_FIELD_DEFS`).toBe(false)
       expect(THEME_FIELD_KEYS as readonly string[]).not.toContain(key)

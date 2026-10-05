@@ -85,10 +85,15 @@ const REPO_ROOT = resolve(__dirname, '..', '..')
  * ★ #483（宠物链删除）：`showPet` 从 ThemeSettings/zones 工厂退役 ⇒ 基线第七次按**真值**重算：
  * - 6 套「完整快照」型（global 区切面含 showPet）：`177 → 176`；
  * - `glass` / `agent-command` / `agent-map` / `focus-flow` **不动**（切面本就不含 showPet）。
+ *
+ * ★ #266 CC-31（userTagText 退役）：「用户标签文字」字段整体退役（唯一消费者是死类名
+ * `.term-user-tag`，删除前即无渲染效果）⇒ 基线第八次按**真值**重算：**10 套各 -1**
+ * （chat 区切面均含 userTagText）：6 套完整快照型 `176 → 175`、`glass 64 → 63`、
+ * `agent-command` / `agent-map` / `focus-flow` `37 → 36`。真值逐套实测 `Object.keys(effectivePresetTheme(p)).length`。
  */
 const BASELINE_FIELD_COUNTS: Record<string, number> = {
-  claude: 176, glass: 64, nord: 176, tokyo: 176, solarized: 176,
-  amber: 176, matrix: 176, 'agent-command': 37, 'agent-map': 37, 'focus-flow': 37,
+  claude: 175, glass: 63, nord: 175, tokyo: 175, solarized: 175,
+  amber: 175, matrix: 175, 'agent-command': 36, 'agent-map': 36, 'focus-flow': 36,
 }
 
 /** 该预设的有效值 —— 用测试侧独立算法（直接并池里的 5 个切面），不复用被测函数。 */

@@ -337,7 +337,6 @@
 .cc-editing-app .sidebar { filter:blur(3px); opacity:0.35; pointer-events:none; }
 .cc-editing-app .main .chat-view { filter:blur(4px); opacity:0.4; pointer-events:none; }
 .cc-editing-app .main .chat-empty { filter:blur(4px); opacity:0.4; }
-.cc-edit-overlay { position:fixed; inset:0; z-index:15; pointer-events:none; background:transparent; }
 /* ★ #266 CC-29：任务 pill 那族规则已删（其对应的 taskPill 模块已被 main 删除 ⇒ 类名零命中）。 */
 
 /* A4-02：任务、上下文和运行态控件共享 compact 状态语言。 */
@@ -378,8 +377,6 @@
 /* ★ #266 CC-29：任务 pill / 信息片 / 运行态片三族规则已整删（类名在生产代码里零命中；
    其中任务 pill 对应的 taskPill 模块已被 main 删除）。
    随之退场的还有只服务运行态片旋转的 `cc-activity-spin` @keyframes —— 它的唯一消费者在上面这族里。 */
-
-.app[data-interface-mode="modern-gui"] .modern-replay-continue { left:clamp(14px,4vw,48px); right:clamp(14px,4vw,48px); bottom:14px; border-radius:13px; }
 
 /* Terminal command rail: the footer follows the textarea's text start while
    the rule itself stays on its own, wider track. */
