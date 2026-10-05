@@ -1,5 +1,7 @@
 # L.md · 并行施工协调板
 
+- [kumo] **#364 外部 CLI 历史导入首版（2026-10-05）**：分支 `kumo/364-agent-history`。域＝新 crate `src-tauri/pylon-agent-history/**`、`src-tauri/pylon-session/src/{event_repo/{provenance,normalize,row,service,repo,draft,fold_tests,tests}.rs,owner.rs}`、`src-tauri/Cargo.toml`（members 一行）、新模块 `src-tauri/src/external_history/**`、`src-tauri/src/commands.rs`（external_history 两命令注册行块）、`src-tauri/src/lib.rs`（模块声明一行）、`src/domains/events/eventSchema.ts`、`src/domains/workbench/events/workbenchEventSchema.ts`（provenance 词表各一行）、设置页外部历史导入卡片（新文件）、`.agents/{spec,records}/364-*`、说明书两处。**不碰** decisions/0035、records/515（#545 在途）、`src-tauri/src/session/**`（#548/#549 声明域）、commands.rs 的 git 命令行（#368）。
+
 - [Codex] **#394 预测仅保留输入框灰字（2026-10-05 用户裁决，PR #565）**：复用 `journal-malformed` worktree / 已有分支，#564 已合并；域＝`WorkbenchDocumentSurface.solid.tsx`、`chat/content/SessionSurfaceCard.solid.tsx` 及相关 mount/card 测试、Peri 覆盖锚点、ADR-0033/说明书/记录。不碰共享树 #545 文档；排队命令保留展示。
 
 - [kumo] **#557 current_mode_update 语义消费（2026-10-05）**：域＝`src/domains/events/wireSemanticCorrespondence.ts`、`src/domains/workbench/normalizers/acpNormalizer.ts`（+`__tests__/{acpNormalizer,wireSemanticParity}.test.ts`）、`.agents/{spec,records}/557-*`。**不碰** `workbenchProjectorReducer.ts`（#551 在途）、`src-tauri/**`（#548/#549 在途）、decisions/0035 与 records/515（#545 在途 hunks）。共享树内施工，pathspec 提交。
