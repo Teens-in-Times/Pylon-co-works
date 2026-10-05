@@ -358,6 +358,11 @@ pub(crate) struct InteractionAnswerInput {
 /// request id 路由（方法驱动，不要求 provider 名称匹配）；兜底路径按
 /// method 查适配器（注册面是 method 表 per-provider 槽，#424——诊断投影
 /// 自同表派生）——未注册 provider 的合法 ACP 交互不再被拒。
+/// #436 裁决（#569 契约化）：`kind` 为诊断元数据——不参与路由（路由权威＝
+/// 账本按 request_id 的登记），私有臂不复核；permission 兜底臂保留既有
+/// `approval` 字面校验（历史行为；GUI wire 单点恒发 'approval'，见
+/// `interactionTransport.ts`）。私有桥应答构造单点在
+/// `private_ext::build_interaction_response`。
 #[tauri::command]
 pub(crate) async fn respond_interaction(
     state: tauri::State<'_, AppState>,
@@ -378,84 +383,13 @@ pub(crate) async fn respond_interaction(
         {
             return Err(PylonError::Protocol("stale interaction identity".into()));
         }
-        let response = match pending.bridge {
-            crate::protocol_adapter::private_ext::PrivateBridge::GrokExtQuestions
-            | crate::protocol_adapter::private_ext::PrivateBridge::PiSelectAsk => {
-                let questions = pending.question_specs.ok_or_else(|| {
-                    PylonError::Protocol("private question request lost validated specs".into())
-                })?;
-                let values = answer.values.clone().unwrap_or_default();
-                let answers = questions
-                    .iter()
-                    .filter_map(|spec| {
-                        values.get(&spec.id).map(|value| {
-                            let labels = match value {
-                                serde_json::Value::String(label) => vec![label.clone()],
-                                serde_json::Value::Array(items) => items
-                                    .iter()
-                                    .filter_map(|item| item.as_str().map(str::to_owned))
-                                    .collect(),
-                                _ => Vec::new(),
-                            };
-                            crate::acp::question_policy::QuestionAnswerItem {
-                                question_id: spec.id.clone(),
-                                labels,
-                            }
-                        })
-                    })
-                    .collect();
-                let answer = crate::acp::question_policy::QuestionAnswer {
-                    answers,
-                    declined: answer.option_id.as_deref() == Some("declined"),
-                };
-                crate::protocol_adapter::private_ext::build_question_response(
-                    pending.bridge,
-                    &questions,
-                    &answer,
-                )
-                .map_err(PylonError::Protocol)?
-            }
-            crate::protocol_adapter::private_ext::PrivateBridge::GrokExitPlan => {
-                let _ = crate::protocol_adapter::private_ext::parse_exit_plan(
-                    pending.bridge,
-                    &pending.params,
-                )
-                .map_err(PylonError::Protocol)?;
-                crate::acp::plan_policy::approval_response(
-                    answer.option_id.as_deref().unwrap_or("keep_planning"),
-                    answer.text.as_deref().unwrap_or(""),
-                )
-            }
-            crate::protocol_adapter::private_ext::PrivateBridge::Elicitation => {
-                // #98：elicitation 应答 = ESM 风格 action 三值。decline/cancel
-                // 由前端 optionId 表达；accept 携带 values/text 原样 content。
-                // P2-3（评审修复）：optionId 白名单 fail-closed——未知值显式
-                // 报错而非静默 accept（不伪造成功）。缺省 optionId + values/text
-                // = 自由作答（accept）。
-                let action = match answer.option_id.as_deref() {
-                    None | Some("accept") => "accept",
-                    Some("declined") => "decline",
-                    Some("cancel") => "cancel",
-                    Some(other) => {
-                        return Err(PylonError::Protocol(format!(
-                            "elicitation action unsupported: {other}"
-                        )))
-                    }
-                };
-                let content = match (&answer.values, &answer.text) {
-                    (Some(values), _) if values.is_object() => Some(values.clone()),
-                    (None, Some(text)) if !text.is_empty() => {
-                        Some(serde_json::json!({ "text": text }))
-                    }
-                    _ => None,
-                };
-                crate::protocol_adapter::private_ext::build_elicitation_response(
-                    action,
-                    content.as_ref(),
-                )
-                .map_err(PylonError::Protocol)?
-            }
-        };
+        // #569：应答构造归位 private_ext 单点（行为逐字保留）。
+        let response = crate::protocol_adapter::private_ext::build_interaction_response(
+            pending.bridge,
+            &pending.params,
+            pending.question_specs.as_deref(),
+            &answer,
+        )?;
         let responder = { runtime.snapshot_acp().responder() };
         if !responder.respond(request_id.clone(), response).await {
             return Err(PylonError::Protocol(
