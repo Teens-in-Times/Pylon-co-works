@@ -81,21 +81,12 @@
 }
 .app[data-msg-style="bubble"] .term-row-user { margin-left:auto; background:var(--message-user-bg,var(--user-tag-bg,var(--bg-panel))); }
 .app[data-msg-style="bubble"] .term-row-reasoning { background:var(--message-reasoning-bg,var(--message-assistant-bg,var(--bg-panel))); }
-/* Limited content belongs to a centered reading column; the full-width user
-   chrome keeps its prefix and text at the leading edge. */
-.solid-content-kind { margin-inline:auto; }
-.term-row-user .solid-content-kind { margin-inline:0; }
-/* Match the assistant marker rail on the trailing edge. This centers both
-   suite content and fallback Markdown without changing their text alignment. */
-.app:not([data-msg-style="bubble"]) .term-assistant.has-dot > .term-assistant-body {
-  margin-inline-end:var(--dot-col-width,1.6em);
-}
-.app:not([data-msg-style="bubble"])[data-message-layout="claude"] .term-assistant:not(.has-dot) {
-  padding-inline-end:var(--dot-col-width,1.6em);
-}
+/* The workbench centers one shared reading column. Width-capped surfaces
+   start at its leading edge, with their existing marker rails and tree depth. */
+.solid-content-kind { margin-inline:0; }
 .app[data-msg-style="bubble"] .term-row-assistant .copy-btn { right:-34px; }
 .term-assistant .copy-btn {
-  position:absolute; top:0; right:-40px;
+  position:absolute; top:0; right:-40px; z-index:2;
   opacity:0; background:var(--bg-panel); border:var(--line-width-1) solid var(--border);
   border-radius: 0; padding:2px 8px; font-size:var(--font-size-sm); cursor:pointer;
   color:var(--text-dim); transition:opacity 0.15s;
@@ -2479,11 +2470,11 @@ ol:has(> .term-li) > .term-li::before { content:none; }
 .term-assistant .term-table th[align='right'],
 .term-assistant .term-table td[align='right'] { text-align:right; }
 
-/* Activity cards bypass .solid-content-kind. Center top-level limited cards;
+/* Activity cards bypass .solid-content-kind. Align top-level limited cards;
    nested tree rows retain their depth offset. */
 .solid-workbench-activities .term-tool,
 .solid-workbench-activity-slot .term-process-activity,
 .solid-workbench-activity-slot .term-subagent-card[data-depth="0"],
 .solid-workbench-activity-slot .term-workflow-card:is([data-depth="0"],:not([data-depth])) {
-  margin-inline:auto;
+  margin-inline:0;
 }

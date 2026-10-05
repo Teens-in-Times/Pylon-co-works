@@ -83,6 +83,23 @@ function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { red
   return { host, services, lifecycle }
 }
 
+it('#566 keeps messages, activities and session cards in one stable reading column', () => {
+  const { host, services, lifecycle } = mountPreview()
+  const column = host.querySelector<HTMLElement>('.solid-workbench-reading-column')
+  expect(column).not.toBeNull()
+  expect(column!.style.maxWidth).toBe('960px')
+  expect(column!.querySelector('.plain-message-list')).not.toBeNull()
+  expect(column!.querySelector('.term-tool')).not.toBeNull()
+  expect(column!.querySelector('.plan-goal-content')).not.toBeNull()
+  const connectors = host.querySelector('.term-tool-connector-layer')
+  expect(connectors?.parentElement).toBe(column!.parentElement)
+  const base = services.runtime.getSnapshot().document!
+  services.runtime.replaceDocument({ ...base, messages: [] }, { ownerKey: 'owner-preview', generation: 1 })
+  expect(host.querySelector('.solid-workbench-reading-column')).toBe(column)
+  expect(column!.style.maxWidth).toBe('960px')
+  lifecycle.destroy()
+})
+
 /**
  * P57 S1.0 测试基建：可变滚动模型。scrollTop/scrollHeight/clientHeight 以
  * getter/setter 透出同一份可变状态，测试可在「写入落地」与「反馈 scroll 事件
