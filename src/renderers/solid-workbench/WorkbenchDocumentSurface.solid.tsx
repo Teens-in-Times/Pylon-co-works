@@ -9,8 +9,7 @@ import { fallbackRenderCommands, renderExtensionFallback, sessionSurfaceAppearan
 import { interactionRenderKind, lifecycleRenderKind, visibleDiagnostics } from './solidWorkbenchProjectionSupport.ts'
 import { isControlCenterConfigOption } from './input/workbenchOptionCatalog.ts'
 import { WorkbenchContentSlot } from './WorkbenchContentSlot.solid.tsx'
-import { createSessionUiSignal } from './adapters/sessionUiSignal.solid.tsx'
-import { ASSIST_PREDICTION_CONSUMED_KEY, assistPredictionInstanceKey, assistPredictionText } from '../../domains/workbench/session/assistPrediction.ts'
+import type { AssistSnapshot } from '../../domains/workbench/session/sessionSurface.ts'
 
 export function WorkbenchDocumentSurface(props: {
   document: WorkbenchDocument | undefined
@@ -42,24 +41,10 @@ export function WorkbenchDocumentSurface(props: {
       ? options.filter(option => !isControlCenterConfigOption(option))
       : options
   }
-  /**
-   * #394：预测卡的呈现判据——与输入框 ghost 同一条口径。
-   * ① 空文本的 `assist.prediction` 不渲卡（Peri 用 `prediction_ready` 的 `set_title` 动作发
-   *    会话标题，此前那类帧渲染成一张「只有标题 + 两个按钮」的空卡）；
-   * ② 已被接受/拒绝消费的实例不再渲卡（见 `session/assistPrediction.ts`）。
-   * `queuedCommand` 是另一件事实，不受预测消费影响。
-   */
-  const [consumedPrediction] = createSessionUiSignal(
-    props.context.sessionUi, () => props.sessionId, ASSIST_PREDICTION_CONSUMED_KEY, '',
-  )
-  const predictionCardVisible = () => {
-    const assist = props.document?.assist
-    if (!assist) return false
-    if (assist.queuedCommand) return true
-    const prediction = assist.prediction
-    if (!assistPredictionText(prediction)) return false
-    const key = assistPredictionInstanceKey(prediction)
-    return key === undefined || consumedPrediction() !== key
+  /** #394 修订：预测只在输入框呈现。排队命令沿用辅助 slot，但不携带预测文本/按钮。 */
+  const queuedAssist = (): AssistSnapshot | undefined => {
+    const command = props.document?.assist.queuedCommand
+    return command ? { files: [], queuedCommand: command } : undefined
   }
   return (
     <Show when={props.document}>
@@ -106,17 +91,17 @@ export function WorkbenchDocumentSurface(props: {
               />}
             />
           )}</For>
-          <Show when={predictionCardVisible()}>
+          <Show when={queuedAssist()}>{assist => (
             <WorkbenchContentSlot
-              nodeId={`${props.sessionId ?? 'none'}:assist:prediction`}
+              nodeId={`${props.sessionId ?? 'none'}:assist:queued-command`}
               kind="assist.prediction"
-              payload={document().assist}
+              payload={assist()}
               context={props.context}
-              fallback={<SolidSessionSurfaceCard kind="assist.prediction" payload={document().assist}
+              fallback={<SolidSessionSurfaceCard kind="assist.prediction" payload={assist()}
                 appearance={sessionSurfaceAppearance(props.context, 'assist.prediction')}
                 commands={fallbackRenderCommands(props.context)} />}
             />
-          </Show>
+          )}</Show>
           <Show when={(document().assist?.files?.length ?? 0) > 0}>
             <WorkbenchContentSlot
               nodeId={`${props.sessionId ?? 'none'}:assist:files`}

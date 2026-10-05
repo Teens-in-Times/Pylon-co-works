@@ -96,6 +96,19 @@ describe('C14 Solid session surface', () => {
     expect(list).not.toHaveTextContent('src/c.ts')
   })
 
+  it('#394：排队命令没有预测按钮，也不触发空文本接受行为', () => {
+    const execute = vi.fn()
+    render(() => <SolidSessionSurfaceCard kind="assist.prediction" payload={{ files: [], queuedCommand: '/compact' }}
+      appearance={{ acceptKey: 'enter' }} commands={{ execute, canExecute: () => true }} />)
+    const card = screen.getByRole('status', { name: '排队命令' })
+    expect(card).toHaveTextContent('/compact')
+    expect(card).not.toHaveAttribute('tabindex')
+    expect(card.querySelector('button')).toBeNull()
+    fireEvent.keyDown(card, { key: 'Enter' })
+    fireEvent.keyDown(card, { key: 'Tab' })
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('accepts a prediction from the declared keyboard shortcut', () => {
     const execute = vi.fn()
     render(() => <SolidSessionSurfaceCard kind="assist.prediction" payload={{
