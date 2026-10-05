@@ -19,7 +19,7 @@ export interface ThemeSettings {
   // 语法高亮 `--syn-*`（Lezer tag → `pl-*` 类的配色；默认值沿用 base16-ocean.dark）
   synKeyword: string; synString: string; synComment: string; synLiteral: string; synEntity: string; synFunction: string
   synVariable: string; synProperty: string; synRegex: string; synMarkupHeading: string; synCoReference: string; synSupport: string
-  toolOk: string; toolRun: string; toolErr: string; userTagBg: string; userTagText: string
+  toolOk: string; toolRun: string; toolErr: string; userTagBg: string
   /** diff 块级色（此前复用 toolOk/toolErr，CC 系为独立柔和色） */
   diffAdded: string; diffRemoved: string
   /** diff 词级高亮色（CC 双层：整行背景 + 变更词背景） */

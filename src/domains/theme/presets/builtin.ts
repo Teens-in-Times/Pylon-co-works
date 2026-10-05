@@ -172,7 +172,6 @@ const GLASS_THEME: Partial<ThemeSettings> = {
   toolRun: "#6366f1",
   toolErr: "#f43f5e",
   userTagBg: "rgba(99,102,241,0.08)",
-  userTagText: "#6366f1",
   diffAdded: "#22c55e",
   diffRemoved: "#f43f5e",
   diffAddedWord: "#16a34a",

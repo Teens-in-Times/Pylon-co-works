@@ -57,13 +57,13 @@
 /* Reading and input remain stable planes; only navigation carries display typography. */
 .app[data-interface-mode="tactical-blue"] .solid-agent-workbench { background:#05112840; }
 .app[data-interface-mode="tactical-blue"] .solid-workbench-chat { background:#041127a6; }
-.app[data-interface-mode="tactical-blue"] :is(.control-center,.solid-control-center) { border-top:2px solid #5cd9ff; background:#061830f5; box-shadow:0 -10px 40px #0003; }
+.app[data-interface-mode="tactical-blue"] :is(.control-center) { border-top:2px solid #5cd9ff; background:#061830f5; box-shadow:0 -10px 40px #0003; }
 .app[data-interface-mode="tactical-blue"] :is(.input-bar,.input-area) { background:#07162dec; border-radius:2px; }
 .app[data-interface-mode="tactical-blue"] :is(.input-textarea,.input-editor) { color:#edf6ff; caret-color:#83e9ff; }
 .app[data-interface-mode="tactical-blue"] .agent-empty-state { background:transparent; }
 .app[data-interface-mode="tactical-blue"] .agent-empty-title { font-size:clamp(26px,3.2vw,42px); font-weight:850; color:#b0f0ff; }
 .app[data-interface-mode="tactical-blue"] .agent-empty-steps li { border-color:#517ba7; background:#091d3bd9; padding:18px; }
-.app[data-interface-mode="tactical-blue"] :is(.term-tool,.tool-call-card,.interaction-card,.permission-card) { background:#071b33f2; border-color:#538dbb; border-radius:2px; }
+.app[data-interface-mode="tactical-blue"] :is(.term-tool,.interaction-card) { background:#071b33f2; border-color:#538dbb; border-radius:2px; }
 .app[data-interface-mode="tactical-blue"] .input-send { background:#83e7ff; color:#072449; }
 .solid-agent-workbench .solid-workbench-chat::-webkit-scrollbar { width: 0; height: 0; }
 
@@ -247,7 +247,6 @@
 
 /* document surface 区块最小间距体系（过渡态：裸 div 直排 → 有节奏的分区） */
 .solid-workbench-timeline { margin: 8px 24px 0; }
-.solid-workbench-assist { margin: 8px 24px 0; }
 .solid-workbench-activities { margin: 8px 0 0; }
 .solid-workbench-activity-group {
   margin: 0 0 var(--chat-tool-gap, 5px);
@@ -272,7 +271,6 @@
 }
 .solid-workbench-interactions { margin: 8px 24px 0; }
 .solid-workbench-extensions { margin: 8px 24px 0; }
-.solid-workbench-usage,
 .solid-workbench-config,
 .solid-workbench-diagnostics { margin: 4px 24px 0; }
 
