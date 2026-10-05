@@ -42,7 +42,7 @@
 | 验收项 | 结果 |
 | --- | --- |
 | 两脚本进 check:solid 链且全链 EXIT=0 | ✅ `check:solid` EXIT=0，两脚本汇总行见证据 |
-| 现状报告三数分列 + 豁免清单逐条理由 → 裁定往返已过 | ✅ 字段 178=163 可达+15 豁免+0 可疑；类名 1288=1136+152+0（收口后终值）；裁定回带 2026-10-05 |
+| 现状报告三数分列 + 豁免清单逐条理由 → 裁定往返已过 | ✅ 字段 178=163 可达+15 豁免+0 可疑；类名 1254=1101+153+0（CI 红修复后终值）；裁定回带 2026-10-05 |
 | 故意违反自检红输出各一条 | ✅ 两脚本 `POINT_AT_BANNED=1` 均红 + EXIT=1 |
 | 全量 test 用例数 = 基线 ±0 | ✅ 5207 passed + 1 skipped（5208）；对 `origin/main` 的 diff 仅 package.json 1 行 + 2 新脚本，`src/`、`shared/` 零改动 |
 | 门禁五步 EXIT=0 | ✅ lint / build:example-plugin / build / check:solid / test 全 0 |
@@ -57,7 +57,7 @@
 ## 证据
 
 - commit：未提交（工作树在途；`git status --short` = `M package.json` + 2 个 `??` 脚本）
-- 门禁：`lint` EXIT=0；`build:example-plugin` EXIT=0；`build` EXIT=0（✓ built in 22.91s）；`check:solid` EXIT=0（含 `字段可达性审计通过（字段 178…零读取 0）`、`CSS 类名可达性审计通过（类名 1288：可达 1136 / 豁免 152（家族 11 族 + 存量 96），不可达 0）`）；`test` EXIT=0（5207 passed | 1 skipped，Test Files 667 passed | 1 skipped）
+- 门禁：`lint` EXIT=0；`build:example-plugin` EXIT=0；`build` EXIT=0（✓ built in 22.91s）；`check:solid` EXIT=0（含 `字段可达性审计通过（字段 178…零读取 0）`、`CSS 类名可达性审计通过（类名 1254：可达 1101 / 豁免 153（家族 11 族 + 存量 97），不可达 0）`）；`test` EXIT=0（5207 passed | 1 skipped，Test Files 667 passed | 1 skipped）
 - 自检：`POINT_AT_BANNED=1` 两脚本各报「已知死探针被判为不可达」并 EXIT=1
 - 完整输出与裁定往返记录：`E:\Acode\FILES\任务\工作台优化\报告等\25-施工单-CC-15死面正向审计守卫\2026-10-05-工作者汇报.md`
 - 实机复验（翻译侧待做）：本地各跑一次新脚本核对读数；临时造死字段/死类名验证真能红（跑完即撤）。
@@ -69,8 +69,16 @@
 
 ## 未解问题
 
-- LEGACY 96 条 + 字段 `sidebarGroupSize` 的**清理是后续单**（本单只拦增量）。
+- LEGACY 97 条 + 字段 `sidebarGroupSize` 的**清理是后续单**（本单只拦增量）。
 - `cm-`/`is-`/`type-` 家族前缀较宽：未来这些前缀下的新死类会被家族豁免，需靠家族理由里的「值域变化须同步审 CSS」提醒 + 定期复核。
+
+## CI 红修复（2026-10-05 追记）
+
+- **根因**（翻译已核）：`input-area` 唯一生成点在 `src/layout-sketch/layoutBlocks.ts`——禁区目录、被 `.git/info/exclude` 排除、不在 git。旧扫描面按文件系统走 `src/`，本机读到它判可达（本地绿），CI checkout 无此文件判不可达（CI 红）。同类暴露面还有 `src/wasm/*/` 的 4 个 gitignore `.d.ts`。
+- **修复**：两脚本扫描面改为 **git 追踪面**（`git ls-files -z -- src` 圈定，`check-runtime-boundaries.mts` 先例同款；非 git 环境退回全量扫描），git 外文件一律不入面并自报跳过数；`layout-sketch/` 与 `ui-demo/` 在 walk 规则显式排除（注释注明禁区口径）。
+- **input-area 收编 LEGACY**：生成点仅存于禁区 layout-sketch（git 外本机件），git 生产面上无生成点；现行输入区容器为 `.input-editor-stack` 系（`InputBar.solid.tsx:555`，已实读核对）。
+- **计数终值**：类名 1288→**1254**（差值 34 = git 外 `LayoutSketch.css` 全文件 34 类出扫描面；真正因 token 退场翻红的 git 面内类名仅 `input-area` 一个，LEGACY 96→**97**）；字段侧读数不变（178=163+15+0）。
+- **git ls-files 前后对比**：修前旧面会收入 git 外件 7 个（LayoutSketch 3 + wasm `.d.ts` 4，`git ls-files --others -- src` 实测）；修后 `git ls-files -- src` 面内禁区目录 0 文件，两脚本自报「扫描面 = git 追踪面（git ls-files 圈定；git 外文件跳过 4 个，不判门禁）」——本地与 CI 扫描面一致，不可复现性根除。
 
 ## 并行交集
 
