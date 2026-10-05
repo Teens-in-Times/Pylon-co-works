@@ -1,8 +1,3 @@
-# L.md · 并行施工协调板
-
-- [kumo] **#567 会话级驻留读数 + tool-run 合成样本（2026-10-05）**：域＝`scripts/perf-bench/**`（memorySuite/memory-probe/fixtures/README）、`docs/说明书/` 维护地图 memory 域半句、`.agents/records/567-*`。**与共享树隔离**：交付在独立 worktree 新分支 `kumo/567-session-retention-reading`（基于 github/main 867cdcdc）施工与提交，独立 PR，不碰 #572 在途内容；共享树的 perf-bench 未提交改动在复制后还原。`src-tauri/**` 不碰（tool-run 读数在另一测量 worktree 按 867cdcdc 跑，读数入记录，代码不入库）。
-
-- [kumo] **#364 外部 CLI 历史导入首版（2026-10-05，PR #572 待合并）**：分支 `kumo/364-agent-history`。域＝新 crate `src-tauri/pylon-agent-history/**`、`src-tauri/pylon-session/src/{event_repo/{provenance,normalize,row,service,repo,draft,fold_tests,tests}.rs,owner.rs}`、`src-tauri/Cargo.toml`（members 一行）、新模块 `src-tauri/src/external_history/**`、`src-tauri/src/commands.rs`（external_history 两命令注册行块）、`src-tauri/src/lib.rs`（模块声明一行）、`src/domains/events/eventSchema.ts`、`src/domains/workbench/events/workbenchEventSchema.ts`（provenance 词表各一行）、设置页外部历史导入卡片（新文件）、`.agents/{spec,records}/364-*`、说明书两处。**不碰** decisions/0035、records/515（#545 在途）、`src-tauri/src/session/**`（#548/#549 声明域）、commands.rs 的 git 命令行（#368）。
 
 > 规则（AGENTS.md §2.3-4）：并行多 agent 施工时，在此声明施工范围以应对冲突（文件互相改写、连带提交等），**写入后立刻提交本文件**使其他 agent 可见。只追写，不覆写，留言简洁。
 
