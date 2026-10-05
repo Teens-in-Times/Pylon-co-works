@@ -1,6 +1,4 @@
 
-- [kumo] **#568 approve_tool_call 定向化（2026-10-05）**：域＝`src-tauri/src/permission.rs`（命令体+内联测试）、`src/infrastructure/acp/chatClient.ts`（死绑定删除）、`src/infrastructure/acp/permissionController.ts`（头注释一句）、`src/demo/mockTauri.ts`（stub 一行）、`docs/说明书/Pylon-项目架构参考.md` 审批线段、`.agents/{spec,records}/568-*`。**独立 worktree 分支 `kumo/568-approve-directed`（基于 github/main 258b5795）施工与提交**，不碰共享树在途文件（decisions/0035、records/515、#364 域）。不碰 commands.rs/lib.rs（注册行零变化）。
-
 > 规则（AGENTS.md §2.3-4）：并行多 agent 施工时，在此声明施工范围以应对冲突（文件互相改写、连带提交等），**写入后立刻提交本文件**使其他 agent 可见。只追写，不覆写，留言简洁。
 
 > **只留在途。** 本文件的价值是「谁正在改哪些文件」；已完工的条目占用读取代价，并且**文件越长、两边各自追加就越容易冲突**（本文件历史上多次成为合并冲突点）。所以自己的 issue 合入后即可移除自己的条目。2026-09-16 及以前的条目（其 issue 均已有 `.agents/records/` 开发记录）已归档到仓外 `../Docs/Archive/L-archive-20260918.md`；2026-09-17 至 2026-09-25 的已完工条目（#110/#315/#316/#317 批次一/ADR 通审等）已归档到仓外 `../Docs/Archive/L-archive-20260925.md`；2026-09-26 撤下的已完工 [kumo] 条目（#324/#331/#334-336/#338/#339/#325-329，issue 均已 CLOSED 且改动已并入 main）已归档到 `../Docs/Archive/L-archive-20260926.md`；[Codex] #155 T3 已随 PR #347 并入 main 撤下；**2026-09-27 至 2026-10-01 的已完工/已入库条目（#351/#354/#357/#358/#361-363/#370-373/#375-376/#379-394/#398/#401/#409-414/#439-455/#471/#485/#486 七项/#487-491/#444/#448/#449 等）已归档到仓外 `../Docs/Archive/L-archive-20261001.md`**。
