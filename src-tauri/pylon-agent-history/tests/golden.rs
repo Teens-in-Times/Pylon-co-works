@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use pylon_agent_history::{ExternalHistoryParser, ClaudeCodeParser};
+use pylon_agent_history::{ClaudeCodeParser, ExternalHistoryParser};
 use serde_json::json;
 
 fn snapshot(
@@ -39,7 +39,8 @@ fn assert_scene_matches_baseline(scene: &str) {
     let root = Path::new("tests/fixtures").join(scene);
     let mut actual = Vec::new();
     for summary in ClaudeCodeParser.discover(&root) {
-        let record = ClaudeCodeParser.read(&root, &summary.external_id)
+        let record = ClaudeCodeParser
+            .read(&root, &summary.external_id)
             .expect("discover 出现的段必须可 read");
         actual.push(snapshot(&record.summary, &record.events));
     }

@@ -579,9 +579,15 @@ impl EventRepo {
             .conn
             .lock()
             .map_err(|_| EventError::Unavailable("event repo lock poisoned".into()))?;
-        let escaped = agent_id.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-        let owner_prefix =
-            format!("[\"{}\",\"{}\",\"%", pylon_canonical_types::EXTERNAL_IMPORT_PROFILE_ID, escaped);
+        let escaped = agent_id
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let owner_prefix = format!(
+            "[\"{}\",\"{}\",\"%",
+            pylon_canonical_types::EXTERNAL_IMPORT_PROFILE_ID,
+            escaped
+        );
         let exists: i64 = conn
             .prepare_cached(
                 "SELECT EXISTS(

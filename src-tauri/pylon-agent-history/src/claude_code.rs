@@ -61,7 +61,9 @@ impl ExternalHistoryParser for ClaudeCodeParser {
                 }
             }
         }
-        Err(ExternalHistoryError::SessionNotFound(external_id.to_string()))
+        Err(ExternalHistoryError::SessionNotFound(
+            external_id.to_string(),
+        ))
     }
 }
 
@@ -202,11 +204,9 @@ impl SegmentBuilder {
             let timestamp = message.timestamp.clone();
             self.emit_message_blocks(&message.message, &timestamp);
         }
-        let title = self.title.or_else(|| {
-            self.first_user_text
-                .as_deref()
-                .map(truncate_title)
-        });
+        let title = self
+            .title
+            .or_else(|| self.first_user_text.as_deref().map(truncate_title));
         Segment {
             summary: ExternalSessionSummary {
                 agent_id: AGENT_ID.to_string(),
@@ -369,8 +369,10 @@ fn parse_user_line(line: &Value, timestamp: &str, builder: &mut SegmentBuilder) 
                         produced = true;
                     }
                     Some("tool_result") => {
-                        let tool_call_id =
-                            block.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
+                        let tool_call_id = block
+                            .get("tool_use_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
                         if tool_call_id.is_empty() {
                             continue;
                         }
@@ -431,7 +433,12 @@ fn parse_assistant_line(
             let earlier_timestamp = earlier.timestamp.clone();
             builder.emit_message_blocks(&earlier.message, &earlier_timestamp);
         }
-        emit_terminal_message(message, timestamp, usage_by_message.get(message_id), builder);
+        emit_terminal_message(
+            message,
+            timestamp,
+            usage_by_message.get(message_id),
+            builder,
+        );
         return;
     }
     // 流式中途行：覆盖暂存快照（或首见入列）。
@@ -525,9 +532,7 @@ mod tests {
         let text_events = record
             .events
             .iter()
-            .filter(|event| {
-                event.payload["update"]["sessionUpdate"] == "agent_message_chunk"
-            })
+            .filter(|event| event.payload["update"]["sessionUpdate"] == "agent_message_chunk")
             .count();
         assert_eq!(text_events, 1, "流式快照行只产一次文本事件");
         let done = record

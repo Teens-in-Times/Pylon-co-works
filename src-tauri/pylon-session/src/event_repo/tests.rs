@@ -3073,7 +3073,12 @@ mod external_history_import {
         let service = EventService::in_memory().unwrap();
         let owner = external_owner("");
         let first = service
-            .ingest_external_history(owner.clone(), "abc-123".to_string(), false, external_events())
+            .ingest_external_history(
+                owner.clone(),
+                "abc-123".to_string(),
+                false,
+                external_events(),
+            )
             .await
             .unwrap();
         assert_eq!(first.status, "imported");
@@ -3087,7 +3092,14 @@ mod external_history_import {
         assert!(second.events.is_empty());
         assert_eq!(
             service
-                .revision(serde_json::to_string(&["external-import", "claude-code", "claude-code:abc-123"]).unwrap())
+                .revision(
+                    serde_json::to_string(&[
+                        "external-import",
+                        "claude-code",
+                        "claude-code:abc-123"
+                    ])
+                    .unwrap()
+                )
                 .await
                 .unwrap(),
             3
@@ -3100,13 +3112,23 @@ mod external_history_import {
         // service 层只按普通导入落库——新 owner_key ⇒ 空 journal。
         let service = EventService::in_memory().unwrap();
         let first = service
-            .ingest_external_history(external_owner(""), "abc-123".to_string(), false, external_events())
+            .ingest_external_history(
+                external_owner(""),
+                "abc-123".to_string(),
+                false,
+                external_events(),
+            )
             .await
             .unwrap();
         assert_eq!(first.status, "imported");
 
         let fork = service
-            .ingest_external_history(external_owner("#2"), "abc-123".to_string(), true, external_events())
+            .ingest_external_history(
+                external_owner("#2"),
+                "abc-123".to_string(),
+                true,
+                external_events(),
+            )
             .await
             .unwrap();
         assert_eq!(fork.status, "imported");
@@ -3125,7 +3147,13 @@ mod external_history_import {
 
     #[test]
     fn parse_canonical_event_accepts_external_import_only_as_unverified() {
-        let mut event = event_json("peri", "local:s1", 1, "user.message", serde_json::json!({"update": {}}));
+        let mut event = event_json(
+            "peri",
+            "local:s1",
+            1,
+            "user.message",
+            serde_json::json!({"update": {}}),
+        );
         event["provenance"] = serde_json::json!({
             "origin": "external-import", "trust": "unverified"
         });

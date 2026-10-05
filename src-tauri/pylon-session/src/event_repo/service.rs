@@ -8,8 +8,8 @@ use super::draft::{DraftCommitChunk, DraftFragment, DraftFragmentInput};
 use super::normalize::{mark_replay_import, normalize_kernel_event, parse_canonical_event};
 use super::repo::{EventRepo, RollupTrimReport};
 use super::row::{
-    CanonicalEventRawExport, CanonicalEventRow, CompactEventPage, EventAppendResult, EventImportOrigin,
-    EventPage, EventSearchHit, ExternalHistoryImportResult, KernelEventInput,
+    CanonicalEventRawExport, CanonicalEventRow, CompactEventPage, EventAppendResult,
+    EventImportOrigin, EventPage, EventSearchHit, ExternalHistoryImportResult, KernelEventInput,
     ReplayJournalIngestResult,
 };
 use super::EventError;
