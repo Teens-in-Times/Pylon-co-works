@@ -18,23 +18,38 @@
 //
 // 证据面排除：themeFieldDefs.ts（defs 键名）与 themeTypes.ts（ThemeSettings 接口键）——
 // 这两处"出现"是定义本身、不是读取，算证据会让守卫全绿空转。其余生产源码剥注释后全量
-// 参与（__tests__ / __fixtures__ / *.test.* / *.spec.* 不入扫描面）。
+// 参与（__tests__ / __fixtures__ / *.test.* / *.spec.* 不入扫描面）。扫描面 = git 追踪面
+// （git ls-files 圈定，禁区目录 ui-demo / layout-sketch 与本机 git 外文件一律不入面，
+// 根除「本地绿 CI 红」；见 walk 区注释）。
 //
 // 防空转正控：扫描面下限 + 判据集下限（ASSERT 区）——扫描面为空 = 守卫假绿。
 // 故意违反自检：`POINT_AT_BANNED=1 bun scripts/check-theme-field-reachability.mts`
 // 向判据集注入已知死探针 zzSelfCheckDeadProbe，脚本必须报红退出 1；正常跑不受影响。
 import { THEME_CSS_VAR_MAP, THEME_FIELD_DEFS, THEME_FIELD_KEYS } from '../src/domains/theme/themeFieldDefs.ts'
 import { strict as assert } from 'node:assert'
+import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('../src', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 /** 剥注释：说明性注释会提到字段名，不该算证据（先例 ccDeadDataGuard 同款）。 */
 const stripComments = (source: string) => source
   .replaceAll(/\/\*[\s\S]*?\*\//g, '')
   .replaceAll(/(?<!:)\/\/[^\n]*/g, '')
+
+// ── 扫描面 = git 追踪面（check-runtime-boundaries 先例）──
+// 本机 git 外文件（.git/info/exclude、未跟踪在制品）不入面：否则「本地绿 CI 红」不可复现——
+// input-area 案例：唯一生成点在禁区 layout-sketch（本机 exclude 件，不在 git），本地读到它
+// 判可达、CI checkout 无此文件判不可达。非 git 环境（导出源码包等）退回全量扫描，行为同先例。
+const tracked = (() => {
+  try {
+    return new Set(execFileSync('git', ['ls-files', '-z', '--', 'src'], { cwd: PROJECT_ROOT, maxBuffer: 64 * 1024 * 1024 }).toString('utf8').split('\0').filter(Boolean))
+  } catch { return null }
+})()
+const skippedGitless: string[] = []
 
 const cssFiles: string[] = []
 const tsFiles: string[] = []
@@ -42,15 +57,20 @@ function walk(dir: string) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
     if (statSync(p).isDirectory()) {
-      if (name !== '__tests__' && name !== '__fixtures__' && name !== 'ui-demo') walk(p) // ui-demo = 禁区旧 React 演示，非生产渲染面（CC-15 裁定剔出扫描面）
+      // 禁区（非生产渲染面，CC-15 裁定剔出扫描面）：ui-demo = 旧 React 演示；layout-sketch = 布局草稿
+      if (name !== '__tests__' && name !== '__fixtures__' && name !== 'ui-demo' && name !== 'layout-sketch') walk(p)
       continue
     }
     if (name.includes('.test.') || name.includes('.spec.')) continue
+    if (name.endsWith('.css') || name.endsWith('.tsx') || name.endsWith('.ts')) {
+      if (tracked && !tracked.has(relative(PROJECT_ROOT, p).replaceAll('\\', '/'))) { skippedGitless.push(p); continue }
+    }
     if (name.endsWith('.css')) cssFiles.push(p)
     else if (name.endsWith('.tsx') || name.endsWith('.ts')) tsFiles.push(p)
   }
 }
 walk(ROOT)
+console.log(`扫描面 = git 追踪面（git ls-files 圈定；git 外文件跳过 ${skippedGitless.length} 个，不判门禁）`)
 
 // ── a 判据：注入 var 消费集（口径复用 check-css-var-consumption：var() 抓取 + themeCssSnapshot 注入）──
 const consumed = new Set<string>()

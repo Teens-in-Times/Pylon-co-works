@@ -15,23 +15,36 @@
 //   d. 存量登记豁免 —— LEGACY_UNREACHABLE：现状即不可达的类名逐条登记（只拦增量，
 //      存量清理是后续单）。新冒出来的死类名不在名单 = 红。
 //
-// 扫描面：src/（生产渲染面）。dist/ 构建产物、docs/ 文档站、examples/ + public/ 演示件、
-// ui-demo/ 等禁区遗留不在面内；src-tauri/ 的 Rust 侧生成点不在 .ts/.tsx 判据面 ——
+// 扫描面 = git 追踪面：src/ 生产渲染面经 git ls-files 圈定（check-runtime-boundaries 先例），
+// 本机 git 外文件（.git/info/exclude、未跟踪在制品）与禁区目录（ui-demo 旧 React 演示 /
+// layout-sketch 布局草稿）一律不入面，根除「本地绿 CI 红」不可复现——input-area 案例即
+// 生成点只在 layout-sketch（本机 exclude 件）所致。dist/、docs/、examples/、public/ 演示件
+// 不在 src/ 天然不入面；src-tauri/ 的 Rust 侧生成点不在 .ts/.tsx 判据面 ——
 // 相应类名会落进豁免名单并带理由（如 footnote-backref），不静默通过。
 //
 // 防空转正控：CSS/TS 扫描面下限 + 类名集下限（ASSERT 区）。
 // 故意违反自检：`POINT_AT_BANNED=1 bun scripts/check-css-class-reachability.mts`
 // 向判据集注入已知死探针 zz-self-check-dead-probe，脚本必须报红退出 1；正常跑不受影响。
 import { strict as assert } from 'node:assert'
+import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('../src', import.meta.url))
+const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const read = (p: string) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 const stripComments = (source: string) => source
   .replaceAll(/\/\*[\s\S]*?\*\//g, '')
   .replaceAll(/(?<!:)\/\/[^\n]*/g, '')
+
+// 扫描面圈定：git ls-files（非 git 环境退回全量扫描，行为同先例）。
+const tracked = (() => {
+  try {
+    return new Set(execFileSync('git', ['ls-files', '-z', '--', 'src'], { cwd: PROJECT_ROOT, maxBuffer: 64 * 1024 * 1024 }).toString('utf8').split('\0').filter(Boolean))
+  } catch { return null }
+})()
+const skippedGitless: string[] = []
 
 const cssFiles: string[] = []
 const tsFiles: string[] = []
@@ -39,15 +52,20 @@ function walk(dir: string) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
     if (statSync(p).isDirectory()) {
-      if (name !== '__tests__' && name !== '__fixtures__' && name !== 'ui-demo') walk(p) // ui-demo = 禁区旧 React 演示，非生产渲染面（CC-15 裁定剔出扫描面）
+      // 禁区（非生产渲染面，CC-15 裁定剔出扫描面）：ui-demo = 旧 React 演示；layout-sketch = 布局草稿
+      if (name !== '__tests__' && name !== '__fixtures__' && name !== 'ui-demo' && name !== 'layout-sketch') walk(p)
       continue
     }
     if (name.includes('.test.') || name.includes('.spec.')) continue
+    if (name.endsWith('.css') || name.endsWith('.tsx') || name.endsWith('.ts')) {
+      if (tracked && !tracked.has(relative(PROJECT_ROOT, p).replaceAll('\\', '/'))) { skippedGitless.push(p); continue }
+    }
     if (name.endsWith('.css')) cssFiles.push(p)
     else if (name.endsWith('.tsx') || name.endsWith('.ts')) tsFiles.push(p)
   }
 }
 walk(ROOT)
+console.log(`扫描面 = git 追踪面（git ls-files 圈定；git 外文件跳过 ${skippedGitless.length} 个，不判门禁）`)
 
 // ── CSS 侧：只从选择器上下文提取类名（声明体里的 `content:"."` / `opacity:.5` / url() 不算）──
 function selectorSegments(css: string): string[] {
@@ -106,7 +124,9 @@ const SPLICE_FAMILIES: { prefix: string; sources?: string[]; packages?: string[]
 
 // ── d：存量不可达登记（LEGACY —— 只拦增量；逐条理由；清理走后续单）──
 // ── d：存量不可达登记（LEGACY —— 只拦增量；逐条理由；清理走后续单）──
-// ★ 名单状态：CC-15 §0-3 裁定往返已过（2026-10-05 翻译核定）；96 条 = 修正普查全量 97 减 ui-demo 禁区 2 条（禁区剔出扫描面）加 model-menu（其唯一证据原是 ui-demo token，剔除后现形，按已裁定框架收编）。
+// ★ 名单状态：CC-15 §0-3 裁定往返已过（2026-10-05 翻译核定）；CI 红修复后 97 条 =
+//   修正普查 97（含 model-menu / input-area 两例「证据只在 git 外禁区件、剔除后现形」的收编，
+//   ui-demo 2 条已随禁区剔除撤销）。
 const LEGACY_UNREACHABLE: Record<string, string> = {
   // ── builtin.pylon-renderers/styles/components/chat/ChatView.css ──
   'agent-empty-sidebar-action': 'ChatView 渲染层存量死类名（CC-15 全域扫描登记；生产零生成点，清理走后续单）',
@@ -149,6 +169,7 @@ const LEGACY_UNREACHABLE: Record<string, string> = {
   'git-status-row': 'FileSheet 存量死类名（file-tab-* 旧编辑视图 / file-main* 旧主区 / git-status-* 旧 Git 面板词汇——现行 FileTabBar/GitPanel 等已换新词汇；清理走后续单）',
   'git-status-row-static': 'FileSheet 存量死类名（file-tab-* 旧编辑视图 / file-main* 旧主区 / git-status-* 旧 Git 面板词汇——现行 FileTabBar/GitPanel 等已换新词汇；清理走后续单）',
   // ── builtin.pylon-renderers/styles/components/solid-workbench/WorkbenchChrome.css ──
+  'input-area': '生成点仅存于禁区 layout-sketch/layoutBlocks.ts（本机 .git/info/exclude 件，不在 git ⇒ git 生产面上无生成点，CI 即因此红）；现行输入区容器为 .input-editor-stack 系（InputBar.solid.tsx）；清理走后续单',
   'input-editor': '渲染器壳层存量死类名（CC-15 全域扫描登记；生产零生成点，清理走后续单）',
   'input-send': '渲染器壳层存量死类名（CC-15 全域扫描登记；生产零生成点，清理走后续单）',
   // ── builtin.pylon-shell/styles/components/Settings.css ──
@@ -236,7 +257,6 @@ assert.ok(classToFile.size > 300, `类名判据集异常（${classToFile.size} �
 assert.ok(tsTokens.size > 5000, `TS token 集异常（${tsTokens.size} ≤ 5000）`)
 // 家族名单自身健康（名单防烂）：值域来源文件必须存在且仍含前缀（模板改了/文件删了 ⇒ 红）；
 // 第三方值域（packages）必须存在。
-const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url))
 for (const family of SPLICE_FAMILIES) {
   for (const src of family.sources ?? []) {
     let text = ''
