@@ -54,7 +54,7 @@ function streamInto(
 }
 
 
-function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { reducedMotion?: boolean } = {}) {
+function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { reducedMotion?: boolean; preview?: boolean } = {}) {
   const host = document.createElement('div')
   document.body.append(host)
   hosts.push(host)
@@ -73,7 +73,7 @@ function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { red
     input: {
       sheetId: 'sheet-a',
       sessionId: 'preview-session',
-      preview: true,
+      preview: options.preview ?? true,
       rightInset: 24,
       reducedMotion: options.reducedMotion ?? true,
     },
@@ -2346,7 +2346,7 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     expect(screen.queryByLabelText('会话预算')).toBeNull()
     expect(screen.getByLabelText('编辑 Model')).toHaveValue('gpt-5')
     expect(screen.getByLabelText('会话命令')).toHaveTextContent('/review')
-    expect(screen.getByLabelText('输入预测')).toHaveTextContent('继续审计')
+    expect(screen.queryByLabelText('输入预测')).toBeNull()
     expect(screen.getByLabelText('文件建议')).toHaveTextContent('src/a.ts')
     expect(host.textContent).not.toContain('↓ 8 tokens')
     // S11：用量控件常态显示为按钮型胶囊，但旧的 usage surface（会话用量标签 / ↓ N tokens）仍未回归；
@@ -2362,10 +2362,8 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     expect(screen.getByText('canonical warning')).toBeInTheDocument()
   })
 
-  // #394：预测卡的呈现判据与输入框 ghost 同一条口径——空文本帧不渲卡（Peri 用
-  // `prediction_ready` 的 set_title 动作发会话标题，此前渲成一张「只有标题 + 两个按钮」的空卡）；
-  // 消费过的实例也不渲卡（接受/拒绝后卡片与 ghost 同时收敛）。
-  it('#394 预测卡：空文本不渲染，消费后的实例不渲染', async () => {
+  // #394（2026-10-05 修订）：预测仅在输入框呈现，排队命令仍独立显示。
+  it('#394：预测卡不再挂载，空文本与已消费实例同判，排队命令保留', async () => {
     const envelope = (sequence: number, event: WorkbenchEventEnvelope['event']): WorkbenchEventEnvelope => createWorkbenchEnvelope({
       sessionId: 'preview-session', recordedAt: `2026-08-21T00:00:0${sequence}.000Z`, sequence,
       source: { provider: 'peri', sourceId: `solid-${sequence}` }, provenance: { origin: 'local-observed', trust: 'authoritative' }, event,
@@ -2380,7 +2378,7 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     await waitFor(() => expect(textless.services.runtime.getSnapshot().document?.assist.prediction).toBeDefined())
     expect(textless.host.querySelector('[data-content-kind="assist.prediction"]')).toBeNull()
 
-    // ② 有文本但已消费：先渲卡，写消费标记后消失（与输入框 ghost 同一标记）。
+    // ② 有文本的预测仅在输入框呈现；消费后也不挂载聊天卡。
     const consumed = mountPreview()
     const projected = projectWorkbench([
       envelope(1, { type: 'assist.prediction', placeholder: '继续审计', actions: [] }),
@@ -2388,7 +2386,10 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     const eventId = projected.assist.prediction?.eventId
     expect(eventId).toBeTruthy()
     consumed.services.runtime.replaceDocument(projected, { ownerKey: 'owner-preview', generation: 1 })
-    expect(await screen.findByLabelText('输入预测')).toHaveTextContent('继续审计')
+    await waitFor(() => expect(consumed.host.querySelector('.input-ghost-suggestion')).toHaveTextContent('继续审计'))
+    expect(consumed.host.querySelector('[data-content-kind="assist.prediction"]')).toBeNull()
+    expect(consumed.host.querySelector('[aria-label="接受输入建议"]')).toBeNull()
+    expect(consumed.host.querySelector('[aria-label="忽略输入建议"]')).toBeNull()
 
     consumed.services.sessionUi.set('preview-session', 'assist-prediction-consumed', eventId!)
     await waitFor(() => expect(consumed.host.querySelector('[data-content-kind="assist.prediction"]')).toBeNull())
@@ -2398,7 +2399,51 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     queued.services.runtime.replaceDocument(projectWorkbench([
       envelope(1, { type: 'assist.queued-command', command: '/compact' }),
     ]).document, { ownerKey: 'owner-preview', generation: 1 })
-    expect(await screen.findByLabelText('输入预测')).toHaveTextContent('排队命令：/compact')
+    expect(await screen.findByLabelText('排队命令')).toHaveTextContent('排队命令：/compact')
+  })
+
+  it('#394：灰字 Tab 接受、Esc 忽略继续消费原生预测，混合排队命令不带预测按钮', async () => {
+    // 预览模式故意禁用输入；验证键位须使用正常工作台模式。
+    const { host, services } = mountPreview(undefined, { preview: false })
+    const prediction = (sequence: number) => createWorkbenchEnvelope({
+      sessionId: 'preview-session', sequence, recordedAt: '2026-10-05T12:00:00.000Z',
+      source: { provider: 'peri', sourceId: `prediction-${sequence}` },
+      provenance: { origin: 'local-observed', trust: 'authoritative' },
+      event: { type: 'assist.prediction', placeholder: '继续审计', actions: [] },
+    })
+    const projected = projectWorkbench([prediction(1)]).document
+    services.runtime.replaceDocument(projected, { ownerKey: 'owner-preview', generation: 1 })
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toHaveTextContent('继续审计'))
+    expect(host.querySelector('[aria-label="输入预测"]')).toBeNull()
+    expect(host.querySelector('[aria-label="接受输入建议"]')).toBeNull()
+    expect(host.querySelector('[aria-label="忽略输入建议"]')).toBeNull()
+    const textarea = host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!
+    fireEvent.keyDown(textarea, { key: 'Tab' })
+    await waitFor(() => expect(textarea).toHaveValue('继续审计'))
+    expect(services.sessionUi.get('preview-session', 'assist-prediction-consumed', '')).toBe(projected.assist.prediction?.eventId)
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toBeNull())
+
+    fireEvent.input(textarea, { target: { value: '' } })
+    const next = projectWorkbench([prediction(2)]).document
+    services.runtime.replaceDocument(next, { ownerKey: 'owner-preview', generation: 1 })
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toHaveTextContent('继续审计'))
+    fireEvent.keyDown(textarea, { key: 'Escape' })
+    expect(textarea).toHaveValue('')
+    expect(services.sessionUi.get('preview-session', 'assist-prediction-consumed', '')).toBe(next.assist.prediction?.eventId)
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toBeNull())
+
+    services.runtime.replaceDocument(projectWorkbench([
+      prediction(3), createWorkbenchEnvelope({
+        sessionId: 'preview-session', sequence: 4, recordedAt: '2026-10-05T12:00:00.000Z',
+        source: { provider: 'peri', sourceId: 'queue-4' },
+        provenance: { origin: 'local-observed', trust: 'authoritative' },
+        event: { type: 'assist.queued-command', command: '/compact' },
+      }),
+    ]).document, { ownerKey: 'owner-preview', generation: 1 })
+    await waitFor(() => expect(host.querySelector('[aria-label="排队命令"]')).toHaveTextContent('/compact'))
+    const card = host.querySelector('[aria-label="排队命令"]')!
+    expect(card).not.toHaveTextContent('继续审计')
+    expect(card.querySelector('button')).toBeNull()
   })
 
   it('同一 error 事实只渲染一个可见错误 surface', async () => {
