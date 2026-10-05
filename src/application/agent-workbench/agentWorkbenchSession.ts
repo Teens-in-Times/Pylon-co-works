@@ -52,7 +52,7 @@ import {
   isLiveTextDelta,
   localSessionFactEvent,
   runningTailStartTime,
-  toWorkbenchEnvelopes,
+  readWorkbenchRow,
   withJournalDiagnostic,
   type LocalSessionFact,
 } from './agentWorkbenchProjection.ts'
@@ -552,8 +552,9 @@ export function createAgentWorkbenchSessionRuntime(dependencies: Partial<AgentWo
     const candidate = event as { owner?: Parameters<typeof toCanonicalOwnerKey>[0]; sessionId?: unknown }
     const matchesOwner = candidate.owner ? toCanonicalOwnerKey(candidate.owner) === binding.ownerKey : candidate.sessionId === binding.source
     if (!matchesOwner) return
-    const envelopes = toWorkbenchEnvelopes(event)
-    if (envelopes.length > 0) {
+    const read = readWorkbenchRow(event)
+    if (read.ok) {
+      const envelopes = read.envelopes
       if (draft.reconcilePending) draft.liveDuringReconcile.push(...envelopes)
       envelopes.forEach(applyLive)
     }
@@ -565,7 +566,7 @@ export function createAgentWorkbenchSessionRuntime(dependencies: Partial<AgentWo
         if (snapshot.document) runtime.replaceDocument(withJournalDiagnostic(snapshot.document, binding.malformedCount), {
           ownerKey: binding.ownerKey, generation: binding.generation, sessionId: snapshot.sessionId,
         })
-        updateRuntimeState({ status: 'degraded', error: `canonical journal 有 ${binding.malformedCount} 条事件无法迁移` })
+        updateRuntimeState({ status: 'degraded', error: `canonical journal 有 ${binding.malformedCount} 条事件无法解析` })
       }
     }
   })

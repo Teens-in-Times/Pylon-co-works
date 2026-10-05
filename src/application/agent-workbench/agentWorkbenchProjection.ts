@@ -148,7 +148,7 @@ function expandCanonicalUnitRow(event: CanonicalConversationEvent, ownerKey: str
   return payload.segments.flatMap((segment, index) => {
     if (segment.kind === 'event') {
       const inner = canonicalRowToWorkbench(segment.event)
-      if (inner !== undefined && inner.length > 0) return inner
+      if (inner?.ok) return inner.envelopes
       // 段级隔离：该段退化为单行归一。eventId 缺失时用 `<unit>#segment-<i>` 保唯一，
       // 否则两条坏段会共用同一 id 而被 appliedEventIds 去重吃掉一条。
       const innerEventId = segment.event.eventId
@@ -177,7 +177,7 @@ function expandCanonicalUnitRow(event: CanonicalConversationEvent, ownerKey: str
       if (runEnvelopes.length > 0) return runEnvelopes
       // 段级隔离（与 `event` 段同策）：该段不可读时退化为单行归一，不让一个坏段吞掉整轮。
       const fallback = canonicalRowToWorkbench(segment.event)
-      if (fallback !== undefined && fallback.length > 0) return fallback
+      if (fallback?.ok) return fallback.envelopes
       return normalizeCanonicalRowToEnvelopes(
         segment.event,
         segment.event.rawPayload,
@@ -204,13 +204,21 @@ function expandCanonicalUnitRow(event: CanonicalConversationEvent, ownerKey: str
   })
 }
 
-function canonicalRowToWorkbench(row: unknown): readonly WorkbenchEventEnvelope[] | undefined {
+/** A valid row can intentionally carry no timeline fact (for example Peri bookkeeping). */
+export type WorkbenchRowReadResult =
+  | { readonly ok: true; readonly envelopes: readonly WorkbenchEventEnvelope[] }
+  | { readonly ok: false }
+
+function canonicalRowToWorkbench(row: unknown): WorkbenchRowReadResult | undefined {
   if (!row || typeof row !== 'object' || !('owner' in row) || !('rawPayload' in row) || !('eventType' in row)) return undefined
-  if (validateCanonicalEvent(row).length > 0) return []
+  if (validateCanonicalEvent(row).length > 0) return { ok: false }
   const event = row as CanonicalConversationEvent
-  if (event.eventType === 'turn.unit') return expandCanonicalUnitRow(event, toCanonicalOwnerKey(event.owner))
-  if (isCanonicalBatchDeltaType(event.eventType)) return expandCanonicalBatchRow(event)
-  return normalizeCanonicalRowToEnvelopes(event, event.rawPayload, event.sequence, event.eventId, [event.sequence, event.sequence])
+  const envelopes = event.eventType === 'turn.unit'
+    ? expandCanonicalUnitRow(event, toCanonicalOwnerKey(event.owner))
+    : isCanonicalBatchDeltaType(event.eventType)
+      ? expandCanonicalBatchRow(event)
+      : normalizeCanonicalRowToEnvelopes(event, event.rawPayload, event.sequence, event.eventId, [event.sequence, event.sequence])
+  return { ok: true, envelopes }
 }
 
 function isOptimisticUserEvent(raw: unknown): boolean {
@@ -224,11 +232,11 @@ function isOptimisticUserEvent(raw: unknown): boolean {
   return update.sessionUpdate === 'user_message_chunk' && meta?.pylonOptimisticUser === true
 }
 
-export function toWorkbenchEnvelopes(value: unknown): readonly WorkbenchEventEnvelope[] {
+export function readWorkbenchRow(value: unknown): WorkbenchRowReadResult {
   const canonical = canonicalRowToWorkbench(value)
   if (canonical !== undefined) return canonical
   const migrated = migrateWorkbenchEnvelope(value)
-  return migrated.ok ? [migrated.value] : []
+  return migrated.ok ? { ok: true, envelopes: [migrated.value] } : { ok: false }
 }
 
 /** 持久化 draft 只供 Workbench 临时投影；不生成 canonical coverage。 */
@@ -282,7 +290,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function withJournalDiagnostic(document: WorkbenchDocument, count: number): WorkbenchDocument {
-  const message = `canonical journal 有 ${count} 条事件无法迁移`
+  const message = `canonical journal 有 ${count} 条事件无法解析`
   return {
     ...document,
     diagnostics: [

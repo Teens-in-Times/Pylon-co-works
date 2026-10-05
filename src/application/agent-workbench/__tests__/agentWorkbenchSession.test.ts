@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../domains/workbench/events/workbenchEventSchema.ts'
-import { createCanonicalEvent } from '../../../domains/events/eventSchema.ts'
+import { createCanonicalEvent, type CanonicalConversationEvent } from '../../../domains/events/eventSchema.ts'
 import type { Session } from '../../../domains/identity/identityStore.ts'
 import { createAgentWorkbenchSessionRuntime } from '../agentWorkbenchSession.ts'
 import { getCanonicalEventFeed } from '../../../infrastructure/events/canonicalEventFeed.ts'
@@ -25,7 +25,7 @@ function message(sequence: number, role: 'user' | 'assistant', text: string, ses
   })
 }
 
-function canonicalRow(sequence: number, sessionUpdate: string, fields: Record<string, unknown> = {}) {
+function canonicalRow(sequence: number, sessionUpdate: string, fields: Record<string, unknown> = {}): CanonicalConversationEvent {
   const owner = { profileId: 'profile-a', agentId: 'peri', localSessionId: 'local:a' }
   return {
     schemaVersion: 1,
@@ -46,6 +46,78 @@ function canonicalRow(sequence: number, sessionUpdate: string, fields: Record<st
 }
 
 describe('Agent Workbench canonical session runtime', () => {
+  it.each(['goal_snapshot', 'turn_committed', 'state_snapshot'])('#563：新会话收到静默 %s 行不误报 journal 损坏，冷读与 refresh 同判', async eventType => {
+    const muted = canonicalRow(2, 'peri/agent_event', {
+      eventJson: JSON.stringify({ type: eventType, value: {} }),
+    })
+    const rows = [canonicalRow(1, 'user_message_chunk', { content: { type: 'text', text: 'new prompt' } }), muted]
+    let persisted: readonly unknown[] = []
+    let publish: ((event: unknown) => void) | undefined
+    const service = createAgentWorkbenchSessionRuntime({
+      loadAll: async () => persisted,
+      subscribe: listener => { publish = listener; return () => { publish = undefined } },
+    })
+    await service.bind(session())
+    publish?.(rows[0])
+    const beforeMuted = service.runtime.getSnapshot()
+    publish?.(muted)
+    expect(service.runtime.getSnapshot()).toBe(beforeMuted)
+    expect(service.runtime.getSnapshot().error).toBeNull()
+    expect(service.runtime.getSnapshot().document?.diagnostics.some(item => item.code === 'canonical.journal.malformed')).toBe(false)
+    persisted = rows
+    await service.refresh(session())
+    expect(service.runtime.getSnapshot().status).not.toBe('degraded')
+    expect(service.runtime.getSnapshot().error).toBeNull()
+    expect(service.runtime.getSnapshot().document?.messages.map(item => item.content)).toEqual(['new prompt'])
+    service.destroy()
+
+    const restored = createAgentWorkbenchSessionRuntime({ loadAll: async () => rows, subscribe: () => () => {} })
+    await restored.bind(session())
+    expect(restored.runtime.getSnapshot().status).not.toBe('degraded')
+    expect(restored.runtime.getSnapshot().error).toBeNull()
+    expect(restored.runtime.getSnapshot().document?.diagnostics.some(item => item.code === 'canonical.journal.malformed')).toBe(false)
+    restored.destroy()
+
+    const paged = createAgentWorkbenchSessionRuntime({
+      listJournalPages: async (_ownerKey, onPage) => {
+        await onPage([rows[0]], false)
+        await onPage([muted], true)
+      },
+      subscribe: () => () => {},
+    })
+    await paged.bind(session())
+    expect(paged.runtime.getSnapshot().status).not.toBe('degraded')
+    expect(paged.runtime.getSnapshot().error).toBeNull()
+    expect(paged.runtime.getSnapshot().document?.diagnostics.some(item => item.code === 'canonical.journal.malformed')).toBe(false)
+    paged.destroy()
+  })
+
+  it('#563：损坏行与合法静默行混合时，只统计损坏行', async () => {
+    const valid = canonicalRow(1, 'peri/agent_event', { eventJson: JSON.stringify({ type: 'goal_snapshot', value: {} }) })
+    const invalid = { ...valid, sequence: 2, eventId: 'invalid-id' }
+    let publish: ((event: unknown) => void) | undefined
+    const service = createAgentWorkbenchSessionRuntime({
+      loadAll: async () => [valid, invalid],
+      subscribe: listener => { publish = listener; return () => { publish = undefined } },
+    })
+    const assertMalformed = (count: number) => {
+      expect(service.runtime.getSnapshot().status).toBe('degraded')
+      expect(service.runtime.getSnapshot().document?.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'canonical.journal.malformed', data: { malformedCount: count },
+        message: `canonical journal 有 ${count} 条事件无法解析`,
+      }))
+    }
+    await service.bind(session())
+    assertMalformed(1)
+    await service.refresh(session())
+    assertMalformed(1)
+    publish?.(valid)
+    assertMalformed(1)
+    publish?.(invalid)
+    assertMalformed(2)
+    service.destroy()
+  })
+
   it('#155 T3：冷挂载恢复中断片段为有标记的临时内容', async () => {
     const ownerKey = toCanonicalOwnerKey({ profileId: 'profile-a', agentId: 'peri', localSessionId: 'local:a' })
     const service = createAgentWorkbenchSessionRuntime({

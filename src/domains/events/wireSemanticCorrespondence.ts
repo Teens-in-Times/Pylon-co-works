@@ -15,8 +15,11 @@
  * canonical 侧曾整包映射 `session.model-updated`（漂移源）；现按 workbench 语义
  * 收敛为 `session.mode-updated`（mode 是包内必有事实，model/status/title 由
  * workbench 侧拆分产出，canonical 侧 typedPayload 仍保留原始字段不丢）。
- * `current_mode_update`（旧 ACP 变体）与 `cancelled`（legacy 终态）仅 canonical
- * 侧映射；workbench 侧分别落 unknown 兜底——对应表中显式声明，不是缺口。
+ * `current_mode_update`（#557 翻案）两栈均语义化为 `session.mode-updated`——
+ * canonical 侧自 #315 P2 在册；workbench 侧 #315 时曾落 unknown 兜底，实测打
+ * 「未识别」卡（#556/#557），现由 acpNormalizer 拆 mode 事实。
+ * `cancelled`（legacy 终态）仅 canonical 侧映射；workbench 侧落 unknown 兜底——
+ * 对应表中显式声明，不是缺口。
  */
 
 import type { CanonicalEventType } from './eventSchema.ts'
@@ -83,7 +86,8 @@ export const WORKBENCH_TYPE_FOR_WIRE: Readonly<Record<StandardWireSessionUpdateK
   // legacy 变体：canonical 侧收敛 turn.failed，workbench 侧落 unknown 兜底
   // （标准 ACP 的取消语义经 done.stopReason 表达，wire 上不该出现该判别符）。
   cancelled: ['event.unknown'],
-  current_mode_update: ['event.unknown'],
+  // #557 翻案：官方 CurrentModeUpdate 变体两栈语义化（见文件头口径裁决）。
+  current_mode_update: ['session.mode-updated'],
 })
 
 /** #315 Peri 私有扩展通道（`AcpKind::ProviderExtension` 包络后的判别符）。

@@ -351,6 +351,34 @@ describe('ACP normalizer', () => {
   })
 })
 
+// #557：官方 CurrentModeUpdate 变体两栈语义化，不再落 unknown 兜底打「未识别」卡。
+describe('ACP current_mode_update 模式事实（#557）', () => {
+  it('官方字段 currentModeId → session.mode-updated，无 wire.unknown 诊断', () => {
+    const result = normalizeAcpEvent({ update: {
+      sessionUpdate: 'current_mode_update', currentModeId: 'high',
+    } }, context)
+    expect(result.events.map(item => item.event)).toEqual([
+      { type: 'session.mode-updated', mode: 'high' },
+    ])
+    expect(result.diagnostics.map(item => item.code)).not.toContain('wire.unknown')
+  })
+
+  it('modeId 别名与内核 state.rs 同集消费', () => {
+    const result = normalizeAcpEvent({ update: {
+      sessionUpdate: 'current_mode_update', modeId: 'balanced',
+    } }, context)
+    expect(result.events[0].event).toEqual({ type: 'session.mode-updated', mode: 'balanced' })
+  })
+
+  it('缺 mode id（schema 违约）→ mode:undefined 的 mode-updated，不落 event.unknown', () => {
+    const result = normalizeAcpEvent({ update: { sessionUpdate: 'current_mode_update' } }, context)
+    expect(result.events.map(item => item.event)).toEqual([
+      { type: 'session.mode-updated', mode: undefined },
+    ])
+    expect(result.events.map(item => item.event.type)).not.toContain('event.unknown')
+  })
+})
+
 // 并入自 acpPlanNormalizer.test.ts（P91 A6：同 SUT 合并；游离 afterEach 收敛到文件级）
 describe('ACP normalizer plan entries (C08)', () => {
   const hermesContext: NormalizeContext = {
