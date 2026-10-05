@@ -35,7 +35,7 @@ const REPRESENTATIVE_PAYLOAD: Record<StandardWireSessionUpdateKind, Record<strin
   done: { sessionUpdate: 'done', stopReason: 'end_turn' },
   error: { sessionUpdate: 'error', error: 'boom' },
   cancelled: { sessionUpdate: 'cancelled' },
-  current_mode_update: { sessionUpdate: 'current_mode_update', currentMode: 'build' },
+  current_mode_update: { sessionUpdate: 'current_mode_update', currentModeId: 'build' },
 }
 
 /** #315 P2：同一 wire 判别符在 canonical / workbench 两栈下的语义方向由

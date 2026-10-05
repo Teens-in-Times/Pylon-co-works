@@ -197,6 +197,14 @@ function semanticEventForUpdate(update: Record<string, unknown>, context: Normal
         return { event: { type: 'session.status-updated', status: update.status }, diagnostics }
       }
       return { event: { type: 'session.mode-updated', mode: undefined }, diagnostics }
+    case 'current_mode_update': {
+      // #557：官方 CurrentModeUpdate 变体（session/new modes 协商后的异步模式通知），
+      // 此前落 unknown 兜底打「未识别」卡。mode 别名集与内核 state.rs current_mode_update
+      // 臂同集（官方字段 currentModeId 优先）；id 缺席按 session_info_update 空包先例
+      // 落 mode:undefined——reduceSession 对 falsy mode 不覆盖旧值，不打未识别卡。
+      const mode = wireField(update, ['currentModeId', 'modeId', 'mode'])
+      return { event: { type: 'session.mode-updated', ...(typeof mode === 'string' ? { mode } : { mode: undefined }) }, diagnostics }
+    }
     case 'done':
       return { event: { type: 'session.completed', stopReason: typeof update.stopReason === 'string' ? update.stopReason : undefined }, diagnostics }
     case 'error': {
