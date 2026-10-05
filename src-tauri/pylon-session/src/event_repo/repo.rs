@@ -564,6 +564,39 @@ impl EventRepo {
         Ok(exists != 0)
     }
 
+    /// #364：外部 CLI 历史导入的幂等探针——同 (agent_id, remote_session_id) 的
+    /// external-import 行已存在即视为「该原生会话已导入」。v15 收窄后 agent_id
+    /// 不落库（owner_key 派生），故按 owner_key 前缀 LIKE 匹配；`[`/`"` 在 LIKE
+    /// 中是普通字符，agent_id 内的 `%`/`_` 按 #488 纪律转义。全表扫（无该组合
+    /// 索引），导入是用户显式触发的冷路径；若成为瓶颈随 FTS 子卡一并立索引。
+    /// remote_session_id 对外部导入即原生会话 id。
+    pub(super) fn has_external_import(
+        &self,
+        agent_id: &str,
+        remote_session_id: &str,
+    ) -> Result<bool, EventError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| EventError::Unavailable("event repo lock poisoned".into()))?;
+        let escaped = agent_id.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let owner_prefix =
+            format!("[\"{}\",\"{}\",\"%", pylon_canonical_types::EXTERNAL_IMPORT_PROFILE_ID, escaped);
+        let exists: i64 = conn
+            .prepare_cached(
+                "SELECT EXISTS(
+                SELECT 1 FROM canonical_events
+                WHERE remote_session_id = ?1 AND provenance = 5 AND owner_key LIKE ?2 ESCAPE '\\'
+            )",
+            )
+            .map_err(EventError::from)?
+            .query_row(params![remote_session_id, owner_prefix], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(EventError::from)?;
+        Ok(exists != 0)
+    }
+
     /// 游标分页：返回 sequence < before_seq 的最新 limit 条（升序，无 OFFSET）。
     /// before_seq = None 取最新一页；上页最旧一条的 sequence 为下一页游标。
     pub fn list_events(

@@ -37,9 +37,10 @@ fn kernel_input(raw_payload: serde_json::Value) -> KernelEventInput {
         remote_session_id: Some("remote-1".to_string()),
         client_generation: 5,
         received_at: "2026-08-20T00:00:00.000Z".to_string(),
+        occurred_at: None,
         // #334/P2：KernelEventInput.raw_payload 归一为 Arc 共享语义，测试直传 Value。
         raw_payload: std::sync::Arc::new(raw_payload),
-        recovery_import: false,
+        import_origin: super::row::EventImportOrigin::Live,
     }
 }
 
@@ -2987,4 +2988,172 @@ fn journal_turn_boundary_unknown_on_empty_journal() {
         boundary.kind,
         crate::turn_boundary::TurnBoundaryKind::Unknown
     );
+}
+
+// ── #364：外部 CLI 历史导入（external-import provenance + 幂等 + 分叉） ──────
+
+mod external_history_import {
+    use super::*;
+    use crate::event_repo::service::EventService;
+
+    fn external_owner(suffix: &str) -> DurableSessionOwner {
+        DurableSessionOwner::new(
+            "external-import",
+            "claude-code",
+            format!("claude-code:abc-123{suffix}"),
+        )
+    }
+
+    fn external_events() -> Vec<(String, std::sync::Arc<serde_json::Value>)> {
+        vec![
+            (
+                "2026-10-01T10:00:00.000Z".to_string(),
+                std::sync::Arc::new(serde_json::json!({
+                    "update": { "sessionUpdate": "user_message_chunk", "content": { "text": "帮我看看这个仓库" } }
+                })),
+            ),
+            (
+                "2026-10-01T10:00:05.000Z".to_string(),
+                std::sync::Arc::new(serde_json::json!({
+                    "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "好的，先看结构。" } }
+                })),
+            ),
+            (
+                "2026-10-01T10:00:09.000Z".to_string(),
+                std::sync::Arc::new(serde_json::json!({
+                    "update": { "sessionUpdate": "done", "stopReason": "end_turn", "model": "claude-sonnet-4" }
+                })),
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn external_import_lands_unverified_provenance_and_source_timestamps() {
+        let service = EventService::in_memory().unwrap();
+        let owner = external_owner("");
+        let result = service
+            .ingest_external_history(
+                owner.clone(),
+                "abc-123".to_string(),
+                false,
+                external_events(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status, "imported");
+        assert_eq!(result.events.len(), 3);
+        assert_eq!(result.revision, 3);
+
+        let owner_key = owner.key().unwrap();
+        let page = service
+            .list_events(owner_key, None, 10, false)
+            .await
+            .unwrap();
+        for event in &page.events {
+            assert_eq!(event.provenance_origin, "external-import");
+            assert_eq!(event.provenance_trust, "unverified");
+            assert_eq!(event.provenance_provider.as_deref(), Some("claude-code"));
+            assert_eq!(
+                event.provenance_import_id.as_deref(),
+                Some("claude-code:abc-123")
+            );
+        }
+        // occurred_at 保留源时间戳；received_at 是导入时刻（二者不同源）。
+        assert_eq!(page.events[0].occurred_at, "2026-10-01T10:00:00.000Z");
+        assert_ne!(page.events[0].received_at, "2026-10-01T10:00:00.000Z");
+        // external-import 行不构成 local authority（replay 覆盖判定不受影响）。
+        assert!(!service
+            .has_authoritative_local_events(owner.key().unwrap())
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn external_import_is_idempotent_per_agent_and_remote_id() {
+        let service = EventService::in_memory().unwrap();
+        let owner = external_owner("");
+        let first = service
+            .ingest_external_history(owner.clone(), "abc-123".to_string(), false, external_events())
+            .await
+            .unwrap();
+        assert_eq!(first.status, "imported");
+
+        // 同 (agent_id, remote_session_id) 二次导入：0 写入，journal 不变。
+        let second = service
+            .ingest_external_history(owner, "abc-123".to_string(), false, external_events())
+            .await
+            .unwrap();
+        assert_eq!(second.status, "already-imported");
+        assert!(second.events.is_empty());
+        assert_eq!(
+            service
+                .revision(serde_json::to_string(&["external-import", "claude-code", "claude-code:abc-123"]).unwrap())
+                .await
+                .unwrap(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn external_import_force_fork_lands_a_new_owner_journal() {
+        // force 分叉由调用方生成 #N 后缀的新 local_session_id（issue #364 裁决），
+        // service 层只按普通导入落库——新 owner_key ⇒ 空 journal。
+        let service = EventService::in_memory().unwrap();
+        let first = service
+            .ingest_external_history(external_owner(""), "abc-123".to_string(), false, external_events())
+            .await
+            .unwrap();
+        assert_eq!(first.status, "imported");
+
+        let fork = service
+            .ingest_external_history(external_owner("#2"), "abc-123".to_string(), true, external_events())
+            .await
+            .unwrap();
+        assert_eq!(fork.status, "imported");
+        assert_eq!(fork.revision, 3);
+        // 两条 journal 并存：快照原样封存，分叉是新副本。
+        for suffix in ["", "#2"] {
+            let key = serde_json::to_string(&[
+                "external-import",
+                "claude-code",
+                &format!("claude-code:abc-123{suffix}"),
+            ])
+            .unwrap();
+            assert_eq!(service.revision(key).await.unwrap(), 3);
+        }
+    }
+
+    #[test]
+    fn parse_canonical_event_accepts_external_import_only_as_unverified() {
+        let mut event = event_json("peri", "local:s1", 1, "user.message", serde_json::json!({"update": {}}));
+        event["provenance"] = serde_json::json!({
+            "origin": "external-import", "trust": "unverified"
+        });
+        let parsed = parse_canonical_event(&event).expect("external-import/unverified 合法");
+        assert_eq!(parsed.provenance_origin, "external-import");
+        assert_eq!(parsed.provenance_trust, "unverified");
+
+        event["provenance"] = serde_json::json!({
+            "origin": "external-import", "trust": "authoritative"
+        });
+        assert!(
+            parse_canonical_event(&event).is_err(),
+            "external-import 永不为 authoritative（不变式拒绝）"
+        );
+    }
+
+    #[test]
+    fn provenance_code_round_trips_external_import_as_five() {
+        // 整数编码 5 的双向钉死（列不落 wire，编码漂移即历史行误读）。
+        assert_eq!(
+            super::super::provenance::provenance_code("external-import", "unverified"),
+            5
+        );
+        let (origin, trust, provider, import_id) =
+            super::super::provenance::provenance_parts(5, "claude-code", "claude-code:abc");
+        assert_eq!(origin, "external-import");
+        assert_eq!(trust, "unverified");
+        assert_eq!(provider.as_deref(), Some("claude-code"));
+        assert_eq!(import_id.as_deref(), Some("claude-code:abc"));
+    }
 }

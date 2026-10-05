@@ -1,0 +1,54 @@
+[
+  {
+    "events": [
+      {
+        "occurredAt": "2026-09-30T09:40:00.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "正常问题"
+            },
+            "sessionUpdate": "user_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:40:04.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "正常回答"
+            },
+            "sessionUpdate": "agent_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:40:04.000Z",
+        "payload": {
+          "update": {
+            "model": "claude-sonnet-4-5",
+            "sessionUpdate": "done",
+            "stopReason": "end_turn",
+            "usage": {
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "inputTokens": 8,
+              "outputTokens": 2
+            }
+          }
+        }
+      }
+    ],
+    "summary": {
+      "agentId": "claude-code",
+      "eventCount": 3,
+      "externalId": "44444444-4444-4444-8444-444444444444",
+      "lastActivityAt": "2026-09-30T09:40:04.000Z",
+      "skippedLineCount": 4,
+      "sourcePath": "<redacted>",
+      "startedAt": "2026-09-30T09:40:00.000Z",
+      "title": "正常问题"
+    }
+  }
+]

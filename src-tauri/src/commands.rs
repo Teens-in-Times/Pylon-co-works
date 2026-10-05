@@ -94,6 +94,8 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool {
         crate::session::evt_export_raw,
         crate::session::evt_search,
         crate::session::evt_load_compact,
+        crate::external_history::external_history_scan,
+        crate::external_history::external_history_import,
         crate::session::evt_rollup_trim,
         crate::session::user_data_load,
         crate::session::user_data_save,

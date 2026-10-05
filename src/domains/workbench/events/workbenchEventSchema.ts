@@ -176,7 +176,7 @@ export type WorkbenchSemanticEvent =
   | UnknownSemanticEvent
   | ExtensionEvent
 
-export type ProvenanceOrigin = 'local-observed' | 'optimistic-local' | 'recovery-import' | 'migration' | 'plugin'
+export type ProvenanceOrigin = 'local-observed' | 'optimistic-local' | 'recovery-import' | 'migration' | 'plugin' | 'external-import'
 export type ProvenanceTrust = 'authoritative' | 'unverified'
 
 export interface WorkbenchEventSource {
@@ -618,13 +618,15 @@ function validateProvenance(value: unknown, issues: SchemaIssue[]): void {
     issues.push(schemaIssue(['provenance'], 'type.object', 'object', value))
     return
   }
-  const origins: ProvenanceOrigin[] = ['local-observed', 'optimistic-local', 'recovery-import', 'migration', 'plugin']
+  const origins: ProvenanceOrigin[] = ['local-observed', 'optimistic-local', 'recovery-import', 'migration', 'plugin', 'external-import']
   const trusts: ProvenanceTrust[] = ['authoritative', 'unverified']
   if (!origins.includes(value.origin as ProvenanceOrigin)) issues.push(schemaIssue(['provenance', 'origin'], 'enum.origin', origins.join('|'), value.origin))
   if (!trusts.includes(value.trust as ProvenanceTrust)) issues.push(schemaIssue(['provenance', 'trust'], 'enum.trust', trusts.join('|'), value.trust))
   if (value.origin === 'local-observed' && value.trust !== 'authoritative') issues.push(schemaIssue(['provenance', 'trust'], 'provenance.trust', 'authoritative for local-observed', value.trust))
   if (value.origin !== 'local-observed' && value.trust === 'authoritative') issues.push(schemaIssue(['provenance', 'trust'], 'provenance.trust', 'unverified for non-local origin', value.trust))
-  if (value.origin === 'recovery-import') {
+  // recovery-import 与 external-import（#364）的 provider/importId 由读侧自组合派生
+  // （provider=agentId、importId=localSessionId），恒非空——缺失即形状漂移。
+  if (value.origin === 'recovery-import' || value.origin === 'external-import') {
     if (typeof value.provider !== 'string' || value.provider.length === 0) issues.push(schemaIssue(['provenance', 'provider'], 'required.provider', 'non-empty string', value.provider))
     if (typeof value.importId !== 'string' || value.importId.length === 0) issues.push(schemaIssue(['provenance', 'importId'], 'required.importId', 'non-empty string', value.importId))
   }
