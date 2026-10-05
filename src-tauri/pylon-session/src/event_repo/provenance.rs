@@ -5,13 +5,15 @@
 // 四字段/raw_* 截断计数不落库，读侧由 `owner_triple`/`provenance_parts`/
 // `derive_raw_metadata` 派生（推导依据与勘察记录见 .agents/spec/155-t2-schema-rebuild.md）。
 
-/// v15：provenance (origin, trust) 合法的五组合整数编码。`parse_canonical_event`
+/// v15：provenance (origin, trust) 合法的六组合整数编码。`parse_canonical_event`
 /// 已把组合钉死为 local-observed ⇔ authoritative、其余 ⇔ unverified。
+/// #364 起 5 = external-import/unverified（外部 CLI 历史导入，永不为 authoritative）。
 const PROVENANCE_LOCAL_OBSERVED: i64 = 0;
 const PROVENANCE_RECOVERY_IMPORT: i64 = 1;
 const PROVENANCE_OPTIMISTIC_LOCAL: i64 = 2;
 const PROVENANCE_MIGRATION: i64 = 3;
 const PROVENANCE_PLUGIN: i64 = 4;
+const PROVENANCE_EXTERNAL_IMPORT: i64 = 5;
 
 pub(super) fn provenance_code(origin: &str, trust: &str) -> i64 {
     match (origin, trust) {
@@ -20,14 +22,15 @@ pub(super) fn provenance_code(origin: &str, trust: &str) -> i64 {
         ("optimistic-local", "unverified") => PROVENANCE_OPTIMISTIC_LOCAL,
         ("migration", "unverified") => PROVENANCE_MIGRATION,
         ("plugin", "unverified") => PROVENANCE_PLUGIN,
+        ("external-import", "unverified") => PROVENANCE_EXTERNAL_IMPORT,
         // 不可达（写入前已验证）；防御性归入 migration/unverified 保持读侧枚举合法。
         _ => PROVENANCE_MIGRATION,
     }
 }
 
 /// 读侧还原 wire provenance 四字段。provider/import_id 按组合派生：kernel 写入
-/// provider 恒为 agent_id、recovery-import 的 importId 恒为 local_session_id
-/// （全代码域唯一取值，2026-09-19 勘察）。
+/// provider 恒为 agent_id、recovery-import 与 external-import 的 importId 恒为
+/// local_session_id（全代码域唯一取值，2026-09-19 勘察；#364 沿用同一派生）。
 pub(super) fn provenance_parts(
     code: i64,
     agent_id: &str,
@@ -53,6 +56,12 @@ pub(super) fn provenance_parts(
             None,
         ),
         PROVENANCE_PLUGIN => ("plugin".to_string(), "unverified".to_string(), None, None),
+        PROVENANCE_EXTERNAL_IMPORT => (
+            "external-import".to_string(),
+            "unverified".to_string(),
+            Some(agent_id.to_string()),
+            Some(local_session_id.to_string()),
+        ),
         _ => (
             "migration".to_string(),
             "unverified".to_string(),

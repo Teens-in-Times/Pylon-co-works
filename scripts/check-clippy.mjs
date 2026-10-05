@@ -23,7 +23,7 @@ import process from "node:process"
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const baseline = "artifacts/clippy-baseline.json"
-const CRATES = ["pylon", "pylon-core", "pylon-acp", "pylon-session", "pylon-foundations", "pet-core"]
+const CRATES = ["pylon", "pylon-core", "pylon-acp", "pylon-session", "pylon-foundations", "pet-core", "pylon-agent-history"]
 
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo"
 const work = mkdtempSync(join(tmpdir(), "pylon-clippy-"))

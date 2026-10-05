@@ -3116,6 +3116,7 @@ dependencies = [
  "log",
  "mimalloc",
  "pylon-acp",
+ "pylon-agent-history",
  "pylon-canonical-types",
  "pylon-core",
  "pylon-foundations",
@@ -3174,6 +3175,14 @@ dependencies = [
  "tokio-util",
  "tracing",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "pylon-agent-history"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

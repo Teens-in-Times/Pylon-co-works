@@ -1,0 +1,54 @@
+[
+  {
+    "events": [
+      {
+        "occurredAt": "2026-09-30T09:00:00.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "帮我看下这个模块的结构"
+            },
+            "sessionUpdate": "user_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:00:05.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "这个模块分三层：入口、领域与存储。"
+            },
+            "sessionUpdate": "agent_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:00:05.000Z",
+        "payload": {
+          "update": {
+            "model": "claude-sonnet-4-5",
+            "sessionUpdate": "done",
+            "stopReason": "end_turn",
+            "usage": {
+              "cacheReadTokens": 64,
+              "cacheWriteTokens": 0,
+              "inputTokens": 120,
+              "outputTokens": 42
+            }
+          }
+        }
+      }
+    ],
+    "summary": {
+      "agentId": "claude-code",
+      "eventCount": 3,
+      "externalId": "11111111-1111-4111-8111-111111111111",
+      "lastActivityAt": "2026-09-30T09:00:05.000Z",
+      "skippedLineCount": 0,
+      "sourcePath": "<redacted>",
+      "startedAt": "2026-09-30T09:00:00.000Z",
+      "title": "模块结构分析"
+    }
+  }
+]

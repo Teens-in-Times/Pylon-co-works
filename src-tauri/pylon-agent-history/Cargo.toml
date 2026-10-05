@@ -1,0 +1,18 @@
+[package]
+name = "pylon-agent-history"
+version = "0.1.0"
+edition = "2021"
+description = "各 Agent CLI 原生历史会话的解析 IR（#364；只产 IR，不写库、零 tauri）"
+publish = false
+
+# #364：零 tauri、不依赖 pylon-session——解析产物是自描述 IR（事件载荷为
+# `session/update` 线形状 JSON），落库由宿主经 `EventService::ingest_external_history`
+# 完成。依赖面刻意只留 serde/serde_json：CLI 磁盘格式漂移的拦截靠 golden 夹具，
+# 不靠扩大依赖。
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# #414：接入 workspace 级 lint 清单（src-tauri/Cargo.toml [workspace.lints]）。
+[lints]
+workspace = true

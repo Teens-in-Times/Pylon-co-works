@@ -25,6 +25,7 @@ members = [
     "pylon-canonical-types",
     "pylon-compute",
     "pylon-markdown",
+    "pylon-agent-history",
     # #382：测试夹具独立成 crate——依赖只有 serde_json。留在主 crate 里当 [[bin]]
     # 会被 Cargo 的「包内 bin 隐式链接本包 lib」规则拖去编译整棵 Tauri 依赖树
     # （CI 实测 405 crate / 5m26s，而夹具源码只 use serde_json + std）。
@@ -104,6 +105,7 @@ pylon-acp = { path = "pylon-acp" }
 pylon-core = { path = "pylon-core" }
 pylon-foundations = { path = "pylon-foundations" }
 pylon-session = { path = "pylon-session" }
+pylon-agent-history = { path = "pylon-agent-history" }
 # #220 WP1：canonical 事件 wire 契约的单源。写入侧（session/event_repo.rs）与
 # WASM 计算核（pylon-compute）共用同一份词表与 identity 推导纪律。
 pylon-canonical-types = { path = "pylon-canonical-types" }

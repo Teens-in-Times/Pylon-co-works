@@ -20,6 +20,7 @@ mod dispatcher;
 mod docs_sheet;
 mod error;
 mod export;
+mod external_history;
 mod gateway;
 pub(crate) use pylon_core::hermes;
 mod commands;
