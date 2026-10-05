@@ -1,5 +1,7 @@
 # L.md · 并行施工协调板
 
+- [kumo] **#569 respond_interaction 接缝批（2026-10-05）**：kind 静默容错契约化 + 私有桥应答构造臂归位 private_ext（#436 裁决立项）。**依 §2.1 隔离到独立 worktree（分支 `kumo/569-interaction-seam`，基于 github/main）施工与提交，不碰共享树任何在途文件**。域＝`src-tauri/src/permission.rs`（私有臂替换单点调用 + kind 契约注释）、`src-tauri/src/protocol_adapter/private_ext.rs`（新增 `build_interaction_response` + 单测）、`src-tauri/src/protocol_adapter/mod.rs`（kind 校验处注释一行）、`docs/说明书/Pylon-项目架构参考.md`（审批线段一处）、`.agents/{spec,records}/569-*`。**不碰** `approve_tool_call`（#568 另批）、decisions/0035、records/515。
+
 - [Codex] **#394 预测仅保留输入框灰字（2026-10-05 用户裁决，PR #565）**：复用 `journal-malformed` worktree / 已有分支，#564 已合并；域＝`WorkbenchDocumentSurface.solid.tsx`、`chat/content/SessionSurfaceCard.solid.tsx` 及相关 mount/card 测试、Peri 覆盖锚点、ADR-0033/说明书/记录。不碰共享树 #545 文档；排队命令保留展示。
 
 - [kumo] **#557 current_mode_update 语义消费（2026-10-05）**：域＝`src/domains/events/wireSemanticCorrespondence.ts`、`src/domains/workbench/normalizers/acpNormalizer.ts`（+`__tests__/{acpNormalizer,wireSemanticParity}.test.ts`）、`.agents/{spec,records}/557-*`。**不碰** `workbenchProjectorReducer.ts`（#551 在途）、`src-tauri/**`（#548/#549 在途）、decisions/0035 与 records/515（#545 在途 hunks）。共享树内施工，pathspec 提交。
