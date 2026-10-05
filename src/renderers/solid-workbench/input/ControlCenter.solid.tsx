@@ -1,15 +1,12 @@
 /** @jsxImportSource solid-js */
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js'
-import { formatUsagePercent, formatUsageTokens } from '../../../domains/theme/tokenFormat.ts'
 import { CC_WIDGET_IDS, WIDGET_PROPERTY_FIELDS, isWidgetVisible, CC_WIDGET_LABELS, ccWidgetLanding, coerceInputLanding, resolveCcHiddenWidgetIds, resolveCcWidgetGroup, type CcPropertyCommand, type CcWidgetId, type WidgetPropertyField } from '../../../domains/cc/widgetDefinitions.ts'
 import { setCcHiddenState, type CcLayoutWidgetId, type CcVisibilityTarget, type CcWidgetPlacement } from '../../../domains/cc/ccLayoutState.ts'
 import { ccMinHeightInputOf, resolveCcMinHeight, resolveCcMinWidth, resolveCcWidthGroups, type CcWidgetWidthIndex } from '../../../domains/cc/ccHeightState.ts'
 import { resolveCcShowVerdict, type CcShowVerdict, type CcShowVerdictInput } from '../../../domains/cc/ccShowVerdict.ts'
-import { resolveContextUsage } from '../../../domains/workbench/session/sessionSurface.ts'
 import { useSolidWorkbench } from '../SolidWorkbenchContext.solid.tsx'
 import { createSessionUiSignal } from '../adapters/sessionUiSignal.solid.tsx'
-import { SolidInputBar } from './InputBar.solid.tsx'
-import { SolidCcSendButton, SolidModeWidget, SolidModelWidget, SolidReasoningWidget } from './WorkbenchWidgets.solid.tsx'
+import { createCcWidgetRenderers } from './createCcWidgetRenderers.solid.tsx'
 import { resolveModeOptionEntries } from './workbenchOptionCatalog.ts'
 import type { WorkbenchAttachment } from '../../../domains/workbench/workbenchCommandFacade.ts'
 import { toCssBackgroundImage } from '../../../infrastructure/skin/backgroundImage.ts'
@@ -314,64 +311,35 @@ export function SolidControlCenter() {
     after: <Show when={submitError()}>{message => <div class="solid-agent-empty-error" role="alert">{message()}</div>}</Show>,
   } : undefined)
 
-  const renderBody = (id: CcWidgetId): JSX.Element | null => {
-    switch (id) {
-      case 'input':
-        return <SolidInputBar disabled={readonly()} predictionProvider={workbench.predictionProvider} empty={emptyComposer} />
-      case 'tokens': {
-        // S11 用量控件：按钮型外观、不可点击（无 onClick / 无菜单 / 无 aria-haspopup）。
-        // 外观沿用 model 控件的外观字段 —— 本控件不新增属性字段（S11 拍板「光秃秃」），
-        // 但必须与 model/reasoning/mode 是同一族按钮，否则会退化成裸文字。
-        const usage = () => resolveContextUsage(runtime().document?.session.usage)
-        const limit = () => usage().limit
-        const pillStyle = () => ({
-          height: `${appearance().modelHeight ?? 28}px`,
-          'border-radius': `${appearance().modelRadius ?? 0}px`,
-          // ★ #238 刀7：原先这里还乘一个「缩放」(`ccScale.tokens`)。缩放已整体删除
-          //   ⇒ 用量字号直接取基准字号（`modelFontSize`）。对没调过缩放的人（= 100）逐位相同。
-          'font-size': `${appearance().modelFontSize ?? 12}px`,
-          // ★ #266 遗留①：直读模型控件的颜色字段（借用关系见定义表 `borrowsFrom: 'model'`）——
-          //   模型底色/文字色改成自由选色后，胶囊跟着模型走。
-          background: appearance().modelBgColor,
-          color: appearance().modelTextColor,
-        })
-        return <span class="cc-usage-pill" style={pillStyle()}>
-          <span class="cc-usage-count">{usage().used !== undefined ? formatUsageTokens(usage().used!) : '—'}/{limit() && limit()! > 0 ? formatUsageTokens(limit()!) : '—'}</span>
-          <span class="cc-usage-percent">{usage().percent !== undefined ? formatUsagePercent(usage().percent! / 100) : '—'}</span>
-        </span>
-      }
-      case 'model':
-        // ★ CC-28 拆词：草稿态只认「无会话」——进场期（有会话）走实值。
-        return <SolidModelWidget
-          draftValue={hasNoSession() ? modelId : undefined}
-          onDraftChange={hasNoSession() ? setModelId : undefined}
-          forceDropdown={hasNoSession()}
-        />
-      case 'reasoning':
-        return <SolidReasoningWidget draftValue={hasNoSession() ? reasoningLevel : undefined} onDraftChange={hasNoSession() ? setReasoningLevel : undefined} />
-      case 'mode':
-        return <SolidModeWidget
-          draftValue={hasNoSession() ? mode : undefined}
-          onDraftChange={hasNoSession() ? setMode : undefined}
-          forceDropdown={hasNoSession()}
-        />
-      case 'cc-command-hint':
-        // ★ #238 刀5B：命令行提示从「裸渲染」升格为表里的普通行内元件（本分支就是它的渲染实现）。
-        //   ★ #266 ⑰：运行期条件（有会话 / 命令行模式 / 详细档不为 hidden）**已全部撤销** ——
-        //   判据只剩「隐藏名单」（预设的值 + 详细档折叠 + 空态名单），由 `isWidgetVisible` 统一裁决
-        //   ⇒ 渲染与高度计数共用一个谓词，不可见时自然不计数。
-        return <div class="cc-command-hint" aria-label="输入快捷键提示">
-          <span class="cc-command-hint-key">/: 命令</span>
-          <span class="cc-hint-secondary"><i>|</i> Shift+Enter: 换行</span>
-          {appearance().cliHintMode === 'full' && <span class="cc-hint-tertiary"><i>|</i> Shift+Tab: 模式</span>}
-        </div>
-    }
-  }
+  /**
+   * ★★ #266 CC-13 刀1：渲染体搬进渲染层组件表（`createCcWidgetRenderers.solid.tsx`）——
+   * 原先写死在这儿的 `renderBody` switch 退场；本组件只留「建表一次 + 按 id 取用」。
+   * 表键 = 定义表全部 8 行的 id（`Record<CcWidgetGroupId, …>` 做**编译期全覆盖**）；
+   * 两处特例（`.cc-bg` 背景板 / 发送按钮）的渲染体同样从表里取 —— 调用位置与在场门原样不动。
+   * ★ 传进去的一律是**访问器**（不是取值）：Solid 响应性靠调用时机（见该文件的 ctx 纪律）。
+   */
+  const renderers = createCcWidgetRenderers({
+    appearance,
+    runtime,
+    hasNoSession,
+    modelId,
+    setModelId,
+    reasoningLevel,
+    setReasoningLevel,
+    mode,
+    setMode,
+    readonly,
+    submitting,
+    emptyComposer,
+    predictionProvider: workbench.predictionProvider,
+    sendButtonMode,
+    ccSurfaceRegistered,
+  })
 
   const isDetached = (id: CcWidgetId) => resolveCcWidgetGroup(id)?.detachX !== undefined
   const renderWidget = (id: CcWidgetId) => {
     const placement = () => appearance().ccLayout.placements[id]
-    const body = renderBody(id)
+    const body = renderers[id]()
     if (body === null) return null
     return <div
       // ★ #266 刀2.5：声明了 `detachX` 的件挂 `cc-detach-x`（脱离队列，见 CSS）；未声明不挂。
@@ -541,8 +509,8 @@ export function SolidControlCenter() {
         workbench.appearance.dispatch({ type: 'set-cc-height', height: appearance().ccHeight + (event.key === 'ArrowUp' ? 4 : -4) })
       }}
     ><div class="cc-edit-hdr-bar" /><span class="cc-edit-hdr-label">{appearance().ccHeight}px</span></div></Show>
-    <div class="cc-bg" data-cc-widget={ccSurfaceRegistered() ? 'cc-surface' : undefined} />
-    <Show when={ccSendButtonRegistered() && sendButtonMode()}><SolidCcSendButton disabled={readonly() || submitting()} mode={sendButtonMode() as 'inline' | 'external'} /></Show>
+    {renderers['cc-surface']()}
+    <Show when={ccSendButtonRegistered() && sendButtonMode()}>{renderers['cc-send-button']()}</Show>
     <div class="cc-input-shadow-clip" aria-hidden="true" />
     <div class="cc-body">
       <Show when={selectorPending()}><span role="status" aria-live="polite">{selectorPending()}</span></Show>
