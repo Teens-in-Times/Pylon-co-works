@@ -6,12 +6,14 @@
  * 以及宿主 input 快照（可选工作区清单）。本工厂把它们收敛成**单一入口**：
  * 组件只跟 `CcSources` 说话，测试也只需替换这一个缝。
  *
- * 注意：这里只做**读取聚合**，不做派生状态；全部成员都是按调用现读的函数
- * （注册表快照在渲染时读，保持既有 HMR-safe 口径，见 widgetDefinitions 注释）。
+ * ★ #266 CC-13 刀2：注册轨两件（`cc-surface` / `cc-send-button`）退役后，本口**不再读**
+ *   cc 控件注册表 —— 插件件的注册表订阅改在 ControlCenter 里按**活名单**消费
+ *   （`domains/cc/ccWidgetRoster.ts` 合成，见 `ControlCenter.solid.tsx`）。
+ *
+ * 注意：这里只做**读取聚合**，不做派生状态；全部成员都是按调用现读的函数。
  */
 import { useIdentityStore } from '../../../domains/identity/identityStore.ts'
 import { useWorkspaceEntityStore } from '../../../domains/workspace/workspaceEntityStore.ts'
-import { getCcWidgetRegistry } from '../../../plugin-runtime/runtimeServices.ts'
 import type { WorkbenchWorkspaceOption } from '../../../plugin-runtime/renderers/workbenchRendererFactory.ts'
 
 /** 宿主 input 快照中与中控相关的切片（只声明读到的字段）。 */
@@ -24,10 +26,6 @@ export interface CcSources {
   workspaces(): readonly WorkbenchWorkspaceOption[]
   /** 活跃档案声明的默认模型（模型草稿的播种兜底；runtime 活跃值由调用方优先）。 */
   activeProfileModel(): string
-  /** `cc-surface` 注册轨是否在场（背景板改由注册通道表示）。 */
-  ccSurfaceRegistered(): boolean
-  /** `cc-send-button` 注册轨是否在场（发送块归属 F1=A）。 */
-  ccSendButtonRegistered(): boolean
   /** 新建工作区 IO（workspace 实体 store 的创建入口）。 */
   createWorkspace(name: string, rootPath: string): Promise<{ id: string }>
 }
@@ -39,12 +37,6 @@ export function createCcSources(readInput: () => CcSourcesInputSnapshot): CcSour
       const identity = useIdentityStore.getState()
       return identity.profiles.find(item => item.id === identity.activeProfileId)?.model || ''
     },
-    ccSurfaceRegistered: () => getCcWidgetRegistry().getSnapshot().entries.some(
-      entry => entry.value.id === 'cc-surface',
-    ),
-    ccSendButtonRegistered: () => getCcWidgetRegistry().getSnapshot().entries.some(
-      entry => entry.value.id === 'cc-send-button',
-    ),
     createWorkspace: (name, rootPath) => useWorkspaceEntityStore.getState().createWorkspace(name, rootPath),
   }
 }

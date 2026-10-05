@@ -14,6 +14,10 @@ import { errorMessage } from '../../../infrastructure/tauri/errorPayload.ts'
 import { createCcWorkspaceSelection } from './createCcWorkspaceSelection.solid.tsx'
 import { createCcSources } from './createCcSources.ts'
 import { CC_EDIT_TOOLBAR_IDS, createCcDragController } from './createCcDragController.ts'
+import { resolveCcWidgetRoster, type CcWidgetRosterEntry } from '../../../domains/cc/ccWidgetRoster.ts'
+import { getCcWidgetRegistry } from '../../../plugin-runtime/runtimeServices.ts'
+import { createRegistrySignal } from '../../../infrastructure/state/solidSheetSupport.solid.tsx'
+import { CcIsolatedWidget } from './CcIsolatedWidget.solid.tsx'
 
 /**
  * ★★ #238 刀3：**槽位层已拆** —— 不再有「先分槽、再在槽里排序」两段式。
@@ -106,12 +110,6 @@ export function SolidControlCenter() {
   })
   onCleanup(() => drag.dispose())
 
-  // The body surface is now represented by the cc-widget registration channel.
-  // Keep the existing host-rendered background implementation and CSS intact;
-  // this lookup is the minimal P2 consumer seam and remains HMR-safe because
-  // the registry snapshot is read at render time.
-  const ccSurfaceRegistered = () => sources.ccSurfaceRegistered()
-  const ccSendButtonRegistered = () => sources.ccSendButtonRegistered()
   const sendButtonMode = () => {
     // 04b：空态隐藏发送按钮 —— 与其余控件共用 hiddenWidgetIds() 这一个入口。
     // ★ CC-02：可见性由 isWidgetVisible 承担（与渲染处同一判据）。
@@ -168,6 +166,26 @@ export function SolidControlCenter() {
   // The registered cc-send-button owns the send block (F1=A)：槽位/显隐/缩放统一记在
   // `cc-send-button` 这个 id 上，legacy `send` 已随刀4 迁走。
   const visibleIds = createMemo(() => CC_WIDGET_IDS.filter(id => isWidgetVisible(id, visibilityContext())))
+
+  // ── ★★ #266 CC-13 刀2：插件件上屏（活名单 = 内置 ∪ 已登记）───────────────────────────
+  //   注册表快照 → 活名单（纯函数合成，见 `domains/cc/ccWidgetRoster.ts`）→ 只取**插件件**进
+  //   本刀新增的渲染段（内置件仍走既有渲染循环与两处特例，一个字节不动）。
+  //   ★ 订阅用 `createRegistrySignal`（外部 store → 信号）：登记 / 撤下 / 热替换 ⇒ 名单重算 ⇒ 渲染跟随。
+  const ccWidgetRegistry = getCcWidgetRegistry()
+  const ccRegistrySnapshot = createRegistrySignal(ccWidgetRegistry, () => ccWidgetRegistry.getSnapshot())
+  const ccRoster = createMemo(() => resolveCcWidgetRoster(ccRegistrySnapshot().entries))
+  const ccPluginWidgets = createMemo(() => ccRoster().entries.filter(entry => entry.source === 'plugin'))
+  /** 活名单的拒绝与「渲染标识未命中」都不许静默 —— 经 workbench 诊断口上报（带原因）。 */
+  const reportCcWidgetDiagnostic = (code: string, message: string, phase: 'resolve' | 'update') => {
+    workbench.hostPort?.diagnostics.report({ code, message, phase })
+  }
+  createEffect(() => {
+    for (const rejection of ccRoster().rejected) {
+      reportCcWidgetDiagnostic('cc-widget.roster.rejected', rejection.reason === 'id-collision'
+        ? `插件元件 id 与内置件冲突，登记被拒：${rejection.id}（插件 ${rejection.ownerPluginId}）`
+        : `插件元件缺渲染声明，登记被拒：${rejection.id}（插件 ${rejection.ownerPluginId}）`, 'update')
+    }
+  })
   // ★ #266 刀3：最小高 = **按边算取最大**（算式见 ccHeightState.resolveCcMinHeight）——
   //   输入栏那一组（贴上边）与下边组（贴下边）各算"组高 + 到边距离"，两组取 **max**（不是 sum：
   //   输入栏是绝对定位、不占流），再与下界 64 取大。挂成 `--cc-min-height` 交给 CSS 消费。
@@ -315,8 +333,9 @@ export function SolidControlCenter() {
    * ★★ #266 CC-13 刀1：渲染体搬进渲染层组件表（`createCcWidgetRenderers.solid.tsx`）——
    * 原先写死在这儿的 `renderBody` switch 退场；本组件只留「建表一次 + 按 id 取用」。
    * 表键 = 定义表全部 8 行的 id（`Record<CcWidgetGroupId, …>` 做**编译期全覆盖**）；
-   * 两处特例（`.cc-bg` 背景板 / 发送按钮）的渲染体同样从表里取 —— 调用位置与在场门原样不动。
+   * 两处特例（`.cc-bg` 背景板 / 发送按钮）的渲染体同样从表里取。
    * ★ 传进去的一律是**访问器**（不是取值）：Solid 响应性靠调用时机（见该文件的 ctx 纪律）。
+   * ★ CC-13 刀2：`.cc-bg` 的 `data-cc-widget` 已常量化、发送按钮的在场门已撤（注册轨两件退役）。
    */
   const renderers = createCcWidgetRenderers({
     appearance,
@@ -333,7 +352,18 @@ export function SolidControlCenter() {
     emptyComposer,
     predictionProvider: workbench.predictionProvider,
     sendButtonMode,
-    ccSurfaceRegistered,
+  })
+
+  /** 刀1 渲染表的键查询（插件件的 `host-renderer` 走它；未命中 ⇒ 显式诊断占位，不静默）。 */
+  const lookupHostRenderer = (rendererKey: string) =>
+    (renderers as Record<string, (() => JSX.Element | null) | undefined>)[rendererKey]
+
+  createEffect(() => {
+    for (const entry of ccPluginWidgets()) {
+      if (entry.render.kind === 'host-renderer' && !lookupHostRenderer(entry.render.rendererKey)) {
+        reportCcWidgetDiagnostic('cc-widget.renderer.missing', `插件元件 ${entry.id} 的渲染标识未命中组件表：${entry.render.rendererKey}`, 'resolve')
+      }
+    }
   })
 
   const isDetached = (id: CcWidgetId) => resolveCcWidgetGroup(id)?.detachX !== undefined
@@ -349,6 +379,23 @@ export function SolidControlCenter() {
       style={{ ...detachStyle(id), ...placementStyle(placement()) }}
       onPointerDown={event => drag.beginWidgetDrag(event, id)}
     >{body}</div>
+  }
+
+  /**
+   * ★★ #266 CC-13 刀2：插件件的渲染体（判别式分诊 —— `render` 是唯一入口）。
+   * - `host-renderer`：查刀1 组件表（键 = `rendererKey`）；**未命中 ⇒ 显式诊断占位**（上面那条
+   *   effect 同步上报），不静默画空白。
+   * - `isolated-surface`：挂 `CcIsolatedWidget`（宿主接线 + §4 I/O 契约）。
+   * ★ 本刀插件件**无位置内联样式、不参与拖动**（位置/拖动是刀 3 的事）。
+   */
+  const renderPluginWidget = (entry: CcWidgetRosterEntry): JSX.Element | null => {
+    if (entry.render.kind === 'isolated-surface') {
+      return <CcIsolatedWidget surfaceId={entry.render.surfaceId} readonly={readonly} submitting={submitting} />
+    }
+    const body = lookupHostRenderer(entry.render.rendererKey)
+    return body
+      ? body()
+      : <div class="cc-widget-error" role="alert">{`未命中渲染器：${entry.render.rendererKey}`}</div>
   }
 
   const setProperty = (command: CcPropertyCommand) => workbench.appearance.dispatch(command)
@@ -510,7 +557,7 @@ export function SolidControlCenter() {
       }}
     ><div class="cc-edit-hdr-bar" /><span class="cc-edit-hdr-label">{appearance().ccHeight}px</span></div></Show>
     {renderers['cc-surface']()}
-    <Show when={ccSendButtonRegistered() && sendButtonMode()}>{renderers['cc-send-button']()}</Show>
+    <Show when={sendButtonMode()}>{renderers['cc-send-button']()}</Show>
     <div class="cc-input-shadow-clip" aria-hidden="true" />
     <div class="cc-body">
       <Show when={selectorPending()}><span role="status" aria-live="polite">{selectorPending()}</span></Show>
@@ -518,7 +565,12 @@ export function SolidControlCenter() {
           （原 peri 分支的 `.cc-footer-peri` 包装 div 与相关 CSS 一并退场）。
           元件位置不新增任何机制：仍由定义表的 layout 声明 + 区域预设记的值决定。 */}
       <div class="cc-input-slot"><For each={idsForLanding(INPUT_LANDING)}>{renderWidget}</For></div>
-      <div class="cc-status-row"><Show when={statusRowContent()}>{statusGroup()}</Show></div>
+      {/* ★★ #266 CC-13 刀2：插件件默认**排最后** —— 追加在状态区末尾（本刀不写位置、不参与拖动；
+          位置与拖动是刀 3 的事）。无插件登记时这一段不产任何 DOM（内置件零回归的前提）。 */}
+      <div class="cc-status-row">
+        <Show when={statusRowContent()}>{statusGroup()}</Show>
+        <For each={ccPluginWidgets()}>{entry => <div class="cc-widget" data-widget-id={entry.id}>{renderPluginWidget(entry)}</div>}</For>
+      </div>
     </div>
   </div>
   {/* ★★ #266 刀5：编辑清单 = **左侧一列**（一列到底 · 行内展开），替换刀4 的底部横栏 + 独立属性面板。

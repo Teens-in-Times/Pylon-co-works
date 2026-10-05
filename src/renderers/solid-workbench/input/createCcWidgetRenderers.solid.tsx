@@ -19,8 +19,8 @@ import { SolidCcSendButton, SolidModeWidget, SolidModelWidget, SolidReasoningWid
  *
  * ★ 依赖方向：本表住渲染层（`src/renderers/solid-workbench/input/`）——「组件长什么样」是渲染层的事，
  *   `domains/cc` 保持框架无关、不 import 任何组件（见 `widgetDefinitions.ts` 表头）。
- * ★ 本刀**不动注册轨**：`cc-surface` / `cc-send-button` 的「在场门」（`ccWidgetRegistry` 快照读取，
- *   见 `createCcSources.ts` 与 `ControlCenter.solid.tsx`）原样保留 —— 它们是刀2「插件件走同一张表」的前置。
+ * ★ #266 CC-13 刀2：内置两件（`cc-surface` / `cc-send-button`）的注册贡献与在场门已退役
+ *   —— 表本体与内置件渲染循环不动；插件件走 ControlCenter 新增的那一段（查本表 / 挂隔离面）。
  *
  * ★ ctx 纪律（Solid 响应性靠它）：**一律传访问器（函数），不许先取值再传** ——
  *   先取值 = 把随会话 / 预设变化的量冻成常量，界面不会跟着变（本表的值全部由 ControlCenter
@@ -57,8 +57,6 @@ export interface CcWidgetRenderContext {
   predictionProvider?: InputPredictionProvider
   /** 发送按钮形态（未配置 / 被藏 = undefined） */
   sendButtonMode(): 'inline' | 'external' | undefined
-  /** `cc-surface` 注册轨在场门（本刀保留注册轨，未退役） */
-  ccSurfaceRegistered(): boolean
 }
 
 /** 渲染表：键 = 定义表全部 8 行的 id；`Record` 强制全覆盖（缺一行 = 编译报错）。 */
@@ -67,7 +65,9 @@ export type CcWidgetRendererTable = Readonly<Record<CcWidgetGroupId, () => JSX.E
 export function createCcWidgetRenderers(ctx: CcWidgetRenderContext): CcWidgetRendererTable {
   return {
     // 背景板本体（#238 刀4 起它在场以 `.cc-bg` 上的 data 属性表述；全仓零消费者）。
-    'cc-surface': () => <div class="cc-bg" data-cc-widget={ctx.ccSurfaceRegistered() ? 'cc-surface' : undefined} />,
+    // ★ #266 CC-13 刀2：注册轨两件退役（`cc-surface` / `cc-send-button` 的内置登记已删）
+    //   ⇒ 该属性**常量化**（不再由"注册没注册"决定画不画）。
+    'cc-surface': () => <div class="cc-bg" data-cc-widget="cc-surface" />,
     input: () => <SolidInputBar disabled={ctx.readonly()} predictionProvider={ctx.predictionProvider} empty={ctx.emptyComposer} />,
     model: () =>
       // ★ CC-28 拆词：草稿态只认「无会话」——进场期（有会话）走实值。

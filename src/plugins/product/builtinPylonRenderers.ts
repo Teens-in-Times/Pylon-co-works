@@ -15,7 +15,6 @@ import { createBuiltinPresentationCommandDefinitions } from '../core/renderer/bu
 import { BUILTIN_INTERFACE_MODES } from '../core/interfaceMode/builtinInterfaceModes.ts'
 import { DEFAULT_SHELL_RECIPE } from '../../plugin-runtime/shell-recipe/shellRecipeTypes.ts'
 import { createBuiltinSolidContentSlot, createBuiltinSolidRendererSuite } from '../../renderers/solid-workbench/builtinSolidRendererSuite.ts'
-import { registerBuiltinCcWidgets } from '../core/cc/builtinCcWidgetPlugin.ts'
 
 const rendererDefinitions = Object.freeze([
   createCoreSolidRendererPluginDefinition(),
@@ -55,7 +54,6 @@ export function createBuiltinPylonRenderersPlugin(): BuiltinPluginDefinition {
       for (const profile of BUILTIN_PRESENTATION_PROFILES) context.presentation.registerProfile(profile)
       context.shellRecipes.registerRecipe(DEFAULT_SHELL_RECIPE)
       for (const mode of BUILTIN_INTERFACE_MODES) context.interfaceModes.registerMode(mode)
-      registerBuiltinCcWidgets(context)
       context.fonts.registerFont({
         id: 'system',
         label: '系统无衬线',

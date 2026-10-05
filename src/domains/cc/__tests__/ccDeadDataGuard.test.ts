@@ -1,10 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import {
-  BUILTIN_CC_SEND_BUTTON_CONTRIBUTION,
-  BUILTIN_CC_SURFACE_CONTRIBUTION,
-} from '../widgetCatalog.ts'
 
 /**
  * #238 第③件（中控死数据清理）的**防回归守卫**。
@@ -14,19 +10,19 @@ import {
  * （`check-css-var-consumption.mts` 只抓"**不带 fallback** 的悬空引用"）。
  * 本文件补上这一层。写法仿先例 `workbenchChromeCss.solid.test.ts` 的 CSS 侧守卫（刀5B 建）。
  *
- * 守卫对象 = 第③件删掉的五项：
+ * 守卫对象 = 第③件删掉的四项（原第 5 项「两个内建贡献上的 propertyFields」随 CC-13 刀2
+ * 内置两件退役一并退场 —— 贡献本体已删，该结构断言无处可断）：
  * 1. `BUILTIN_CC_WIDGET_DEFINITIONS`（旧目录视图）
  * 2. `mergeCcWidgetCatalog`（目录合并视图，`src/components/cc/widgetCatalogView.ts` 已整删）
  * 3. `.modern-command-dock` 一族 CSS
  * 4. `.status-bar`（`chat/StatusBar.css` 里那一块）
- * 5. 两个内建贡献上的 `propertyFields`
  *
  * ★ **这不是教条**：若将来确要用其中任何一项（例：`mergeCcWidgetCatalog` 的合并逻辑随
  * 插件通道打通而复活），**改这条测试就是一个显式动作** —— 改哪一条、为什么改，都会进 diff。
  * 这正是它存在的意义：把"死数据悄悄回来"变成"有人主动决定它回来"。
  *
- * 判据是**读生产源码文本**（跳过 `__tests__` / `__fixtures__`：测试里的说明性文字会提到这些名字）
- * + **结构断言**（贡献对象上有没有 `propertyFields` 自有属性），不另写一份正则模拟。
+ * 判据是**读生产源码文本**（跳过 `__tests__` / `__fixtures__`：测试里的说明性文字会提到这些名字），
+ * 不另写一份正则模拟。
  */
 const SRC_ROOT = decodeURIComponent(new URL('../../..', import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, '$1')
 const SCANNED_EXTENSIONS = ['.ts', '.tsx', '.css']
@@ -89,13 +85,5 @@ describe('#238 第③件 · 死数据不得回归', () => {
       .filter(({ text }) => selector.test(text))
       .map(({ path }) => relative(path))
     expect(hits, '`.status-bar` 那一块（该类无渲染方）又回到了样式表').toEqual([])
-  })
-
-  it('两个内建贡献不再带登记字段 propertyFields（那 14 条从来没有读者）', () => {
-    expect(Object.hasOwn(BUILTIN_CC_SURFACE_CONTRIBUTION, 'propertyFields')).toBe(false)
-    expect(Object.hasOwn(BUILTIN_CC_SEND_BUTTON_CONTRIBUTION, 'propertyFields')).toBe(false)
-    // 正控：两条贡献本体仍在（否则上面的断言会因为"东西整个没了"而假绿）
-    expect(BUILTIN_CC_SURFACE_CONTRIBUTION.id).toBe('cc-surface')
-    expect(BUILTIN_CC_SEND_BUTTON_CONTRIBUTION.id).toBe('cc-send-button')
   })
 })
