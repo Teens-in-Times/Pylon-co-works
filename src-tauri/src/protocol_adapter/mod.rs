@@ -213,6 +213,10 @@ async fn respond_request_permission(
     kind: &str,
     answer: &InteractionAnswerInput,
 ) -> Result<(), PylonError> {
+    // #436 裁决（#569）：kind 全局定位为诊断元数据（私有臂不复核、不参与路由）；
+    // 本字面校验是 permission 臂历史行为，原样保留——GUI wire 单点恒发
+    // 'approval'（interactionTransport.ts），CLI 回传投影 kind（permission
+    // 条目恰为 'approval'），实际不构成门槛。
     if kind != "approval" {
         return Err(PylonError::Protocol(format!(
             "interaction response unsupported: provider={provider} kind={kind}"
