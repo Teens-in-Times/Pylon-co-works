@@ -93,7 +93,7 @@ export function PlainMessageList(props: PlainMessageListProps) {
   let bottomAnchor: HTMLDivElement | undefined // Solid ref 会在 mount 时赋值
   let destroyed = false
   let resizeObserver: ResizeObserver | undefined
-  /** 滚动内容容器（生产为 `.term`）的观察器：leading 活动区高度变化不改列表自身
+  /** 消息列表父容器（生产为共同阅读列）的观察器：leading 活动区高度变化不改列表自身
    * 高度 ⇒ container 的 RO 不触发，scrollMargin 会过期（审查 P1-2）。只做廉价的
    * margin 重测与 spacer 刷新，不走测量失效。 */
   let contentObserver: ResizeObserver | undefined
