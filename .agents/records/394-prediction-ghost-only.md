@@ -3,7 +3,7 @@
 ## 元信息
 
 - issue：[#394](https://github.com/Teens-in-Times/Pylon-co-works/issues/394)，本轮为呈现政策修订，issue 继续保留。
-- PR：[#564](https://github.com/Teens-in-Times/Pylon-co-works/pull/564)，与 #563 修复共用已有分支。
+- PR：#564 已于本轮开发期间合并；预测呈现改动通过后续 PR 交付，复用已有分支。
 - 分支：`codex/563-journal-malformed`；基线 `9860005c`，协调声明 `a485c104`；代码、文档和本记录在同一后续提交。
 - 日期／署名：2026-10-05 / Codex。
 
@@ -67,4 +67,4 @@
 
 ## 并行交集
 
-复用独立 managed worktree，与共享树 #545 两个在途文档隔离。共享说明书与 ADR 的改动只在本分支；PR #564 仍待合并，L.md 的本轮在途声明保留。
+复用独立 managed worktree，与共享树 #545 两个在途文档隔离。共享说明书与 ADR 的改动只在本分支。#564 已合并，恢复其原说明并为本轮开后续 PR；合并最新 `github/main` 后生产代码无额外变化，原测试证据仍覆盖当前代码。L.md 的本轮在途声明保留，已合并的 #563 声明撤下。

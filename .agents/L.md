@@ -1,8 +1,6 @@
 # L.md · 并行施工协调板
 
-- [Codex] **#394 预测仅保留输入框灰字（2026-10-05 用户裁决）**：复用 `journal-malformed` worktree / PR #564 分支；域＝`WorkbenchDocumentSurface.solid.tsx`、`chat/content/SessionSurfaceCard.solid.tsx` 及相关 mount/card 测试、Peri 覆盖锚点、ADR-0033/说明书/记录。不碰共享树 #545 文档；排队命令保留展示。
-
-- [Codex] **#563 新会话 canonical.journal.malformed（2026-10-05）**：隔离 worktree `journal-malformed` / 分支 `codex/563-journal-malformed`，基于 `github/main`；域＝`src/application/agent-workbench/agentWorkbench{Projection,Replay,Session}.ts`、session 与 batch 回归测试、`docs/说明书/Pylon-项目架构参考.md`、`.agents/records/563-*`。不碰共享树他人在途文件；合并后撤条。
+- [Codex] **#394 预测仅保留输入框灰字（2026-10-05 用户裁决）**：复用 `journal-malformed` worktree / 已有分支，#564 已合并，本轮另开后续 PR；域＝`WorkbenchDocumentSurface.solid.tsx`、`chat/content/SessionSurfaceCard.solid.tsx` 及相关 mount/card 测试、Peri 覆盖锚点、ADR-0033/说明书/记录。不碰共享树 #545 文档；排队命令保留展示。
 
 - [kumo] **#557 current_mode_update 语义消费（2026-10-05）**：域＝`src/domains/events/wireSemanticCorrespondence.ts`、`src/domains/workbench/normalizers/acpNormalizer.ts`（+`__tests__/{acpNormalizer,wireSemanticParity}.test.ts`）、`.agents/{spec,records}/557-*`。**不碰** `workbenchProjectorReducer.ts`（#551 在途）、`src-tauri/**`（#548/#549 在途）、decisions/0035 与 records/515（#545 在途 hunks）。共享树内施工，pathspec 提交。
 
