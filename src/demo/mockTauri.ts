@@ -622,7 +622,6 @@ export async function mockInvokeCommand(cmd: string, args: Record<string, unknow
     case 'set_config_option':
     case 'close_session':
     case 'cancel_prompt':
-    case 'approve_tool_call':
     case 'export_session':
     case 'clear_runtime_logs':
       return null
