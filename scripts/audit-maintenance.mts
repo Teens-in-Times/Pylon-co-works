@@ -49,6 +49,9 @@ export const moduleDefinitions = [
   // #382：测试夹具独立 crate（feature `test-agent` 门控）。主 crate 里的同包 bin 会被
   // Cargo 的"包内 bin 隐式链接本包 lib"规则拖去编译整棵 Tauri 依赖树，故单独成 crate。
   { id: 'rust-fake-agent', roots: ['src-tauri/pylon-fake-agent/src/'], responsibility: '测试专用假 ACP agent 夹具；不随发行包发布，不参与生产运行时' },
+  // #364：外部 CLI 历史解析。只产 IR（session/update 线形状）——零 tauri、零
+  // rusqlite；落库由宿主经 pylon-session 的 ingest_external_history 完成。
+  { id: 'rust-agent-history', roots: ['src-tauri/pylon-agent-history/src/'], responsibility: '各 Agent CLI 原生历史会话的解析 IR（Claude Code tracer）；只产 IR 不写库' },
   { id: 'rust-build', roots: ['src-tauri/*'], responsibility: '原生构建入口脚本；不属于运行时模块' },
   { id: 'tooling', roots: ['scripts/'], responsibility: '开发、校验与发布脚本；不作为产品运行时 import 来源' },
 ] as const

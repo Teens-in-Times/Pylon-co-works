@@ -1,8 +1,8 @@
 /**
  * permissionController — 权限请求接线层（P0-02）。
  *
- * infrastructure 收边界：负责 Tauri `pylon:permission-request` listen 与
- * `approve_tool_call` invoke，以及 300s 超时处理；状态归 domains/permission 纯 reducer，
+ * infrastructure 收边界：负责 Tauri `pylon:permission-request` listen 与统一应答
+ * invoke（`respond_interaction`，经 interactionTransport）；状态归 domains/permission 纯 reducer，
  * 本层只做 normalize → dispatch → invoke → dispatch。store 读写经注入（dispatch/getState），
  * 不直接 import runtimeStore——测试可注入 mock 全链路断言，不依赖 Tauri runtime。
  *

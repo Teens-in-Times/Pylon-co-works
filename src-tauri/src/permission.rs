@@ -313,25 +313,26 @@ pub(crate) async fn resolve_permission(
     Ok(())
 }
 
-/// 应答挂起的权限请求（命令入口，跨 runtime 定位）。
-/// ACP-01：request_id 接受 number 或 string（untagged 反序列化），兼容新旧前端。
+/// 应答挂起的权限请求（命令入口，#568 定向化）：按 `agent_id` 直接定位目标
+/// runtime 应答，与 `respond_interaction` 同一寻址语义——目标 runtime 不存在
+/// 显式报错。不再跨 runtime 遍历（#423/#436 裁决收口：遍历形态在请求 id 撞
+/// 在不同 runtime 时存在误写首个的理论面）；同 id 请求挂在其他 runtime 时
+/// 定向查找天然不触达，身份不符不误写由 `resolve_pending` 锁内复核
+/// （C4 generation + 选项契约）兜底。ACP-01：request_id 接受 number 或
+/// string（untagged 反序列化），兼容新旧前端。
 #[tauri::command]
 pub(crate) async fn approve_tool_call(
     state: tauri::State<'_, AppState>,
+    agent_id: String,
     request_id: RequestId,
     option_id: String,
 ) -> Result<(), PylonError> {
-    for runtime in state.inner().runtimes.all() {
-        if resolve_permission(&runtime, request_id.clone(), &option_id)
-            .await
-            .is_ok()
-        {
-            return Ok(());
-        }
-    }
-    Err(PylonError::Protocol(format!(
-        "permission request not found: {request_id}"
-    )))
+    let runtime = state
+        .inner()
+        .runtimes
+        .get(&agent_id)
+        .ok_or_else(|| PylonError::Protocol(format!("agent runtime not found: {agent_id}")))?;
+    resolve_permission(&runtime, request_id, &option_id).await
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -358,6 +359,11 @@ pub(crate) struct InteractionAnswerInput {
 /// request id 路由（方法驱动，不要求 provider 名称匹配）；兜底路径按
 /// method 查适配器（注册面是 method 表 per-provider 槽，#424——诊断投影
 /// 自同表派生）——未注册 provider 的合法 ACP 交互不再被拒。
+/// #436 裁决（#569 契约化）：`kind` 为诊断元数据——不参与路由（路由权威＝
+/// 账本按 request_id 的登记），私有臂不复核；permission 兜底臂保留既有
+/// `approval` 字面校验（历史行为；GUI wire 单点恒发 'approval'，见
+/// `interactionTransport.ts`）。私有桥应答构造单点在
+/// `private_ext::build_interaction_response`。
 #[tauri::command]
 pub(crate) async fn respond_interaction(
     state: tauri::State<'_, AppState>,
@@ -378,84 +384,13 @@ pub(crate) async fn respond_interaction(
         {
             return Err(PylonError::Protocol("stale interaction identity".into()));
         }
-        let response = match pending.bridge {
-            crate::protocol_adapter::private_ext::PrivateBridge::GrokExtQuestions
-            | crate::protocol_adapter::private_ext::PrivateBridge::PiSelectAsk => {
-                let questions = pending.question_specs.ok_or_else(|| {
-                    PylonError::Protocol("private question request lost validated specs".into())
-                })?;
-                let values = answer.values.clone().unwrap_or_default();
-                let answers = questions
-                    .iter()
-                    .filter_map(|spec| {
-                        values.get(&spec.id).map(|value| {
-                            let labels = match value {
-                                serde_json::Value::String(label) => vec![label.clone()],
-                                serde_json::Value::Array(items) => items
-                                    .iter()
-                                    .filter_map(|item| item.as_str().map(str::to_owned))
-                                    .collect(),
-                                _ => Vec::new(),
-                            };
-                            crate::acp::question_policy::QuestionAnswerItem {
-                                question_id: spec.id.clone(),
-                                labels,
-                            }
-                        })
-                    })
-                    .collect();
-                let answer = crate::acp::question_policy::QuestionAnswer {
-                    answers,
-                    declined: answer.option_id.as_deref() == Some("declined"),
-                };
-                crate::protocol_adapter::private_ext::build_question_response(
-                    pending.bridge,
-                    &questions,
-                    &answer,
-                )
-                .map_err(PylonError::Protocol)?
-            }
-            crate::protocol_adapter::private_ext::PrivateBridge::GrokExitPlan => {
-                let _ = crate::protocol_adapter::private_ext::parse_exit_plan(
-                    pending.bridge,
-                    &pending.params,
-                )
-                .map_err(PylonError::Protocol)?;
-                crate::acp::plan_policy::approval_response(
-                    answer.option_id.as_deref().unwrap_or("keep_planning"),
-                    answer.text.as_deref().unwrap_or(""),
-                )
-            }
-            crate::protocol_adapter::private_ext::PrivateBridge::Elicitation => {
-                // #98：elicitation 应答 = ESM 风格 action 三值。decline/cancel
-                // 由前端 optionId 表达；accept 携带 values/text 原样 content。
-                // P2-3（评审修复）：optionId 白名单 fail-closed——未知值显式
-                // 报错而非静默 accept（不伪造成功）。缺省 optionId + values/text
-                // = 自由作答（accept）。
-                let action = match answer.option_id.as_deref() {
-                    None | Some("accept") => "accept",
-                    Some("declined") => "decline",
-                    Some("cancel") => "cancel",
-                    Some(other) => {
-                        return Err(PylonError::Protocol(format!(
-                            "elicitation action unsupported: {other}"
-                        )))
-                    }
-                };
-                let content = match (&answer.values, &answer.text) {
-                    (Some(values), _) if values.is_object() => Some(values.clone()),
-                    (None, Some(text)) if !text.is_empty() => {
-                        Some(serde_json::json!({ "text": text }))
-                    }
-                    _ => None,
-                };
-                crate::protocol_adapter::private_ext::build_elicitation_response(
-                    action,
-                    content.as_ref(),
-                )
-                .map_err(PylonError::Protocol)?
-            }
-        };
+        // #569：应答构造归位 private_ext 单点（行为逐字保留）。
+        let response = crate::protocol_adapter::private_ext::build_interaction_response(
+            pending.bridge,
+            &pending.params,
+            pending.question_specs.as_deref(),
+            &answer,
+        )?;
         let responder = { runtime.snapshot_acp().responder() };
         if !responder.respond(request_id.clone(), response).await {
             return Err(PylonError::Protocol(
@@ -1491,6 +1426,149 @@ mod tests {
             "结算后 pending 必须清空"
         );
         let _ = runtime.snapshot_acp().kill();
+    }
+
+    /// #568：定向应答成功——fake agent 注册 live responder 后，命令按 agentId
+    /// 直达目标 runtime 应答（pending 清空；Ok 已隐含发送成功，resolve_permission
+    /// 发送失败会报 not found）。
+    #[tokio::test]
+    async fn approve_tool_call_directed_answers_pending_on_target_runtime() {
+        use tauri::Manager;
+        let agent = crate::test_utils::fake_acp_agent(
+            "fake-acp-approve-directed",
+            &[
+                "--scenario",
+                "permission-proactive",
+                "--permission-id",
+                "7",
+                "--post-init-respond",
+                "--permission-params",
+                r#"{"sessionId":"s1","toolCallId":"tc-1","options":[{"optionId":"allow_once"},{"optionId":"reject_once"}]}"#,
+            ],
+        );
+        let acp = crate::acp::AcpClient::connect_with_logs(&agent, None)
+            .await
+            .expect("fake ACP must initialize");
+        // 等引擎登记 id=7 的 Responder（Pylon id = Number(7)）。
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if acp
+                .backend
+                .pending_requests
+                .lock()
+                .unwrap()
+                .contains_key(&RequestId::Number(7))
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "engine must register the permission responder"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let runtime = AgentRuntime::new_disconnected();
+        runtime.install_acp(acp);
+        let state = crate::test_utils::TestStateBuilder::bare()
+            .with_runtime("a1", runtime.clone())
+            .with_runtime("a2", AgentRuntime::new_disconnected())
+            .build();
+        runtime
+            .ledger
+            .admit_permission("peri", "a1", &RequestId::Number(7), &parsed(0))
+            .expect("admit 必须成功");
+
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("mock app must build");
+        app.manage(state);
+        approve_tool_call(
+            app.state::<crate::AppState>(),
+            "a1".to_string(),
+            RequestId::Number(7),
+            "allow_once".to_string(),
+        )
+        .await
+        .expect("定向应答必须成功");
+        assert!(
+            runtime.ledger.permissions().lock().unwrap().is_empty(),
+            "应答后目标 runtime pending 必须清空"
+        );
+        let _ = runtime.snapshot_acp().kill();
+    }
+
+    /// #568：目标 runtime 不存在显式报错——不再遍历兜底，错误可区分于
+    /// 「请求不存在」。
+    #[tokio::test]
+    async fn approve_tool_call_unknown_agent_errors_explicitly() {
+        use tauri::Manager;
+        let state = crate::test_utils::TestStateBuilder::bare().build();
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("mock app must build");
+        app.manage(state);
+        let err = approve_tool_call(
+            app.state::<crate::AppState>(),
+            "nope".to_string(),
+            RequestId::Number(7),
+            "allow_once".to_string(),
+        )
+        .await
+        .expect_err("未注册 agentId 必须显式报错");
+        match err {
+            PylonError::Protocol(msg) => {
+                assert!(
+                    msg.contains("agent runtime not found: nope"),
+                    "报错必须指名未注册 agentId，实际：{msg}"
+                );
+            }
+            other => panic!("必须是 Protocol 错误，实际：{other:?}"),
+        }
+    }
+
+    /// #568：身份不符不误写——同 id 请求挂在 a1 时，对 a2 定向应答显式报错，
+    /// 且 a1 的 pending 原样保留（旧遍历形态在此存在误写首个的理论面）。
+    #[tokio::test]
+    async fn approve_tool_call_wrong_target_errors_and_preserves_pending() {
+        use tauri::Manager;
+        let a1 = AgentRuntime::new_disconnected();
+        let state = crate::test_utils::TestStateBuilder::bare()
+            .with_runtime("a1", a1.clone())
+            .with_runtime("a2", AgentRuntime::new_disconnected())
+            .build();
+        a1.ledger
+            .admit_permission("peri", "a1", &RequestId::Number(7), &parsed(3))
+            .expect("admit 必须成功");
+
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("mock app must build");
+        app.manage(state);
+        let err = approve_tool_call(
+            app.state::<crate::AppState>(),
+            "a2".to_string(),
+            RequestId::Number(7),
+            "allow_once".to_string(),
+        )
+        .await
+        .expect_err("跨 runtime 同 id 不得误写");
+        match err {
+            PylonError::Protocol(msg) => {
+                assert!(
+                    msg.contains("permission request not found: 7"),
+                    "定向查找未命中必须报请求不存在，实际：{msg}"
+                );
+            }
+            other => panic!("必须是 Protocol 错误，实际：{other:?}"),
+        }
+        assert!(
+            a1.ledger
+                .permissions()
+                .lock()
+                .unwrap()
+                .contains_key(&RequestId::Number(7)),
+            "误指目标不得扰动 a1 的挂起请求"
+        );
     }
 
     /// ACP-03：deadline 由后端单一来源（PERMISSION_REQUEST_TIMEOUT_SECS）——

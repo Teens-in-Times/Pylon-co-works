@@ -18,6 +18,7 @@ fn thinking(text: &str) -> KernelEventInput {
         remote_session_id: Some("remote-1".to_string()),
         client_generation: 1,
         received_at: "2026-09-20T00:00:00.000Z".to_string(),
+        occurred_at: None,
         raw_payload: std::sync::Arc::new(serde_json::json!({
             "update": {
                 "sessionUpdate": "agent_thought_chunk",
@@ -25,7 +26,7 @@ fn thinking(text: &str) -> KernelEventInput {
                 "content": { "type": "text", "text": text }
             }
         })),
-        recovery_import: false,
+        import_origin: super::row::EventImportOrigin::Live,
     }
 }
 
@@ -65,6 +66,7 @@ fn kernel_batch_ingest_does_not_fold_across_boundaries() {
         remote_session_id: Some("remote-1".to_string()),
         client_generation: 1,
         received_at: "2026-09-20T00:00:00.000Z".to_string(),
+        occurred_at: None,
         raw_payload: std::sync::Arc::new(serde_json::json!({
             "update": {
                 "sessionUpdate": "agent_thought_chunk",
@@ -72,17 +74,18 @@ fn kernel_batch_ingest_does_not_fold_across_boundaries() {
                 "content": { "type": "text", "text": text }
             }
         })),
-        recovery_import: false,
+        import_origin: super::row::EventImportOrigin::Live,
     };
     let tool = KernelEventInput {
         owner: owner(),
         remote_session_id: Some("remote-1".to_string()),
         client_generation: 1,
         received_at: "2026-09-20T00:00:00.000Z".to_string(),
+        occurred_at: None,
         raw_payload: std::sync::Arc::new(serde_json::json!({
             "update": { "sessionUpdate": "tool_call_update", "toolCallId": "c1", "status": "completed" }
         })),
-        recovery_import: false,
+        import_origin: super::row::EventImportOrigin::Live,
     };
 
     let result = repo
@@ -152,10 +155,11 @@ fn kernel_batch_ingest_terminal_still_builds_turn_unit() {
         remote_session_id: Some("remote-1".to_string()),
         client_generation: 1,
         received_at: "2026-09-20T00:00:00.000Z".to_string(),
+        occurred_at: None,
         raw_payload: std::sync::Arc::new(
             serde_json::json!({ "update": { "sessionUpdate": "done" } }),
         ),
-        recovery_import: false,
+        import_origin: super::row::EventImportOrigin::Live,
     };
     let result = repo
         .ingest_kernel_events(vec![thinking("甲"), thinking("乙"), done])
