@@ -16,7 +16,8 @@ use serde::Serialize;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::Emitter;
+// Manager：open_tab_in 经 `state::<AppState>()` 取 DataDirs（CC-14 子 WebView 挂跟包 UDF）。
+use tauri::{Emitter, Manager};
 
 pub(crate) const BROWSER_WEBVIEW_LABEL_PREFIX: &str = "pylon-browser";
 pub(crate) const BROWSER_INITIAL_URL: &str = "about:blank";
@@ -127,20 +128,17 @@ pub(crate) fn is_allowed_browser_url(url: &url::Url) -> bool {
 /// 交给 wry 默认参数（不含 tauri.conf 的值）就会与主 WebView 的环境不一致——见
 /// `open_tab_in` 里那段「失败会留下空壳原生窗口」的说明。
 ///
-/// 按窗口 label 取对应配置；取不到时退回第一条窗口配置（本应用单窗口），都没有就
-/// 返回 `None`，调用方照旧不指定参数（宁可保持现状，也不凭空造一串参数）。
+/// 主 WebView 的 WebView2 环境参数（CC-14：原从 `config().app.windows` 读
+/// additionalBrowserArgs；主窗口改代码创建、config windows 已清空后，改读
+/// `crate::MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS` 常量）。返回值恒 `Some`——
+/// 常量是唯一权威，不存在「取不到就退回默认参数」的路径。
+/// 同一 user data folder 下各 WebView 的环境参数必须逐字节一致，否则
+/// `CreateCoreWebView2EnvironmentWithOptions` 直接失败——见 `open_tab_in` 里
+/// 「失败会留下空壳原生窗口」的说明。
 /// `pub(crate)`：Docs Sheet（#371）的子 WebView 受同一约束，共用本函数。
 #[cfg(windows)]
-pub(crate) fn host_additional_browser_args(window: &tauri::Window) -> Option<String> {
-    use tauri::Manager;
-    let config = window.app_handle().config();
-    config
-        .app
-        .windows
-        .iter()
-        .find(|candidate| candidate.label == window.label())
-        .or_else(|| config.app.windows.first())
-        .and_then(|candidate| candidate.additional_browser_args.clone())
+pub(crate) fn host_additional_browser_args() -> Option<String> {
+    Some(crate::MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS.to_string())
 }
 
 pub(crate) struct BrowserManager {
@@ -306,6 +304,13 @@ impl BrowserManager {
             (Some(window), Some(_)) => window.clone(),
             _ => return Err("browser host 未注册（setup 未注入主窗口）".to_string()),
         };
+        // CC-14：子 WebView 与主窗共用包内 WebView2 UDF（数据跟包语义）。
+        // 必须在 phase 置 Starting 之前取——取失败提前返回，不留悬挂 Starting 态。
+        let dirs = window
+            .app_handle()
+            .state::<crate::AppState>()
+            .data_dirs_cloned()
+            .map_err(|error| format!("browser host 未初始化 data dirs: {error}"))?;
         let bounds = inner
             .bounds
             .ok_or_else(|| "browser bounds 未注册（请先启动 Browser Sheet）".to_string())?;
@@ -329,6 +334,7 @@ impl BrowserManager {
             format!("{BROWSER_WEBVIEW_LABEL_PREFIX}-{tab_id}"),
             tauri::WebviewUrl::External(parsed),
         )
+        .data_directory(crate::paths::webview_user_data_dir(&dirs))
         .initialization_script(LINK_TARGET_INTERCEPT_SCRIPT)
         .on_navigation(is_allowed_browser_url)
         .on_new_window(move |url, _features| {
@@ -370,7 +376,7 @@ impl BrowserManager {
         // 句柄——那个宿主窗口既不受 set_bounds/set_visible 控制也不会被 close 销毁，
         // 会一直盖在原生窗口栈顶层吃掉主区的鼠标与滚轮事件。
         #[cfg(windows)]
-        let builder = match host_additional_browser_args(&window) {
+        let builder = match host_additional_browser_args() {
             Some(args) => builder.additional_browser_args(&args),
             None => builder,
         };

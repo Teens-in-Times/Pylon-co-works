@@ -11,6 +11,7 @@ import './index.css'
 // 只读消费 index.css token；必须在 index.css 之后引入。
 import './styles/tailwind.css'
 import { startupMark } from './app/startupTiming'
+import { applyFirstRunThemeSeed } from './app/bootstrap/firstRunThemeSeed'
 // #488 批⑦：前端诊断日志统一出口——先于各桥安装，桥内诊断即可进 runtime log。
 import { installTauriFrontendLogSink } from './infrastructure/tauri/frontendLogSink'
 
@@ -19,6 +20,12 @@ installTauriFrontendLogSink()
 // #269：前端最早可插桩点（模块求值起点）——import 求值成本不计入，
 // 与 performance.timeOrigin 的差值即脚本求值前开销。
 startupMark('main_module_eval')
+// CC-14 首启主题种子：此刻主题域 persist 已随模块求值**同步** rehydrate 完成，
+// 而 KernelRoot 尚未挂载——App 挂载期的 ensureInterfaceModeProfile 等效果一跑就
+// 会经 persist writeBack 落盘 pylon-theme（实测：种子挂 bootstrap hydrateDomains
+// 尾部时已被抢先，判定失效）。所以种子必须在这里、render 之前判定；第二次启动
+// pylon-theme 已存在 ⇒ no-op。
+applyFirstRunThemeSeed()
 // DEV-only 控制台钩子表（浏览器 mock 后端 + OBS-04~07 / CSS-01 取证钩子）：生产构建
 // `import.meta.env.DEV` 恒 false，整个 if 块连同动态 import 被 tree-shake，零暴露；
 // 各钩子内部再按 IS_TAURI 守卫，浏览器 mock 模式 no-op。安装顺序即表序（mock 后端

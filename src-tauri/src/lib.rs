@@ -78,6 +78,13 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 use tauri::{Emitter, Manager, Runtime};
 
+/// 主 WebView 的 WebView2 环境参数（CC-14：原 tauri.conf.json `additionalBrowserArgs`，
+/// 主窗口改代码创建后本常量是唯一权威）。browser / docs 子 WebView 经
+/// `host_additional_browser_args` 共用同串——同一 user data folder 下各 WebView 的
+/// 环境参数必须逐字节一致，否则第二环境创建直接失败（见 browser::open_tab_in 注释）。
+pub(crate) const MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS: &str =
+    "--remote-debugging-port=9222 --remote-allow-origins=* --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+
 #[cfg(test)]
 use crate::time::Timestamp;
 
@@ -872,7 +879,8 @@ pub(crate) fn build_app_state(parts: AppStateParts) -> AppState {
     }
 }
 
-// P3a（#106）：setup 管道提取——DataDirs 解析→workspace 恢复
+// P3a（#106）：setup 管道提取——DataDirs 解析→主窗口创建（CC-14：需挂跟包
+// webview UDF，故在 DataDirs 之后）→workspace 恢复
 // →浏览器/插件/Pet/MCP/Kernel 三服务→gateway 实例恢复→事件泵与 watcher。
 // run() 的 setup 闭包改为一行调用；测试可用 mock app 驱动同一序列。
 // #331/M2：阶段拆为具名 `setup_*` 函数，失败策略在编排处逐行标注——
@@ -882,8 +890,9 @@ pub(crate) fn build_app_state(parts: AppStateParts) -> AppState {
 // AppData 双模式一并退役——便携是唯一存储模式，无回退、无迁移。
 pub(crate) fn run_setup_pipeline(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     crate::startup_timing::mark("setup_enter");
-    let window = setup_open_main_window(app)?; // 〔致命〕主窗口缺失
+    // CC-14：DataDirs 必须先于建窗——主窗口创建要挂 webview_user_data_dir（跟包存储）。
     let dirs = setup_install_data_dirs(app)?; // 〔致命〕数据目录解析/安装失败——消费者禁止各自回退
+    let window = setup_open_main_window(app, &dirs)?; // 〔致命〕主窗口创建失败
     setup_hydrate_workspaces(app)?; // 〔致命〕workspace 注册表恢复失败
     setup_register_browser_host(app, &window, &dirs); // 无失败路径
     setup_register_docs_sheet_host(app, &window); // 无失败路径
@@ -904,22 +913,44 @@ pub(crate) fn run_setup_pipeline(app: &tauri::App) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-/// 阶段 1：取主窗口并设标题。标题失败仅 warn（不阻断）。
+/// 阶段 2：代码创建主窗口并设标题。标题失败仅 warn（不阻断）。
+/// CC-14：原 tauri.conf.json `app.windows` 声明式建窗退役——跟包存储要求给 WebView2
+/// 挂 `data_directory`，而 config 的相对路径只会被解析到 `app_local_data_dir/<label>/`，
+/// 表达不了包内 data 路径，只能代码创建。窗口字段逐项照抄原 config（title
+/// "Prism Desktop" / 1200×800 / min 800×600 / decorations=false / transparent=true /
+/// center=true / additionalBrowserArgs 原样）；label 保持 "main"
+/// （capabilities/default.json 与多处按此取窗）；随后 `set_title("Pylon")` 历史行为保留。
+/// 失败 = 启动中止。
 fn setup_open_main_window(
     app: &tauri::App,
+    dirs: &crate::paths::DataDirs,
 ) -> Result<tauri::WebviewWindow, Box<dyn std::error::Error>> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or("main window not found")?;
+    let config = tauri::utils::config::WindowConfig {
+        label: "main".to_string(),
+        title: "Prism Desktop".to_string(),
+        width: 1200.0,
+        height: 800.0,
+        min_width: Some(800.0),
+        min_height: Some(600.0),
+        decorations: false,
+        transparent: true,
+        center: true,
+        additional_browser_args: Some(MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS.to_string()),
+        ..Default::default()
+    };
+    let window = tauri::WebviewWindowBuilder::from_config(app, &config)?
+        .data_directory(crate::paths::webview_user_data_dir(dirs))
+        .build()?;
     if let Err(error) = window.set_title("Pylon") {
         tracing::warn!("set window title failed: {error}");
     }
     Ok(window)
 }
 
-/// 阶段 2：解析 DataDirs 并写入 AppState 一次性槽位。
+/// 阶段 1：解析 DataDirs 并写入 AppState 一次性槽位。
 /// 施工文档 §2.3：任何插件/Pet/MCP/SQLite/Gateway 路径消费者运行前，
 /// 解析一次 DataDirs 并写入 AppState 一次性槽位。
+/// CC-14：本阶段先于建窗——主窗口创建要挂 webview_user_data_dir。
 /// 失败 = 启动中止（blocked），禁止消费者各自回退不同目录。
 fn setup_install_data_dirs(
     app: &tauri::App,

@@ -48,7 +48,7 @@
 | `agents.yaml` | 必须 | 零 Agent 配置模板（#372 起随包：仓库侧 `resources/release/agents.template.yaml` 打包时改名；包内可直接编辑预置 Agent，#326 的裸启动零 Agent 口径不变——模板不含占位 Agent） |
 | `README.txt` | 必须 | 解压后首次运行和 Hermes 说明 |
 | `portable.flag` | 必须 | 便携标记（#482 起便携是唯一存储模式，`data/` 即数据真源；该文件保留为身份标记，不再参与模式判定） |
-| `data/` | 必须为空目录 | 首次运行时保存会话、插件、MCP 等本地数据（#482 起为唯一存储根，不可写时启动致命失败，无 AppData 回退） |
+| `data/` | 必须为空目录 | 首次运行时保存会话、插件、MCP 等本地数据（#482 起为唯一存储根，不可写时启动致命失败，无 AppData 回退）；WebView2 用户数据（前端 localStorage 的真身）也存在其下 `webview-cache/` 子目录（CC-14 起，删程序文件夹 = 前端数据一起删） |
 | `tools/install-webview2.bat` | 必须 | 缺 WebView2 Runtime 时的兜底安装：优先用同目录手动放置的安装器，否则从微软官方 fwlink 联网下载 |
 
 `<version>` 必须同时来自 `package.json`、`src-tauri/tauri.conf.json` 和

@@ -8,19 +8,7 @@
     "beforeBuildCommand": "bun run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Prism Desktop",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
-        "decorations": false,
-        "transparent": true,
-        "center": true,
-        "additionalBrowserArgs": "--remote-debugging-port=9222 --remote-allow-origins=* --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": {
         "default-src": "'self' asset:",
