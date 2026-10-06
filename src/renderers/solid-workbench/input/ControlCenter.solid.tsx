@@ -14,7 +14,7 @@ import { errorMessage } from '../../../infrastructure/tauri/errorPayload.ts'
 import { createCcWorkspaceSelection } from './createCcWorkspaceSelection.solid.tsx'
 import { createCcSources } from './createCcSources.ts'
 import { createCcDragController } from './createCcDragController.ts'
-import { resolveCcDraggableWidgetIds, resolveCcPropertyFieldDefault, resolveCcWidgetPlacements, resolveCcWidgetRoster, type CcValuedPropertyFieldDecl, type CcWidgetPropertyFieldDecl, type CcWidgetPropertyFieldRejectionReason, type CcWidgetRosterEntry } from '../../../domains/cc/ccWidgetRoster.ts'
+import { resolveCcDraggableWidgetIds, resolveCcPluginWidgetSizings, resolveCcPropertyFieldDefault, resolveCcWidgetPlacements, resolveCcWidgetRoster, type CcValuedPropertyFieldDecl, type CcWidgetPropertyFieldDecl, type CcWidgetPropertyFieldRejectionReason, type CcWidgetRosterEntry, type CcWidgetSizingRejectionReason } from '../../../domains/cc/ccWidgetRoster.ts'
 import { getCcWidgetRegistry } from '../../../plugin-runtime/runtimeServices.ts'
 import { createRegistrySignal } from '../../../infrastructure/state/solidSheetSupport.solid.tsx'
 import { CcIsolatedWidget } from './CcIsolatedWidget.solid.tsx'
@@ -60,6 +60,12 @@ const PROPERTY_FIELD_REJECTION_TEXT: Readonly<Record<CcWidgetPropertyFieldReject
   'missing-key': '非 section 字段缺 key',
   'invalid-number-range': 'number 的 min / max 缺失或非法（min 大于 max 也算）',
   'invalid-options': 'chips 的 options 缺失或非法（空表 / 项缺 value·label / value 重复）',
+}
+
+/** ★ CC-13 刀5：尺寸声明被忽略时的诊断文案（码统一 `cc-widget.sizing.rejected`，不静默）。 */
+const SIZING_REJECTION_TEXT: Readonly<Record<CcWidgetSizingRejectionReason, string>> = {
+  'not-an-object': 'sizing 不是对象（两维都不参与）',
+  'invalid-number': '尺寸不是有限的正数（px）',
 }
 
 export function SolidControlCenter() {
@@ -242,10 +248,21 @@ export function SolidControlCenter() {
    * ⇒ 编辑列里那两个开关对插件件**真的生效**（被藏 = 不渲染）；空态再藏随门生效。
    * ★ 声明位置必须在 `visibilityContext` **之后**：本 memo 立即求值（Solid 的 createMemo 不是惰性的），
    *   写在前面的 `const` 会有 TDZ（实测报 "Cannot access 'visibilityContext' before initialization"）。
-   * ★ 计数类（最小高 / 宽、显示前校验的算式）**仍不算插件件**（刀5 的范围，见回单点名）。
+   * ★ 刀5：本 memo 只服务**渲染**；计数类（最小高 / 宽、显示前校验）另走 `ccPluginWidgetSizings()`
+   *   ——那份递的是**全量**插件件，在场判据由算式按每个切面各过一遍（见下）。
    */
   const visiblePluginWidgets = createMemo(() => ccPluginWidgetsOrdered()
     .filter(entry => isWidgetVisible(entry.id, visibilityContext())))
+  /**
+   * ★★ 刀5：三处算式（`minHeight` / `minWidth` / 显示前校验）共用的**插件件输入** = 活名单里
+   * 「报了尺寸」的那些件（`{ id, width?, height? }`，定形见 `ccWidgetRoster.resolvePluginWidgetSizing`）。
+   *
+   * ★ 递**全量**（不先过 `visiblePluginWidgets`）：在场判据住在算式里，按**每个切面各自的名单**
+   *   逐条过 `isWidgetVisible` —— 与内置件同源；「显示前校验」算的是**改完之后**的那一态，
+   *   在调用方先筛一遍会把"换个态才看得见的件"算错。
+   * ★ 没报尺寸的件不进这份输入 ⇒ 算式那边按 0 计（下界），读数与"没登记该插件件"逐位相同。
+   */
+  const ccPluginWidgetSizings = createMemo(() => resolveCcPluginWidgetSizings(ccPluginWidgets()))
 
   /** 活名单的拒绝与「渲染标识未命中」都不许静默 —— 经 workbench 诊断口上报（带原因）。 */
   const reportCcWidgetDiagnostic = (code: string, message: string, phase: 'resolve' | 'update' | 'action') => {
@@ -266,6 +283,17 @@ export function SolidControlCenter() {
     for (const rejection of ccRoster().propertyFieldRejections) {
       reportCcWidgetDiagnostic('cc-widget.property-field.rejected',
         `插件元件 ${rejection.widgetId} 的属性字段声明被拒（第 ${rejection.index + 1} 条：${PROPERTY_FIELD_REJECTION_TEXT[rejection.reason]}）`,
+        'resolve')
+    }
+  })
+  /**
+   * ★ CC-13 刀5：**尺寸声明被忽略**同样要响亮（不静默）—— 该维度不进算式、该件照常上屏，
+   * 但作者得能从诊断口看到"我报的尺寸为什么没生效"。
+   */
+  createEffect(() => {
+    for (const rejection of ccRoster().sizingRejections) {
+      reportCcWidgetDiagnostic('cc-widget.sizing.rejected',
+        `插件元件 ${rejection.widgetId} 的尺寸声明被忽略（${rejection.dimension === 'both' ? '整条声明' : rejection.dimension}：${SIZING_REJECTION_TEXT[rejection.reason]}）`,
         'resolve')
     }
   })
@@ -307,7 +335,8 @@ export function SolidControlCenter() {
   //   ★ 在场集合 = **两态各算一遍取 max**（`ccMinHeightInputOf(appearance())` 交出常态 + 空态两份
   //     切面，`resolveCcMinHeight` 逐态取大 ⇒ 下界由要求更高的那一份决定）：与落值侧 / 设置页同一口径
   //     —— 同一个值算两处，口径必须一致，否则会出现"存进去的值低于渲染出来的下界"。
-  const minHeight = () => resolveCcMinHeight(ccMinHeightInputOf(appearance()))
+  // ★ 刀5：插件件（报了尺寸的）并入同一算式 —— 他们在场就抬下界、被藏就回落，与内置件同一口径。
+  const minHeight = () => resolveCcMinHeight(ccMinHeightInputOf(appearance(), ccPluginWidgetSizings()))
   // ★ #266 刀2.5：宽度算式的输入 —— 件 id → 宽度字段值。只有三个触发器有宽度字段；
   //   用量胶囊 / 命令行提示是**内容撑**（`width:max-content`）⇒ 索引里缺席（算式按 0 计 = 下界）。
   const widthIndexOf = (): CcWidgetWidthIndex => ({
@@ -318,7 +347,8 @@ export function SolidControlCenter() {
   // ★★ #266 刀2.5：**最小宽**（约束值）—— 与最小高同构：`max over 各组 ( 组宽 + 到所贴横边的距离 )`。
   //   本刀**只暴露、不强制**（不横向滚动、不撑宽，见规范 §7.6 形态决定 2）⇒ 没有任何 CSS 规则
   //   消费它，消费者留给刀 4 的"显示前校验"。挂成变量是为了让这个值可读、可验收。
-  const minWidth = () => resolveCcMinWidth(resolveCcWidthGroups(hiddenWidgetIds(), widthIndexOf()))
+  //   ★ 刀5：插件件（报了宽度的）并入状态区队列求和 —— 与最小高同源的一档输入。
+  const minWidth = () => resolveCcMinWidth(resolveCcWidthGroups(hiddenWidgetIds(), widthIndexOf(), ccPluginWidgetSizings()))
 
   // ── ★★ #266 刀4：显示前校验（点"显示"前先判"显示之后装不装得下"） ─────────────────────
   /**
@@ -335,6 +365,7 @@ export function SolidControlCenter() {
     })),
     scalars: appearance(),
     widths: widthIndexOf(),
+    pluginWidgets: ccPluginWidgetSizings(),
   })
   /**
    * 校验用的**实测尺寸**（点下去的那一刻现读，不用信号里的旧值 —— 拖动高度时 `ResizeObserver`

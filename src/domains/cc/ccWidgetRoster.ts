@@ -23,11 +23,15 @@
  *   契约里 `propertyFields` 那块不透明声明的**定形处**，见 `plugin-runtime/cc-widget/ccWidgetTypes.ts`
  *   的指针注释）：合成时逐条校验，非法声明 ⇒ 丢弃该字段 + 记进 `propertyFieldRejections`
  *   （诊断由调用方走诊断口，**不静默**）。
+ * ★★ #266 CC-13 刀5：同款再立**尺寸声明的定形处**（`resolvePluginWidgetSizing` ↔ 契约 `CcWidgetSizing`）
+ *   ——逐维校验、非法只丢该维（`sizingRejections`），并由 `resolveCcPluginWidgetSizings`
+ *   把活名单映射成三处算式（最小高 / 最小宽 / 显示前校验）的输入。
  */
 import { CC_WIDGET_GROUPS, ccWidgetLanding, resolveCcWidgetGroup } from './widgetDefinitions.ts'
 import { DEFAULT_CC_LAYOUT } from './ccLayoutState.ts'
 import type { CcLayoutV3, CcWidgetPlacement } from './ccLayoutState.ts'
-import type { CcWidgetContribution, CcWidgetRenderSpec } from '../../plugin-runtime/cc-widget/ccWidgetTypes.ts'
+import type { CcPluginWidgetSizing } from './ccHeightState.ts'
+import type { CcWidgetContribution, CcWidgetRenderSpec, CcWidgetSizing } from '../../plugin-runtime/cc-widget/ccWidgetTypes.ts'
 
 /**
  * 注册表快照条目的**结构子集**（只取合成用得到的两个字段）。
@@ -55,6 +59,12 @@ export interface CcWidgetRosterEntry {
    * 内置件的属性表单不在这里 —— 它来自定义表行（`WIDGET_PROPERTY_FIELDS`）。
    */
   readonly propertyFields?: readonly CcWidgetPropertyFieldDecl[]
+  /**
+   * ★★ CC-13 刀5：**插件自报的尺寸**（已过校验；px，两维各自可选）。
+   * 没报 / 两维都不合法 ⇒ **键不出现**（条目形状与"没报"同形，不给每条登记白添一个空对象）。
+   * 消费者 = 最小高 / 最小宽 / 显示前校验三处算式（`resolveCcPluginWidgetSizings` 映射成算式输入）。
+   */
+  readonly sizing?: CcWidgetSizing
 }
 
 /**
@@ -105,6 +115,8 @@ export interface CcWidgetRoster {
   readonly rejected: readonly CcWidgetRosterRejection[]
   /** ★ CC-13 刀4：被丢弃的插件属性字段声明（每条都已连带丢了它自己那个字段，不是整件被拒） */
   readonly propertyFieldRejections: readonly CcWidgetPropertyFieldRejection[]
+  /** ★ CC-13 刀5：被忽略的插件尺寸维度（每条只丢该维度，不是整件被拒） */
+  readonly sizingRejections: readonly CcWidgetSizingRejection[]
 }
 
 /** 非空字符串判据（短键 / 标签 / 标题共用）。 */
@@ -191,6 +203,67 @@ function builtinRenderSpec(id: string): CcWidgetRenderSpec {
   return { kind: 'host-renderer', rendererKey: id }
 }
 
+// ── ★★ #266 CC-13 刀5：插件自报尺寸（`sizing`）的定形 ──────────────────────────
+
+export type CcWidgetSizingRejectionReason = 'not-an-object' | 'invalid-number'
+
+export interface CcWidgetSizingRejection {
+  readonly widgetId: string
+  readonly ownerPluginId: string
+  /** 被忽略的维度；`both` = 整条声明不是对象（两维都不参与） */
+  readonly dimension: 'width' | 'height' | 'both'
+  readonly reason: CcWidgetSizingRejectionReason
+}
+
+/**
+ * ★★ CC-13 刀5：**插件自报尺寸的定形处**（契约里 `sizing` 那块不透明声明的唯一校验点，
+ * 对称于刀4 的 `resolvePluginPropertyFields`）。
+ *
+ * 口径（施工单 §4.1）：
+ * - **没报**（`undefined`）⇒ 两维都不参与、**不诊断**（这是合法写法：内置「内容撑」件同待遇）；
+ * - 某维**报了** ⇒ 须是**有限且 > 0** 的数（px）；否则**只忽略该维度** + 记诊断，
+ *   另一维照收、该件**照常上屏**（不丢件）；
+ * - 整条不是对象（字符串 / 数组 / `null`…）⇒ 两维都不参与 + 一条 `dimension: 'both'` 的诊断。
+ *
+ * 结果随活名单条目带出（`CcWidgetRosterEntry.sizing`），两维都没收下时**键不出现**
+ * （与 `propertyFields` 同款：不给每条登记白添一个空对象）。
+ * ★ 纯函数：不读全局、不抛错（坏声明是**数据**，不是程序错误）。
+ */
+export function resolvePluginWidgetSizing(
+  widgetId: string,
+  ownerPluginId: string,
+  raw: unknown,
+): { readonly sizing?: CcWidgetSizing; readonly rejected: readonly CcWidgetSizingRejection[] } {
+  if (raw === undefined) return { rejected: [] }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { rejected: [{ widgetId, ownerPluginId, dimension: 'both', reason: 'not-an-object' }] }
+  }
+  const declaration = raw as Record<string, unknown>
+  const rejected: CcWidgetSizingRejection[] = []
+  const sizing: { width?: number; height?: number } = {}
+  for (const dimension of ['width', 'height'] as const) {
+    const value = declaration[dimension]
+    if (value === undefined) continue
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) sizing[dimension] = value
+    else rejected.push({ widgetId, ownerPluginId, dimension, reason: 'invalid-number' })
+  }
+  return sizing.width === undefined && sizing.height === undefined
+    ? { rejected }
+    : { sizing, rejected }
+}
+
+/**
+ * 活名单 → **算式输入**的插件件（`{ id, width?, height? }`）——只取**报了尺寸**的件。
+ *
+ * ★ 不在场（被隐藏）的件**照样递进去**：在场判据是算式的活（它按每个切面各过一遍谓词，
+ *   与渲染同源）；调用方提前筛一遍反而会算错"改完之后"那一态。
+ */
+export function resolveCcPluginWidgetSizings(entries: readonly CcWidgetRosterEntry[]): CcPluginWidgetSizing[] {
+  return entries.flatMap(entry => entry.source === 'plugin' && entry.sizing
+    ? [{ id: entry.id, ...entry.sizing }]
+    : [])
+}
+
 export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceEntry[]): CcWidgetRoster {
   const entries: CcWidgetRosterEntry[] = CC_WIDGET_GROUPS.map(row => ({
     id: row.id,
@@ -202,6 +275,7 @@ export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceE
   const builtinIds = new Set(entries.map(entry => entry.id))
   const rejected: CcWidgetRosterRejection[] = []
   const propertyFieldRejections: CcWidgetPropertyFieldRejection[] = []
+  const sizingRejections: CcWidgetSizingRejection[] = []
   for (const source of registered) {
     const contribution = source.value
     if (builtinIds.has(contribution.id)) {
@@ -215,6 +289,9 @@ export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceE
     // ★ CC-13 刀4：属性字段声明逐条校验（非法 ⇒ 丢该字段 + 记诊断；合法的定形进条目）
     const propertyFields = resolvePluginPropertyFields(contribution.id, source.ownerPluginId, contribution.propertyFields)
     propertyFieldRejections.push(...propertyFields.rejected)
+    // ★ CC-13 刀5：尺寸声明逐维校验（非法 ⇒ 丢该维度 + 记诊断；合法的定形进条目）
+    const sizing = resolvePluginWidgetSizing(contribution.id, source.ownerPluginId, contribution.sizing)
+    sizingRejections.push(...sizing.rejected)
     entries.push({
       id: contribution.id,
       label: contribution.label,
@@ -223,9 +300,10 @@ export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceE
       render: contribution.render,
       ownerPluginId: source.ownerPluginId,
       ...(propertyFields.fields.length === 0 ? {} : { propertyFields: propertyFields.fields }),
+      ...(sizing.sizing === undefined ? {} : { sizing: sizing.sizing }),
     })
   }
-  return { entries, rejected, propertyFieldRejections }
+  return { entries, rejected, propertyFieldRejections, sizingRejections }
 }
 
 // ── ★★ #266 CC-13 刀3：工位（位置 / 拖动 / 编辑列）─────────────────────────────
