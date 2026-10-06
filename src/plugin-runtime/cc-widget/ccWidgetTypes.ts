@@ -1,4 +1,12 @@
-/** Framework-neutral property metadata; product layers may refine this shape. */
+/**
+ * Framework-neutral property metadata; product layers may refine this shape.
+ *
+ * ★ #266 CC-13 刀4：中控这一层的**定形处**在 `domains/cc/ccWidgetRoster.ts` 的
+ * `CcWidgetPropertyFieldDecl` —— 四种 kind（`section` / `number` / `color` / `chips`），
+ * `key` 为插件自定义短键（值进主题 cc 区的 `ccPluginProps`）；声明非法 ⇒ 该字段被丢弃
+ * 并走诊断（`cc-widget.property-field.rejected`），**不静默**。
+ * 本类型保持不透明：契约（SDK 层）不把四种形状钉死，登记项的写法由产品层校验。
+ */
 export type CcWidgetPropertyField = Readonly<Record<string, unknown>>
 
 /**

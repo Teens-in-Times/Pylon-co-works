@@ -1,4 +1,5 @@
 import { cloneCcLayout, type CcLayoutV3 } from '../cc/ccLayoutState.ts'
+import { cloneCcPluginProps, type CcPluginProps } from '../cc/ccPluginProps.ts'
 import { getSpinnerAssetPreset, getSpinnerVerbPreset, type SpinnerAssetId } from '../chat/spinnerAssets.ts'
 import { resolveSpinnerFrames, type SpinnerMarkerMode } from '../chat/spinnerFrames.ts'
 import type { ThemeSettings } from '../theme/themeStore.ts'
@@ -104,6 +105,11 @@ export interface WorkbenchAppearanceSnapshot {
   ccMarginBottom: number
   ccRadius: number
   ccLayout: CcLayoutV3
+  /**
+   * ★ #266 CC-13 刀4：**插件元件的属性值**（`Record<元件 id, Record<插件短键, string | number>>`）。
+   * 深拷贝 + 深冻结（与 `ccLayout` 同款）—— 面板读它、`host:input` 的 `props` 段也读它。
+   */
+  ccPluginProps: CcPluginProps
   ccHidden: readonly string[]
   /** ★ #266 刀4（结构 C）：**空态再藏**（`ccHiddenEmpty` 字段名保留）—— 只在空态**再加一层**，只能加、不能抵消主管表 */
   ccHiddenEmpty: readonly string[]
@@ -119,10 +125,19 @@ export type AppearanceCommand =
   | { type: 'set-cc-height'; height: number }
   | { type: 'update-cc-placement'; id: string; placement: Partial<CcWidgetPlacement> }
   /**
-   * ★ #266 CC-13 刀3：**删掉某元件的位置记录**（插件撤下那一刻由宿主派发）。
-   * 记录不存在 ⇒ 两路都**原样不动**（幂等）；数据里没有这条 ⇒ 读取侧回计算默认（状态区末尾）。
+   * ★ #266 CC-13 刀4：**写一条插件元件的属性值**（编辑列属性面板的唯一落点）。
+   * 值住在主题 cc 区的 `ccPluginProps`（随预设走）；幂等：写同值 ⇒ 不产生新对象。
+   * ★ 面板侧已 clamp（number 取 min–max / chips 白名单 / color 只收字符串）；
+   *   本命令侧只查类型（非 `string | number` 或不安全数字 ⇒ no-op）。
    */
-  | { type: 'clear-cc-placement'; id: string }
+  | { type: 'set-cc-plugin-prop'; id: string; key: string; value: string | number }
+  /**
+   * ★★ #266 CC-13 刀3 立、**刀4 泛化**：**清掉某元件的全部用户数据** —— 一次清三样：
+   * 位置记录（`ccLayout.placements[id]`）、插件属性（`ccPluginProps[id]`）、
+   * 两份显隐表（`ccHidden` / `ccHiddenEmpty`）里的该 id。
+   * 派发时机 = 插件**撤下那一刻**（宿主比对活名单）；三样都不存在 ⇒ 两路都**原样不动**（幂等）。
+   */
+  | { type: 'clear-cc-widget-data'; id: string }
   | CcPropertyCommand
   | { type: 'reset-cc-layout' }
 
@@ -224,6 +239,8 @@ export function selectWorkbenchAppearance(
     ccMarginBottom: theme.ccMarginBottom,
     ccRadius: theme.ccRadius,
     ccLayout: cloneCcLayout(theme.ccLayout),
+    // ★ #266 CC-13 刀4：插件属性值与 ccLayout 同款（深拷贝 + 深冻结，见 freezeAppearanceSnapshot）
+    ccPluginProps: cloneCcPluginProps(theme.ccPluginProps),
     ccHidden: [...theme.ccHidden],
     // ★ #266 刀4：两份表（主管 / 再藏）同形平铺 —— "合并成生效名单"在 `resolveCcHiddenWidgetIds` 里做，
     //   快照不预先选边（渲染侧要按门决定，工具栏两个开关还要各读各自那一份）
@@ -267,6 +284,10 @@ function freezeAppearanceSnapshot(snapshot: WorkbenchAppearanceSnapshot): Workbe
   Object.freeze(snapshot.ccLayout.placements)
   for (const placement of Object.values(snapshot.ccLayout.placements)) Object.freeze(placement)
   Object.freeze(snapshot.ccLayout)
+  // ★ #266 CC-13 刀4：插件属性值同样深冻结（外层表 + 每个元件的记录）——
+  //   快照是给渲染层读的只读面，浅冻结会让"随手改一条"从后门改到快照上。
+  Object.freeze(snapshot.ccPluginProps)
+  for (const record of Object.values(snapshot.ccPluginProps)) Object.freeze(record)
   Object.freeze(snapshot.ccHidden)
   Object.freeze(snapshot.ccHiddenEmpty)
   Object.freeze(snapshot.ccProperties)

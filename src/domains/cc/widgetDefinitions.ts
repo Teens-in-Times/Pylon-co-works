@@ -641,13 +641,16 @@ export const WIDGET_PROPERTY_FIELDS: Record<CcWidgetId, WidgetPropertyForm> = Ob
  *   `ccHiddenEmpty`（**空态再藏**，只在空态再加一层、只能加不能抵消）。
  *   两者都是「预设的取值」，**不是**两份平权的名单 —— 合并规则（主管表 + 门开时叠加再藏表
  *   + 详细档折叠）只在 `resolveCcHiddenWidgetIds` 一处。
+ * - ★ CC-13 刀4（工具开闸）：`ccPluginProps`（**插件元件的属性值**，`Record<元件 id, Record<短键, 值>>`）
+ *   —— 与位置 / 显隐同级的跨元件字段（不属于任何元件行：值是**插件自定义键**，
+ *   形状与读写见 `domains/cc/ccPluginProps.ts`；声明契约见 `ccWidgetRoster.ts`）。
  *   ★ 刀5 后「信息行」名下那三项（`ccStatusFontSize` / `statusBg` / `statusBgImage`）已**删除**
  *   （前两项是僵尸，第三项的字号收窄成 `cc-command-hint` 成员自己的 `ccHintFontSize`）；
  *   `footerLayout` 已由刀3 移入容器行 `cc-surface`；
  *   ★ 刀7：`ccScale`（缩放）已**整体删除**（用户口径「我预期里没有缩放这一项」）⇒ 名单由三份变两份。
  */
 export const CC_SYSTEM_FIELDS = [
-  'ccLayout', 'ccHidden', 'ccHiddenEmpty',
+  'ccLayout', 'ccHidden', 'ccHiddenEmpty', 'ccPluginProps',
 ] as const satisfies readonly ThemeFieldKey[]
 
 export interface WidgetVisibilityCtx {

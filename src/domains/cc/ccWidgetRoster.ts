@@ -18,6 +18,11 @@
  * ★ 拒绝（不静默丢，规范 §4.3）：id 与内置件冲突 / 缺 `render` ⇒ 进 `rejected`，
  *   由调用方走诊断口。插件件之间不会重 id：注册表以 `contributionId` = 元件 id 保证唯一，
  *   重复登记在注册表侧当场抛错。
+ *
+ * ★★ #266 CC-13 刀4：本文件另立**插件能写的属性字段契约**（`CcWidgetPropertyFieldDecl` =
+ *   契约里 `propertyFields` 那块不透明声明的**定形处**，见 `plugin-runtime/cc-widget/ccWidgetTypes.ts`
+ *   的指针注释）：合成时逐条校验，非法声明 ⇒ 丢弃该字段 + 记进 `propertyFieldRejections`
+ *   （诊断由调用方走诊断口，**不静默**）。
  */
 import { CC_WIDGET_GROUPS, ccWidgetLanding, resolveCcWidgetGroup } from './widgetDefinitions.ts'
 import { DEFAULT_CC_LAYOUT } from './ccLayoutState.ts'
@@ -44,6 +49,47 @@ export interface CcWidgetRosterEntry {
   readonly render: CcWidgetRenderSpec
   /** 插件件：登记它的插件 id（诊断归因用；内置件恒缺省） */
   readonly ownerPluginId?: string
+  /**
+   * ★★ CC-13 刀4：**插件自报的属性字段**（已过校验；`key` 为插件自定义短键）。
+   * 空 / 未声明 ⇒ **键不出现**（条目形状与"没声明"同形，不给每条登记白添一个空数组）。
+   * 内置件的属性表单不在这里 —— 它来自定义表行（`WIDGET_PROPERTY_FIELDS`）。
+   */
+  readonly propertyFields?: readonly CcWidgetPropertyFieldDecl[]
+}
+
+/**
+ * ★★ CC-13 刀4：**插件能写的四种字段**（与内置件属性表单同构；二者共用面板的渲染分支）。
+ *
+ * - `key` = 插件自定义**短键**（不是主题字段键）⇒ 值只进 `ccPluginProps`（`domains/cc/ccPluginProps.ts`）；
+ * - `section` 无 `key`（纯分组标题）；其余三种必带 `key` 与 `label`。
+ * - 声明非法（kind 不在四种内 / 缺 label / 非 section 缺 key / number 缺合法 min·max / chips 缺合法 options）
+ *   ⇒ **该字段丢弃** + 进 `propertyFieldRejections`（不静默）。可选装饰（`step` / `suffix`）类型不合法
+ *   时只丢装饰、字段保留：它们不参与取值语义（`step` 只影响步进、`suffix` 只影响显示）。
+ */
+export type CcWidgetPropertyFieldDecl =
+  | { readonly kind: 'section'; readonly title: string }
+  | { readonly kind: 'number'; readonly key: string; readonly label: string; readonly min: number; readonly max: number; readonly step?: number; readonly suffix?: string }
+  | { readonly kind: 'color'; readonly key: string; readonly label: string }
+  | { readonly kind: 'chips'; readonly key: string; readonly label: string; readonly options: readonly { readonly value: string; readonly label: string }[] }
+
+/**
+ * **有值**的字段声明（`section` 只是分组标题，不承载值）—— 属性面板的读写口只认这三种。
+ */
+export type CcValuedPropertyFieldDecl = Exclude<CcWidgetPropertyFieldDecl, { readonly kind: 'section' }>
+
+export type CcWidgetPropertyFieldRejectionReason =
+  | 'unknown-kind'
+  | 'missing-label'
+  | 'missing-key'
+  | 'invalid-number-range'
+  | 'invalid-options'
+
+export interface CcWidgetPropertyFieldRejection {
+  readonly widgetId: string
+  readonly ownerPluginId: string
+  /** 声明在 `propertyFields` 里的下标（定位是哪一条） */
+  readonly index: number
+  readonly reason: CcWidgetPropertyFieldRejectionReason
 }
 
 export type CcWidgetRosterRejectionReason = 'id-collision' | 'missing-render'
@@ -57,6 +103,87 @@ export interface CcWidgetRosterRejection {
 export interface CcWidgetRoster {
   readonly entries: readonly CcWidgetRosterEntry[]
   readonly rejected: readonly CcWidgetRosterRejection[]
+  /** ★ CC-13 刀4：被丢弃的插件属性字段声明（每条都已连带丢了它自己那个字段，不是整件被拒） */
+  readonly propertyFieldRejections: readonly CcWidgetPropertyFieldRejection[]
+}
+
+/** 非空字符串判据（短键 / 标签 / 标题共用）。 */
+const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+
+/** 有限数字（min / max / step 共用）。 */
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+
+/**
+ * 单条字段声明的校验：合法 ⇒ 定形后的声明；非法 ⇒ 拒绝原因（调用方丢弃该字段并记诊断）。
+ * ★ 纯函数：不读全局、不抛错（坏声明是**数据**，不是程序错误）。
+ */
+function validatePluginPropertyField(raw: unknown): CcWidgetPropertyFieldDecl | CcWidgetPropertyFieldRejectionReason {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'unknown-kind'
+  const decl = raw as Record<string, unknown>
+  switch (decl.kind) {
+    case 'section':
+      return isNonEmptyString(decl.title) ? { kind: 'section', title: decl.title } : 'missing-label'
+    case 'number': {
+      if (!isNonEmptyString(decl.label)) return 'missing-label'
+      if (!isNonEmptyString(decl.key)) return 'missing-key'
+      if (!isFiniteNumber(decl.min) || !isFiniteNumber(decl.max) || decl.min > decl.max) return 'invalid-number-range'
+      return {
+        kind: 'number', key: decl.key, label: decl.label, min: decl.min, max: decl.max,
+        ...(isFiniteNumber(decl.step) ? { step: decl.step } : {}),
+        ...(typeof decl.suffix === 'string' ? { suffix: decl.suffix } : {}),
+      }
+    }
+    case 'color':
+      if (!isNonEmptyString(decl.label)) return 'missing-label'
+      if (!isNonEmptyString(decl.key)) return 'missing-key'
+      return { kind: 'color', key: decl.key, label: decl.label }
+    case 'chips': {
+      if (!isNonEmptyString(decl.label)) return 'missing-label'
+      if (!isNonEmptyString(decl.key)) return 'missing-key'
+      if (!Array.isArray(decl.options) || decl.options.length === 0) return 'invalid-options'
+      const options: { value: string; label: string }[] = []
+      for (const option of decl.options) {
+        if (!option || typeof option !== 'object' || Array.isArray(option)) return 'invalid-options'
+        const candidate = option as Record<string, unknown>
+        if (!isNonEmptyString(candidate.value) || !isNonEmptyString(candidate.label)) return 'invalid-options'
+        // 同一字段内 value 重复 ⇒ 选中态无法判定（面板按 value 比对）⇒ 视为非法声明
+        if (options.some(existing => existing.value === candidate.value)) return 'invalid-options'
+        options.push({ value: candidate.value, label: candidate.label })
+      }
+      return { kind: 'chips', key: decl.key, label: decl.label, options }
+    }
+    default:
+      return 'unknown-kind'
+  }
+}
+
+/**
+ * 一个元件的字段声明校验（登记 → 面板的**唯一**入口）。
+ * 返回定形后的字段表 + 被丢弃的下标与原因（顺序保留：合法字段按声明序进面板）。
+ */
+export function resolvePluginPropertyFields(
+  widgetId: string,
+  ownerPluginId: string,
+  raw: readonly unknown[] | undefined,
+): { readonly fields: readonly CcWidgetPropertyFieldDecl[]; readonly rejected: readonly CcWidgetPropertyFieldRejection[] } {
+  const fields: CcWidgetPropertyFieldDecl[] = []
+  const rejected: CcWidgetPropertyFieldRejection[] = []
+  raw?.forEach((candidate, index) => {
+    const validated = validatePluginPropertyField(candidate)
+    if (typeof validated === 'string') rejected.push({ widgetId, ownerPluginId, index, reason: validated })
+    else fields.push(validated)
+  })
+  return { fields, rejected }
+}
+
+/**
+ * 字段的**声明缺省值**（面板读不到用户值时用它，与内置件的取值口径同款）：
+ * `number` ⇒ `min`；`chips` ⇒ 第一项；`color` ⇒ `''`（空串 = 未设色，与内置颜色字段同款）。
+ */
+export function resolveCcPropertyFieldDefault(field: CcWidgetPropertyFieldDecl): string | number {
+  if (field.kind === 'number') return field.min
+  if (field.kind === 'chips') return field.options[0]?.value ?? ''
+  return ''
 }
 
 /** 内置件的渲染约定：组件表键 = 定义表行的 id（见 `createCcWidgetRenderers.solid.tsx`）。 */
@@ -74,6 +201,7 @@ export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceE
   }))
   const builtinIds = new Set(entries.map(entry => entry.id))
   const rejected: CcWidgetRosterRejection[] = []
+  const propertyFieldRejections: CcWidgetPropertyFieldRejection[] = []
   for (const source of registered) {
     const contribution = source.value
     if (builtinIds.has(contribution.id)) {
@@ -84,6 +212,9 @@ export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceE
       rejected.push({ id: contribution.id, ownerPluginId: source.ownerPluginId, reason: 'missing-render' })
       continue
     }
+    // ★ CC-13 刀4：属性字段声明逐条校验（非法 ⇒ 丢该字段 + 记诊断；合法的定形进条目）
+    const propertyFields = resolvePluginPropertyFields(contribution.id, source.ownerPluginId, contribution.propertyFields)
+    propertyFieldRejections.push(...propertyFields.rejected)
     entries.push({
       id: contribution.id,
       label: contribution.label,
@@ -91,9 +222,10 @@ export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceE
       source: 'plugin',
       render: contribution.render,
       ownerPluginId: source.ownerPluginId,
+      ...(propertyFields.fields.length === 0 ? {} : { propertyFields: propertyFields.fields }),
     })
   }
-  return { entries, rejected }
+  return { entries, rejected, propertyFieldRejections }
 }
 
 // ── ★★ #266 CC-13 刀3：工位（位置 / 拖动 / 编辑列）─────────────────────────────

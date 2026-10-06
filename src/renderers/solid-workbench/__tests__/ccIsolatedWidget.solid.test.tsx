@@ -111,6 +111,7 @@ function lastInput(fake: FakeSurface): {
   size: { width: number, height: number }
   session: { hasSession: boolean, generating: boolean }
   editing: boolean
+  props: Record<string, string | number>
 } {
   const payload = fake.inputs.at(-1)
   if (!payload) throw new Error('假 surface 一包 host:input 都没收到')
@@ -121,7 +122,7 @@ const rejectionMessages = (diagnostics: readonly RendererDiagnosticContext[]) =>
   diagnostics.filter(item => item.code === 'cc-widget.surface.event-rejected').map(item => item.message)
 
 describe('#266 CC-13 刀2 · 隔离面插件件 I/O', () => {
-  it('（往下递）挂载即收到 host:input 四段；尺寸 / hasSession / generating / editing 变化 ⇒ 重发', async () => {
+  it('（往下递）挂载即收到 host:input 五段；尺寸 / hasSession / generating / editing 变化 ⇒ 重发', async () => {
     // ControlCenter 与隔离件都建 ResizeObserver —— 用可驱动替身，找"观察本件容器"那一个。
     const previousResizeObserver = globalThis.ResizeObserver
     class MockResizeObserver {
@@ -142,7 +143,8 @@ describe('#266 CC-13 刀2 · 隔离面插件件 I/O', () => {
 
       await waitFor(() => expect(fake.inputs.length).toBeGreaterThan(0))
       const first = lastInput(fake)
-      expect(Object.keys(first).sort()).toEqual(['editing', 'session', 'size', 'style'])
+      // ★ CC-13 刀4：**五段**（前四段语义不变，只增 `props`）—— 隔离面靠 props 才能"按参数画"
+      expect(Object.keys(first).sort()).toEqual(['editing', 'props', 'session', 'size', 'style'])
       // style = 内置件同源字段（外观令牌）
       expect(Object.keys(first.style).sort()).toEqual(['bg', 'border', 'fontSize', 'height', 'radius', 'text'])
       expect(typeof first.style.bg).toBe('string')
@@ -151,6 +153,8 @@ describe('#266 CC-13 刀2 · 隔离面插件件 I/O', () => {
       expect(first.session).toEqual({ hasSession: true, generating: true })
       expect(first.editing).toBe(false)
       expect(first.size).toEqual({ width: 0, height: 0 })
+      // props：没调过参数 ⇒ 空表（不是 undefined / null）
+      expect(first.props).toEqual({})
 
       // ① 尺寸实测变化 ⇒ 重发
       const container = dom.host.querySelector<HTMLElement>('.cc-isolated-widget')!
@@ -173,6 +177,17 @@ describe('#266 CC-13 刀2 · 隔离面插件件 I/O', () => {
       // ④ hasSession 变化 ⇒ 重发（换到无会话）
       dom.lifecycle.update({ sheetId: 'sheet-cc-isolated', sessionId: null, rightInset: 24, reducedMotion: true })
       await waitFor(() => expect(lastInput(fake).session.hasSession).toBe(false))
+
+      // ⑤ 参数变化 ⇒ 重发（★ 刀4：props 段随 `ccPluginProps[该元件 id]` 走）
+      dom.services.appearance.dispatch({ type: 'set-cc-plugin-prop', id: 'test.cc-isolated-widget', key: 'accent', value: '#123456' })
+      await waitFor(() => expect(lastInput(fake).props).toEqual({ accent: '#123456' }))
+      dom.services.appearance.dispatch({ type: 'set-cc-plugin-prop', id: 'test.cc-isolated-widget', key: 'size', value: 18 })
+      await waitFor(() => expect(lastInput(fake).props).toEqual({ accent: '#123456', size: 18 }))
+      // 别的元件的参数不进这一包（按 id 取，不串门）
+      dom.services.appearance.dispatch({ type: 'set-cc-plugin-prop', id: 'other.widget', key: 'size', value: 99 })
+      await waitFor(() => expect(dom.services.appearance.getSnapshot().ccPluginProps['other.widget']).toEqual({ size: 99 }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(lastInput(fake).props).toEqual({ accent: '#123456', size: 18 })
     } finally {
       globalThis.ResizeObserver = previousResizeObserver
     }

@@ -8,7 +8,8 @@ import { useSolidWorkbench } from '../SolidWorkbenchContext.solid.tsx'
  *
  * 通道本体是现成的（`plugin-runtime/ui/IsolatedPluginSurface.solid.tsx`，多宿主在用）——
  * 本件只做中控这一处的 I/O 契约（刀2 施工单 §4）：
- * - **往下递**（`host:input`，随变化自动重发）：外观令牌 / 可用尺寸 / 会话弱状态 / 编辑态标志；
+ * - **往下递**（`host:input`，随变化自动重发）：外观令牌 / 可用尺寸 / 会话弱状态 / 编辑态标志 /
+ *   **本件属性值**（`props`，刀4 增段；前四段语义不变）；
  * - **往上收**（bridge 事件，事件名定死）：`cc:insert` 投递文本 / `cc:send` 直接发送 /
  *   `cc:open` 打开外链。任何拒绝都经 workbench 诊断口上报，**不静默**。
  *
@@ -27,6 +28,8 @@ export interface CcIsolatedWidgetStyle {
 }
 
 export interface CcIsolatedWidgetProps {
+  /** 该元件的登记 id —— 属性值（`ccPluginProps`）按它取 */
+  widgetId: string
   surfaceId: string
   /** 只读语境（重放 / 预览有会话）—— `cc:send` 的拒绝条件之一 */
   readonly(): boolean
@@ -45,10 +48,12 @@ export function CcIsolatedWidget(props: CcIsolatedWidgetProps) {
   let element: HTMLDivElement | undefined
 
   /**
-   * §4.1 往下递的包。`createMemo` ⇒ 四段里任一段变化即产新对象 ⇒ 通道侧以 `host:input` 重发。
+   * §4.1 往下递的包。`createMemo` ⇒ 任一段变化即产新对象 ⇒ 通道侧以 `host:input` 重发。
    * ★ 外观令牌取值 = 内置件同源字段（含义是「想长得像内置件时的素材」，插件不用不强制）：
    *   `bg←modelBgColor` / `text←modelTextColor` / `border←inputBorder` / `fontSize←modelFontSize`
    *   / `radius←modelRadius` / `height←modelHeight`，缺省兜底与内置件同口径。
+   * ★ #266 CC-13 刀4：第五段 `props` = 该元件**当前的属性值**（用户在编辑列里调的参数；
+   *   没调过 ⇒ `{}`）—— 隔离面靠它才能真正"按参数画"。前四段语义不变（**只增不改**）。
    */
   const hostInput = createMemo(() => ({
     style: {
@@ -65,6 +70,7 @@ export function CcIsolatedWidget(props: CcIsolatedWidgetProps) {
       generating: workbench.runtimeSnapshot().generating,
     },
     editing: appearance().ccEditMode === true,
+    props: { ...(appearance().ccPluginProps[props.widgetId] ?? {}) },
   }))
 
   // §4.1 `size` = 本件容器**实测**宽高（与 `.control-center` 既有测量同款；无布局环境 ⇒ 0/0）。

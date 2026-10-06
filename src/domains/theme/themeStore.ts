@@ -1,6 +1,7 @@
 import { attachSolidPersist, createSolidStoreKernel, resolveLocalStorage, type SolidStoreKernel } from '../../infrastructure/state/solidStoreKernel'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
 import { clearCcPlacementState, DEFAULT_CC_LAYOUT, cloneCcLayout, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
+import { clearCcPluginPropsState, setCcPluginPropState } from '../cc/ccPluginProps.ts'
 import type { CcVisibilityTarget } from '../cc/ccLayoutState.ts'
 import type { CcWidgetPlacement } from '../cc/ccLayoutState.ts'
 import { markZoneCustom } from './themePresetState.ts'
@@ -41,10 +42,19 @@ export type ThemeState = ThemeSettings & {
   setCcHeight: (height: number) => void
   updateCcPlacement: (id: string, partial: Partial<CcWidgetPlacement>) => void
   /**
-   * ★ #266 CC-13 刀3：删掉某元件的位置记录（插件**撤下那一刻**由宿主派发）。
+   * ★ #266 CC-13 刀4：写一条**插件元件的属性值**（编辑列属性面板的唯一落点）。
+   * 值住 `ccPluginProps`（随预设走）；幂等：写同值 ⇒ 原样返回同一 state（不广播）。
+   * ★ 与"用户改内置件参数 / 拖位置 / 动显隐"同类 ⇒ 置 cc zone 的 custom 标记
+   *   （插件撤下清数据那条**不置** —— 那不是用户手改，见下）。
+   */
+  setCcPluginProp: (id: string, key: string, value: string | number) => void
+  /**
+   * ★★ #266 CC-13 刀3 立、**刀4 泛化**：清掉某元件的**全部用户数据**（插件**撤下那一刻**由宿主派发）
+   * —— 一次清三样：位置记录 / 插件属性 / 两份显隐表里的该 id。
+   * ★ 三样都不存在 ⇒ 原样返回同一 state（幂等、不广播）。
    * ★ 不置 zone custom：这是**插件侧事件**，不是用户手改该区域（口径见施工单 §4.4）。
    */
-  clearCcPlacement: (id: string) => void
+  clearCcWidgetData: (id: string) => void
   resetCcLayout: () => void
   /**
    * ★ #266 刀4（结构 C）：`target` = 写**哪一份表** —— `'base'` 主管（两种门态都生效）/
@@ -115,11 +125,26 @@ const themeKernel = createSolidStoreKernel<ThemeState>({
     ccLayout: updateCcPlacementState(state.ccLayout, id, partial),
     ...markZoneCustom(state, 'cc'),
   })),
-  // ★ #266 CC-13 刀3：撤下清位 —— 记录不存在 ⇒ 原样返回同一 state（幂等、不广播）。
+  // ★ #266 CC-13 刀4：插件件的属性写入 —— 与"用户改内置件参数"同类 ⇒ 置 cc zone custom。
+  //   幂等：同值 ⇒ 原样返回同一 state（不产生发布 / 不重复置 custom）。
+  setCcPluginProp: (id, key, value) => themeKernel.setState(state => {
+    const ccPluginProps = setCcPluginPropState(state.ccPluginProps, id, key, value)
+    return ccPluginProps === state.ccPluginProps ? state : { ccPluginProps, ...markZoneCustom(state, 'cc') }
+  }),
+  // ★★ #266 CC-13 刀3 立、刀4 泛化：撤下清数据 —— 一次清三样（位置 / 插件属性 / 两份显隐表）。
+  //   三样都不存在 ⇒ 原样返回同一 state（幂等、不广播）。
   //   不置 custom：插件撤下不是"用户手改该区域"（见 ThemeState 上的类型注释）。
-  clearCcPlacement: (id) => themeKernel.setState(state => {
+  clearCcWidgetData: (id) => themeKernel.setState(state => {
     const ccLayout = clearCcPlacementState(state.ccLayout, id)
-    return ccLayout === state.ccLayout ? state : { ccLayout }
+    const ccPluginProps = clearCcPluginPropsState(state.ccPluginProps, id)
+    // 显隐两份表先判 `includes`：`setCcHiddenState(…, false)` 的 filter 恒产新数组，
+    // 不判会让"什么都没清"也变成一次新 state（幂等就废了）。
+    const ccHidden = state.ccHidden.includes(id) ? setCcHiddenState(state.ccHidden, id, false) : state.ccHidden
+    const ccHiddenEmpty = state.ccHiddenEmpty.includes(id) ? setCcHiddenState(state.ccHiddenEmpty, id, false) : state.ccHiddenEmpty
+    return ccLayout === state.ccLayout && ccPluginProps === state.ccPluginProps
+      && ccHidden === state.ccHidden && ccHiddenEmpty === state.ccHiddenEmpty
+      ? state
+      : { ccLayout, ccPluginProps, ccHidden, ccHiddenEmpty }
   }),
   resetCcLayout: () => themeKernel.setState(state => ({
     ccLayout: cloneCcLayout(DEFAULT_CC_LAYOUT),
@@ -235,8 +260,9 @@ attachSolidPersist(themeKernel, {
    * 所以对齐**不产生任何额外写盘 / 订阅广播**；且 `migrate → merge` 的顺序保证
    * 它跑在一次性语义转换之后（attachSolidPersist 同款顺序）。
    *
-   * 语义：缺项补默认、多余项忽略、**用户手调的 offsetX/offsetY/order 与已设字段值一律保留**
-   * （既定口径：「布局归一化不是把用户排布拍平」）。幂等，见 `alignThemeStructure`。
+   * 语义：缺项补默认、**未知键保留**（插件件 id 与白名单外的历史 id 都留着；历史废弃 id 的显式清理
+   * 在 `migration.ts` 的 `REMOVED_CC_PLACEMENT_IDS`）、**用户手调的 offsetX/offsetY/order 与已设字段值
+   * 一律保留**（既定口径：「布局归一化不是把用户排布拍平」）。幂等，见 `alignThemeStructure`。
    */
   merge: (persisted, current) => ({ ...current, ...alignThemeStructure(persisted, THEME_MIGRATION_DEFAULTS) }),
   partialize: (state) => {

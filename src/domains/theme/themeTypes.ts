@@ -5,6 +5,7 @@
  * 单向仰望本类型，不再形成 store⇄defs⇄presets 类型环（结构审查 A-V5/B-13）。
  */
 import type { CcLayoutV3 } from '../cc/ccLayoutState.ts'
+import type { CcPluginProps } from '../cc/ccPluginProps.ts'
 
 export interface ThemeSettings {
   /** 全局强调色（--accent）：链接/前缀/焦点/选中态统一取色，此前硬编码 #3b82f6 无法主题化 */
@@ -86,6 +87,12 @@ export interface ThemeSettings {
    */
   ccHiddenEmpty: string[]
   ccLayout: CcLayoutV3
+  /**
+   * ★ #266 CC-13 刀4：**插件元件的属性值**（`Record<widgetId, Record<短键, string | number>>`）。
+   * 与内置件的参数同规矩：住 cc 区 ⇒ **随预设走**；插件**撤下那一刻**由 `clear-cc-widget-data`
+   * 一并清（与位置 / 显隐记录同一时刻）。形状与读写规则见 `domains/cc/ccPluginProps.ts`。
+   */
+  ccPluginProps: CcPluginProps
   ccEditMode: boolean
   appliedPreset: Record<string, string>
   custom: Record<string, boolean>

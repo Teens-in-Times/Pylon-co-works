@@ -61,6 +61,10 @@ describe('settings traceability contract (D-trace)', () => {
       //   写方 = 预设数据（`zones/factory/**` / `presets/builtin.ts` 的 cc 切面）与持久化。
       'ccHiddenEmpty',
       'ccLayout',
+      // ★ #266 CC-13 刀4：插件元件**属性值**（结构载体）—— 读方 = 编辑列属性面板与
+      //   `CcIsolatedWidget` 的 `host:input.props` 段（`appearance().ccPluginProps`）；
+      //   写方 = 属性面板（`set-cc-plugin-prop`）、预设数据（`zones/factory/**` 的 cc 切面）与持久化。
+      'ccPluginProps',
       'custom',
       'rightWidth',
       'sidebarGroupSize',
