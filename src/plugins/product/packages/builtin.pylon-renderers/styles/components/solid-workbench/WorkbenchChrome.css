@@ -425,7 +425,6 @@
 .solid-workbench-control-center-slot.is-empty .cc-status-row,
 .solid-workbench-control-center-slot.is-empty .cc-widget { width: 100%; }
 .solid-workbench-control-center-slot.is-empty .cc-widget.cc-natural { width: max-content !important; }
-.solid-workbench-control-center-slot.is-empty .cc-widget[data-widget-id='workspace'],
 .solid-workbench-control-center-slot.is-empty .cc-widget[data-widget-id='model'],
 .solid-workbench-control-center-slot.is-empty .cc-widget[data-widget-id='mode'] { max-width: 100%; }
 .solid-workbench-control-center-slot.is-empty.is-session-entering {

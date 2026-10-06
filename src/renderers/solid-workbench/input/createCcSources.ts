@@ -10,10 +10,12 @@
  *   cc 控件注册表 —— 插件件的注册表订阅改在 ControlCenter 里按**活名单**消费
  *   （`domains/cc/ccWidgetRoster.ts` 合成，见 `ControlCenter.solid.tsx`）。
  *
+ * ★ #266 CC-27/28 清尾：壳 popover 退役后创建工作区回归侧栏，本口的建区聚合项已删 ——
+ *   workspace 实体 store 的同名成员仍被侧栏使用，是活的。
+ *
  * 注意：这里只做**读取聚合**，不做派生状态；全部成员都是按调用现读的函数。
  */
 import { useIdentityStore } from '../../../domains/identity/identityStore.ts'
-import { useWorkspaceEntityStore } from '../../../domains/workspace/workspaceEntityStore.ts'
 import type { WorkbenchWorkspaceOption } from '../../../plugin-runtime/renderers/workbenchRendererFactory.ts'
 
 /** 宿主 input 快照中与中控相关的切片（只声明读到的字段）。 */
@@ -26,8 +28,6 @@ export interface CcSources {
   workspaces(): readonly WorkbenchWorkspaceOption[]
   /** 活跃档案声明的默认模型（模型草稿的播种兜底；runtime 活跃值由调用方优先）。 */
   activeProfileModel(): string
-  /** 新建工作区 IO（workspace 实体 store 的创建入口）。 */
-  createWorkspace(name: string, rootPath: string): Promise<{ id: string }>
 }
 
 export function createCcSources(readInput: () => CcSourcesInputSnapshot): CcSources {
@@ -37,6 +37,5 @@ export function createCcSources(readInput: () => CcSourcesInputSnapshot): CcSour
       const identity = useIdentityStore.getState()
       return identity.profiles.find(item => item.id === identity.activeProfileId)?.model || ''
     },
-    createWorkspace: (name, rootPath) => useWorkspaceEntityStore.getState().createWorkspace(name, rootPath),
   }
 }
