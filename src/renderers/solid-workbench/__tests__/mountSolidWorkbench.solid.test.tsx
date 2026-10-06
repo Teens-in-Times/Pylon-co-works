@@ -1845,8 +1845,10 @@ describe('mountSolidWorkbench', () => {
     services.appearance.setTheme(theme)
 
     await waitFor(() => expect(host.querySelector('.input-textarea')).toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: '停止生成' })).toBeNull()
-    expect(host.querySelector('.cc-send-icon, .cc-send-square, .cc-send-minimal')).toBeNull()
+    // ★ CC-13 刀2（回单点名：断言旧行为的用例按新行为改）：**预览/测试环境的发送按钮从
+    //   "整块不渲染"变成"渲染"**（`cc-send-button` 的注册在场门退役；生产本就渲染，不变）。
+    //   `inline` 档 ⇒ 按钮挂在输入栏内（`data-mode="inline"`）；legacy 输入栏按钮仍不渲染。
+    expect(host.querySelector('.cc-send-button[data-mode="inline"]')).toBeInTheDocument()
     expect(host.querySelector('.input-btn.send, .input-btn.stop')).toBeNull()
 
     theme.inputSubmitButtonMode = 'external'
@@ -1999,10 +2001,11 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
   })
 
   it('#238 刀4 · 占区相交的非悬浮件被挡（与悬浮豁免互为对照）', async () => {
-    // 说明：**预览环境里发送按钮不渲染**（cc 元件注册表为空 ⇒ `ccSendButtonRegistered()` 为假），
-    // 所以"悬浮件放行"这一半没法在这里端到端测 —— 它由 `shouldBypassCollisionConstraint` 的
-    // 纯函数单测（`ccPlacementCollision.test.ts`）与实机数值证据承担。
-    // 这里钉住对照面：同一布局下，非悬浮件（model 与输入栏相交）的微调会被挡住。
+    // 说明：本用例钉住**非悬浮件**被挡这一半；「悬浮件放行」那一半由
+    // `shouldBypassCollisionConstraint` 的纯函数单测（`ccPlacementCollision.test.ts`）与实机数值证据承担
+    // —— 要在这里端到端测它得另造一份"拖悬浮件进占区"的几何夹具，那不是本用例的对照面。
+    // ★ CC-13 刀2 起：预览/测试环境的发送按钮**已经在场**（注册在场门退役）
+    //   ⇒ 旧注释「预览不渲染发送按钮」已作废；本用例仍只做非悬浮件的对照。
     const fake = installFakeLayout({
       input: { left: 0, top: 100, width: 900, height: 60 },
       model: { left: 0, top: 150, width: 100, height: 28 },

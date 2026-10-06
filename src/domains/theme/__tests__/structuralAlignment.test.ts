@@ -71,20 +71,30 @@ describe('#238 刀2 · (a) 缺项的旧版数据 ⇒ 自动补齐，用户 offse
     expect(aligned.ccBgImage).toBe('url(fixture.png)')
   })
 
-  it('多余项忽略（不在当前控件全集里的旧 id 自然丢弃）', () => {
+  // ★ #266 CC-13 刀3 语义改：「多余项忽略」→「**未知键保留**」——读盘不再丢名单外的键。
+  //   原因：读盘发生在**插件登记之前**，读盘丢会在每次重启时误删插件位置（「重启后仍在」失效）。
+  // ★ 刀4（小活③ · 数据卫生）：**历史废弃的内置 id 反过来要显式删掉** —— 名单在
+  //   `migration.ts` 的 `REMOVED_CC_PLACEMENT_IDS`（pct / session / workspace / activity / ekg / tasks）。
+  //   两条口径并存不矛盾：「未知键保留」保护的是**插件件 id**（下游有消费者），
+  //   「显式删键」清理的是**已退场的内置 id**（永远不会有消费者）。
+  it('未知键保留（插件形状的 id 留下并逐键 clamp）；历史废弃 id（session / ekg）被显式删掉', () => {
     const withLegacyIds = {
       ccLayout: {
         version: 9,
         placements: {
           model: { ...USER_PLACEMENT },
           session: { slot: 'status-secondary', order: 1, offsetX: 0, offsetY: 0 },
-          ekg: { slot: 'status-primary', order: 2, offsetX: 0, offsetY: 0 },
+          ekg: { slot: 'status-primary', order: 2, offsetX: 999, offsetY: 0 },
+          'probe.cc-widget': { order: 2, offsetX: 999, offsetY: 0 },
         },
       },
     }
     const aligned = alignThemeStructure(withLegacyIds, defaults) as unknown as Aligned
-    expect(aligned.ccLayout.placements).not.toHaveProperty('session')
-    expect(aligned.ccLayout.placements).not.toHaveProperty('ekg')
+    // 历史废弃 id：显式删掉（每次读盘都跑，幂等；见 migration.ts 的白名单）
+    expect(aligned.ccLayout.placements.session).toBeUndefined()
+    expect(aligned.ccLayout.placements.ekg).toBeUndefined()
+    // 插件形状的未知键：留下，且同过 clamp（offsetX 999 → 48）
+    expect(aligned.ccLayout.placements['probe.cc-widget']).toEqual({ order: 2, offsetX: 48, offsetY: 0 })
     expect(aligned.ccLayout.placements.model).toEqual(USER_EXPECTED)
   })
 })

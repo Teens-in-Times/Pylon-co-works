@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T11:38:02.129Z",
+  "generatedAt": "2026-10-06T07:39:43.099Z",
   "source": {
     "builtinPresetIds": [
       "claude",
@@ -14,7 +14,7 @@
       "focus-flow"
     ],
     "customPresetIds": [],
-    "themeSettingCount": 175,
+    "themeSettingCount": 176,
     "cssVariableCount": 87
   },
   "fixtures": [
@@ -245,6 +245,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -574,6 +575,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -909,6 +911,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -1243,6 +1246,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -1581,6 +1585,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -1919,6 +1924,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -2254,6 +2260,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -2592,6 +2599,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -2928,6 +2936,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -3257,6 +3266,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -3586,6 +3596,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -3917,6 +3928,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -4255,6 +4267,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -4575,6 +4588,7 @@
             }
           }
         },
+        "ccPluginProps": "",
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -4861,6 +4875,7 @@
             }
           }
         },
+        "ccPluginProps": "fixture-ccPluginProps",
         "appliedPreset": {
           "global": "",
           "sidebar": "",

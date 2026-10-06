@@ -5,8 +5,10 @@
  *   它是**唯一真值**：10 套出厂预设的有效值由它算出（`effectivePresetTheme`）——
  *   改这里的任何一个值，等于改掉所有引用它的预设。历史来源见 `.agents/records/issue-223-factory-zone-presets-as-data.md`。
  * 值 = 生成时刻的 `pickZoneFields(GLOBAL_PRESETS[来源].theme, 'cc')`，逐字段照抄
- * （含终端补全烘入的默认值；cc 区含 ccLayout / ccHidden / ccHiddenEmpty 三个名单字段 ——
- *   `ccHidden` = 主管表、`ccHiddenEmpty` = 空态再藏，语义见 #266 刀4 与 `resolveCcHiddenWidgetIds`）。
+ * （含终端补全烘入的默认值；cc 区含 ccLayout / ccHidden / ccHiddenEmpty **名单字段**与
+ *   ccPluginProps **插件属性值**—— `ccHidden` = 主管表、`ccHiddenEmpty` = 空态再藏，语义见 #266 刀4 与
+ *   `resolveCcHiddenWidgetIds`；`ccPluginProps` 出厂一律 `{}`：预设不携带插件参数，切预设即清空
+ *   （与「参数随预设走」同一条规矩，语义见 `domains/cc/ccPluginProps.ts`）。
  */
 import type { ZonePresetEntry } from '../zonePresetPool.ts'
 
@@ -66,6 +68,7 @@ export const FACTORY_TERMINAL_CC: readonly ZonePresetEntry[] = [
           }
         }
       },
+      ccPluginProps: {},
       ccHidden: [
         "cc-send-button"
       ],
@@ -192,6 +195,7 @@ export const FACTORY_TERMINAL_CC: readonly ZonePresetEntry[] = [
           }
         }
       },
+      ccPluginProps: {},
       ccHidden: [
         "cc-send-button"
       ],
@@ -318,6 +322,7 @@ export const FACTORY_TERMINAL_CC: readonly ZonePresetEntry[] = [
           }
         }
       },
+      ccPluginProps: {},
       ccHidden: [
         "cc-send-button"
       ],
@@ -444,6 +449,7 @@ export const FACTORY_TERMINAL_CC: readonly ZonePresetEntry[] = [
           }
         }
       },
+      ccPluginProps: {},
       ccHidden: [
         "cc-send-button"
       ],
@@ -570,6 +576,7 @@ export const FACTORY_TERMINAL_CC: readonly ZonePresetEntry[] = [
           }
         }
       },
+      ccPluginProps: {},
       ccHidden: [
         "cc-send-button"
       ],
@@ -643,5 +650,6 @@ export const FACTORY_TERMINAL_CC: readonly ZonePresetEntry[] = [
   },
 ]
 
-// 本文件 5 条 / 340 个字段值（★ #266 CC-32：5 桶各删 1 处 inputBorderColor，搬去 terminal-global.ts；
-//   旧计数 420 在更早的字段删除中未同步、早已过时，本次按实际重数 345 − 5 = 340）
+// 本文件 5 条 / 345 个字段值（★ #266 CC-32：5 桶各删 1 处 inputBorderColor，搬去 terminal-global.ts；
+//   旧计数 420 在更早的字段删除中未同步、早已过时，本次按实际重数 345 − 5 = 340；
+//   ★ CC-13 刀4：五条各补 ccPluginProps ⇒ 340 + 5 = 345）

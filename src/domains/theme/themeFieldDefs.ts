@@ -242,6 +242,12 @@ export const THEME_FIELD_DEFS = {
   //   规则唯一出处 `domains/cc/widgetDefinitions.ts` 的 `resolveCcHiddenWidgetIds`。
   //   位置将来同样按"主管 + 空态再藏"两份承载（本刀不做，位置仍只有 `ccLayout` 一份）。
   ccHiddenEmpty: H({ type: 'text', label: '空态里再藏', zone: 'cc', noCssVar: true }),
+  // ★ #266 CC-13 刀4（工具开闸）：**插件元件的属性值**（`Record<widgetId, Record<短键, string|number>>`）。
+  //   与 `ccLayout` / `ccHidden` 同款**内部字段** —— 声明在这里即自动获得三件事：不在 Settings 渲染
+  //   （`hidden`）、**随预设走**（非 meta ⇒ 进 `THEME_PRESET_KEYS`，预设携带 / 全局预设换装时随 cc 切片换）、
+  //   写盘白名单照收（`partialize` 是 `THEME_SETTING_KEYS` 白名单式）。
+  //   形状与读写规则：`domains/cc/ccPluginProps.ts`；字段声明契约：`domains/cc/ccWidgetRoster.ts`。
+  ccPluginProps: H({ type: 'text', label: '插件元件属性', zone: 'cc', noCssVar: true }),
   // A6 输入区：本轮新增字段不投影 semanticRole/semanticSource；旧 inputBg 等字段保留。
   inputOffsetTop: { ...N('cc', '输入栏上间距', 0, 120), default: 10, group: '输入框本体', unit: 'px', suffix: 'px', cssVar: '--cc-input-offset-top' },
   inputHeight: { ...N('cc', '输入栏高度', 0, 200), default: 40, group: '输入框本体', unit: 'px', suffix: 'px', cssVar: '--cc-input-height' },

@@ -4,7 +4,8 @@
  * 与 `themeProjectedWorkbenchAppearanceStore.dispatchAppearanceCommand`（themeStore 真源生产路径）
  * 的等价性由 `__tests__/appearanceCommandEquivalence.test.ts` 守卫。
  */
-import { cloneCcLayout, DEFAULT_CC_LAYOUT, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
+import { clearCcPlacementState, cloneCcLayout, DEFAULT_CC_LAYOUT, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
+import { clearCcPluginPropsState, setCcPluginPropState } from '../cc/ccPluginProps.ts'
 import type { ThemeSettings } from '../theme/themeStore.ts'
 import { clampCcHeight, ccMinHeightInputOf, clampInputTypography } from '../cc/ccHeightState.ts'
 import {
@@ -122,6 +123,25 @@ export function reduceAppearanceCommand(
     }
     case 'update-cc-placement':
       return { ...theme, ccLayout: updateCcPlacementState(theme.ccLayout, command.id, command.placement) }
+    case 'set-cc-plugin-prop': {
+      // ★ CC-13 刀4：插件件的属性写入（只写该元件那一条；同值 ⇒ 原样返回同一份 theme = 不广播）
+      const ccPluginProps = setCcPluginPropState(theme.ccPluginProps, command.id, command.key, command.value)
+      return ccPluginProps === theme.ccPluginProps ? theme : { ...theme, ccPluginProps }
+    }
+    case 'clear-cc-widget-data': {
+      // ★★ CC-13 刀3 立、刀4 泛化：**清三样**（位置 / 插件属性 / 两份显隐表里的该 id）。
+      //   三样都不存在 ⇒ **原样返回同一份 theme**（幂等、不产无谓发布）。
+      //   ★ 显隐两份表用 `includes` 先判：`setCcHiddenState(…, false)` 的 filter 恒产新数组，
+      //     不判会让"什么都没清"也变成一次新对象（幂等就废了）。
+      const ccLayout = clearCcPlacementState(theme.ccLayout, command.id)
+      const ccPluginProps = clearCcPluginPropsState(theme.ccPluginProps, command.id)
+      const ccHidden = theme.ccHidden.includes(command.id) ? setCcHiddenState(theme.ccHidden, command.id, false) : theme.ccHidden
+      const ccHiddenEmpty = theme.ccHiddenEmpty.includes(command.id) ? setCcHiddenState(theme.ccHiddenEmpty, command.id, false) : theme.ccHiddenEmpty
+      return ccLayout === theme.ccLayout && ccPluginProps === theme.ccPluginProps
+        && ccHidden === theme.ccHidden && ccHiddenEmpty === theme.ccHiddenEmpty
+        ? theme
+        : { ...theme, ccLayout, ccPluginProps, ccHidden, ccHiddenEmpty }
+    }
     case 'set-cc-property':
       return typeof command.value === 'number' && !Number.isFinite(command.value)
         ? theme

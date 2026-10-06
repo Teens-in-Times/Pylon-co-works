@@ -18,10 +18,6 @@ import {
   type CcWidgetMember,
 } from '../widgetDefinitions.ts'
 import {
-  BUILTIN_CC_SEND_BUTTON_CONTRIBUTION,
-  BUILTIN_CC_SURFACE_CONTRIBUTION,
-} from '../widgetCatalog.ts'
-import {
   CC_LAYOUT_SCHEMA_VERSION,
   DEFAULT_CC_LAYOUT,
   type CcLayoutWidgetId,
@@ -72,9 +68,10 @@ describe('#238 · 定义表不变量 1-2：字段覆盖完整、无重叠', () =
   //   `cliOverflowMode` / `footerLayout` / `inputMinHeight`）⇒ cc 字段 75 → 68；
   //   刀2 的空态切面又把系统桶补到 **69**。
   // ★ #266 CC-32：`inputBorderColor` 搬去 global 区（全应用通用边线色）⇒ 69 → **68**（用例名的"68"在此对齐）。
-  it('68 个 cc 字段每一个恰好有一个归属行，无遗漏', () => {
+  // ★ #266 CC-13 刀4：`ccPluginProps`（插件元件属性值，内部字段）进系统桶 ⇒ 68 → **69**。
+  it('69 个 cc 字段每一个恰好有一个归属行，无遗漏', () => {
     const owners = fieldOwners()
-    expect(ccFields).toHaveLength(68)
+    expect(ccFields).toHaveLength(69)
     expect([...owners.keys()].sort()).toEqual([...ccFields].sort())
   })
 
@@ -109,9 +106,10 @@ describe('#238 · 定义表不变量 1-2：字段覆盖完整、无重叠', () =
     //   ★ 它取代了原先那句「空态隐藏 6 条」的字面量名单：名单搬进预设数据，
     //     出厂那 10 份空态切面的键集由 `ccVisibilitySliceGuard.test.ts` 钉住。
     // ★ #266 CC-32：`inputBorderColor` 搬去 global 区 ⇒ 输入栏 26 → 25、总数 69 → **68**。
-    expect(CC_SYSTEM_FIELDS).toEqual(['ccLayout', 'ccHidden', 'ccHiddenEmpty'])
+    // ★ #266 CC-13 刀4：`ccPluginProps` 进系统桶（跨元件：值是插件自定义短键，不属任何行）⇒ 总数 68 → **69**。
+    expect(CC_SYSTEM_FIELDS).toEqual(['ccLayout', 'ccHidden', 'ccHiddenEmpty', 'ccPluginProps'])
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0) + CC_SYSTEM_FIELDS.length
-    expect(total).toBe(68)
+    expect(total).toBe(69)
   })
 
   it('成员字段必须落在 cc zone 内', () => {
@@ -371,11 +369,20 @@ describe('#238 · 派生结果一致（默认布局 / 名单 / 标签 / 属性�
     ])
     // 用量控件不新增属性字段（S11 拍板）⇒ 表里它的属性表单为空
     expect(WIDGET_PROPERTY_FIELDS.tokens).toEqual([])
-    expect(BUILTIN_CC_SURFACE_CONTRIBUTION.label).toBe('中控本体背景板')
-    expect(BUILTIN_CC_SURFACE_CONTRIBUTION.defaultPlacement).toBeUndefined()
-    expect(BUILTIN_CC_SEND_BUTTON_CONTRIBUTION.label).toBe('发送按钮')
-    // ★ #238 刀3：插件契约的 `slot` 换成 `anchor` + 可选 `side`
-    expect(BUILTIN_CC_SEND_BUTTON_CONTRIBUTION.defaultPlacement).toEqual({ anchor: 'input', side: 'right', order: 0, offsetX: 0, offsetY: 0 })
+    // ★ CC-13 刀2：内置两件（背景板 / 发送按钮）的**注册贡献已退役**（`widgetCatalog.ts` 整删）
+    //   ⇒ 这两条不再读贡献对象，改为**直接读定义表行**（锁的仍是同一批值）：
+    //   中文名照抄现状；背景板是容器（无 `layout` ⇒ 不进排布、无默认位置）；发送按钮贴输入栏右端 + 中线。
+    const surfaceRow = resolveCcWidgetGroup('cc-surface')!
+    const sendButtonRow = resolveCcWidgetGroup('cc-send-button')!
+    expect(surfaceRow.label).toBe('中控本体背景板')
+    expect(surfaceRow.layout).toBeUndefined()
+    expect(sendButtonRow.label).toBe('发送按钮')
+    // ★ #238 刀3：位置词表是 `anchor` + `side`（插件契约的 `slot` 已退场）
+    expect(sendButtonRow.layout).toEqual({
+      x: { anchor: 'input', side: 'right' },
+      y: { anchor: 'input', side: 'center' },
+      order: 0,
+    })
   })
 })
 

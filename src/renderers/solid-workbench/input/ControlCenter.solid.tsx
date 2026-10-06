@@ -1,22 +1,23 @@
 /** @jsxImportSource solid-js */
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js'
-import { formatUsagePercent, formatUsageTokens } from '../../../domains/theme/tokenFormat.ts'
-import { CC_WIDGET_IDS, WIDGET_PROPERTY_FIELDS, isWidgetVisible, CC_WIDGET_LABELS, ccWidgetLanding, coerceInputLanding, resolveCcHiddenWidgetIds, resolveCcWidgetGroup, type CcPropertyCommand, type CcWidgetId, type WidgetPropertyField } from '../../../domains/cc/widgetDefinitions.ts'
+import { CC_WIDGET_IDS, WIDGET_PROPERTY_FIELDS, isWidgetVisible, CC_WIDGET_LABELS, ccWidgetLanding, coerceInputLanding, resolveCcHiddenWidgetIds, resolveCcWidgetGroup, type CcColorPropertyKey, type CcPropertyCommand, type CcStringPropertyKey, type CcWidgetId } from '../../../domains/cc/widgetDefinitions.ts'
 import { setCcHiddenState, type CcLayoutWidgetId, type CcVisibilityTarget, type CcWidgetPlacement } from '../../../domains/cc/ccLayoutState.ts'
 import { ccMinHeightInputOf, resolveCcMinHeight, resolveCcMinWidth, resolveCcWidthGroups, type CcWidgetWidthIndex } from '../../../domains/cc/ccHeightState.ts'
 import { resolveCcShowVerdict, type CcShowVerdict, type CcShowVerdictInput } from '../../../domains/cc/ccShowVerdict.ts'
-import { resolveContextUsage } from '../../../domains/workbench/session/sessionSurface.ts'
 import { useSolidWorkbench } from '../SolidWorkbenchContext.solid.tsx'
 import { createSessionUiSignal } from '../adapters/sessionUiSignal.solid.tsx'
-import { SolidInputBar } from './InputBar.solid.tsx'
-import { SolidCcSendButton, SolidModeWidget, SolidModelWidget, SolidReasoningWidget } from './WorkbenchWidgets.solid.tsx'
+import { createCcWidgetRenderers } from './createCcWidgetRenderers.solid.tsx'
 import { resolveModeOptionEntries } from './workbenchOptionCatalog.ts'
 import type { WorkbenchAttachment } from '../../../domains/workbench/workbenchCommandFacade.ts'
 import { toCssBackgroundImage } from '../../../infrastructure/skin/backgroundImage.ts'
 import { errorMessage } from '../../../infrastructure/tauri/errorPayload.ts'
 import { createCcWorkspaceSelection } from './createCcWorkspaceSelection.solid.tsx'
 import { createCcSources } from './createCcSources.ts'
-import { CC_EDIT_TOOLBAR_IDS, createCcDragController } from './createCcDragController.ts'
+import { createCcDragController } from './createCcDragController.ts'
+import { resolveCcDraggableWidgetIds, resolveCcPluginWidgetSizings, resolveCcPropertyFieldDefault, resolveCcWidgetPlacements, resolveCcWidgetRoster, type CcValuedPropertyFieldDecl, type CcWidgetPropertyFieldDecl, type CcWidgetPropertyFieldRejectionReason, type CcWidgetRosterEntry, type CcWidgetSizingRejectionReason } from '../../../domains/cc/ccWidgetRoster.ts'
+import { getCcWidgetRegistry } from '../../../plugin-runtime/runtimeServices.ts'
+import { createRegistrySignal } from '../../../infrastructure/state/solidSheetSupport.solid.tsx'
+import { CcIsolatedWidget } from './CcIsolatedWidget.solid.tsx'
 
 /**
  * ★★ #238 刀3：**槽位层已拆** —— 不再有「先分槽、再在槽里排序」两段式。
@@ -29,6 +30,43 @@ import { CC_EDIT_TOOLBAR_IDS, createCcDragController } from './createCcDragContr
  */
 const INPUT_LANDING = ccWidgetLanding('input')
 const INFO_LANDING = ccWidgetLanding('model')
+
+/**
+ * ★★ #266 CC-13 刀4：行内展开区字段的**读写口** —— 内置件与插件件**共用同一段渲染分支**
+ * （`renderPropertyField`），差别只在值住哪、写哪条命令：
+ * - 内置字段 ⇒ 主题 cc 区的字段（`appearance().ccProperties`，写 `set-cc-property`）；
+ * - 插件字段 ⇒ `appearance().ccPluginProps[元件 id]`（写 `set-cc-plugin-prop`）。
+ */
+interface CcPropertyFieldAccess {
+  /** 该字段当前值（插件字段读不到用户值时给**声明缺省**：number ⇒ min / chips ⇒ 第一项 / color ⇒ ''） */
+  read(field: CcValuedPropertyFieldDecl): string | number
+  /** 写入（面板侧的 clamp / 取值白名单在写口内完成，见各实现的注释） */
+  write(field: CcValuedPropertyFieldDecl, value: string | number): void
+}
+
+/**
+ * 面板侧**取值白名单**（与内置件同款口径，见施工单 §4.3）：字段声明决定允许写什么值。
+ */
+function isValidPropertyValue(field: CcValuedPropertyFieldDecl, value: string | number): boolean {
+  if (field.kind === 'number') return typeof value === 'number' && Number.isFinite(value)
+  if (field.kind === 'color') return typeof value === 'string'
+  return typeof value === 'string' && field.options.some(option => option.value === value)
+}
+
+/** 字段声明被拒时的诊断文案（原因 → 人话；码统一 `cc-widget.property-field.rejected`，不静默）。 */
+const PROPERTY_FIELD_REJECTION_TEXT: Readonly<Record<CcWidgetPropertyFieldRejectionReason, string>> = {
+  'unknown-kind': 'kind 不在 section / number / color / chips 之内',
+  'missing-label': '缺 label（section 是缺 title）',
+  'missing-key': '非 section 字段缺 key',
+  'invalid-number-range': 'number 的 min / max 缺失或非法（min 大于 max 也算）',
+  'invalid-options': 'chips 的 options 缺失或非法（空表 / 项缺 value·label / value 重复）',
+}
+
+/** ★ CC-13 刀5：尺寸声明被忽略时的诊断文案（码统一 `cc-widget.sizing.rejected`，不静默）。 */
+const SIZING_REJECTION_TEXT: Readonly<Record<CcWidgetSizingRejectionReason, string>> = {
+  'not-an-object': 'sizing 不是对象（两维都不参与）',
+  'invalid-number': '尺寸不是有限的正数（px）',
+}
 
 export function SolidControlCenter() {
   const workbench = useSolidWorkbench()
@@ -95,26 +133,59 @@ export function SolidControlCenter() {
   })
   const workspaceId = workspaceSelection.value
 
+  // ── ★★ #266 CC-13 刀2/刀3：插件件（活名单 = 内置 ∪ 已登记）──────────────────────────
+  //   注册表快照 → 活名单（纯函数合成，见 `domains/cc/ccWidgetRoster.ts`）。
+  //   ★ 订阅用 `createRegistrySignal`（外部 store → 信号）：登记 / 撤下 / 热替换 ⇒ 名单重算 ⇒ 渲染跟随。
+  //   ★ 刀3 起本段同时提供**工位三件**：可拖件 id 序（编辑列 / 拖动 / 碰撞障碍集）、
+  //     位置兜底解析（排序 / 拖动 / 编辑列 / 渲染内联样式 / 首写补齐共用）、编辑列标签。
+  const ccWidgetRegistry = getCcWidgetRegistry()
+  const ccRegistrySnapshot = createRegistrySignal(ccWidgetRegistry, () => ccWidgetRegistry.getSnapshot())
+  const ccRoster = createMemo(() => resolveCcWidgetRoster(ccRegistrySnapshot().entries))
+  const ccPluginWidgets = createMemo(() => ccRoster().entries.filter(entry => entry.source === 'plugin'))
+  /** 可拖件 id 序（内置表序在前、插件登记序在后）——`CC_EDIT_TOOLBAR_IDS` 常量的继任者。 */
+  const ccDraggableIds = createMemo(() => resolveCcDraggableWidgetIds(ccRoster()))
+  /**
+   * ★★ 刀3：**位置读取的唯一入口** = `placements[id] ?? 计算默认`（`resolveCcWidgetPlacements`）。
+   * 插件件在**未落盘前**也要有 `order`（排序 / 编辑列输入框 / 拖动起点都读它）——
+   * 直接读 `placements[id]` 会拿到 `undefined.order`（排序 NaN、输入框抛错）。
+   */
+  const ccPlacements = createMemo(() => resolveCcWidgetPlacements(
+    appearance().ccLayout,
+    ccPluginWidgets().map(entry => entry.id),
+  ))
+  /** 插件件的展示顺序：按解析后的 `order` 排（未落盘 = 计算默认：登记序递增 ⇒ 新加入的在更下）。 */
+  const ccPluginWidgetsOrdered = createMemo(() => [...ccPluginWidgets()]
+    .sort((left, right) => ccPlacements()[left.id].order - ccPlacements()[right.id].order))
+  /** 该 id 的插件件条目（内置件 ⇒ `undefined`）——行名 / 来源小签 / 属性字段都以它为准。 */
+  const ccPluginEntry = (id: string): CcWidgetRosterEntry | undefined =>
+    ccPluginWidgets().find(entry => entry.id === id)
+  /** 编辑列的行名：内置查标签表，插件件用**插件自报**的 label。 */
+  const ccWidgetLabel = (id: string): string => {
+    const plugin = ccPluginEntry(id)
+    return plugin ? plugin.label : (CC_WIDGET_LABELS as Readonly<Record<string, string>>)[id] ?? id
+  }
+
   // ── 编辑态拖拽 / 高度拖把 / Escape（见 createCcDragController.ts）────────────
   const drag = createCcDragController({
     isEditMode: () => appearance().ccEditMode === true,
-    placementOf: id => appearance().ccLayout.placements[id],
+    draggableIds: () => ccDraggableIds(),
+    // ★ 刀3：兜底解析（插件件未落盘时给计算默认）——拖动起点与守卫回退值都读它
+    placementOf: id => ccPlacements()[id],
     currentHeight: () => appearance().ccHeight,
     select: setSelected,
     isSelected: selected,
-    submitPlacement: (id, placement) => workbench.appearance.dispatch({ type: 'update-cc-placement', id, placement }),
+    // ★ 刀3：提交前用兜底解析**补齐**（插件件的首写要把计算默认一并落盘，不能只写 offset）
+    submitPlacement: (id, placement) => workbench.appearance.dispatch({
+      type: 'update-cc-placement',
+      id,
+      placement: { ...ccPlacements()[id], ...placement },
+    }),
     submitHeight: height => workbench.appearance.dispatch({ type: 'set-cc-height', height }),
     exitEditMode: () => workbench.appearance.dispatch({ type: 'set-cc-edit-mode', enabled: false }),
     getRoot: () => controlCenterElement,
   })
   onCleanup(() => drag.dispose())
 
-  // The body surface is now represented by the cc-widget registration channel.
-  // Keep the existing host-rendered background implementation and CSS intact;
-  // this lookup is the minimal P2 consumer seam and remains HMR-safe because
-  // the registry snapshot is read at render time.
-  const ccSurfaceRegistered = () => sources.ccSurfaceRegistered()
-  const ccSendButtonRegistered = () => sources.ccSendButtonRegistered()
   const sendButtonMode = () => {
     // 04b：空态隐藏发送按钮 —— 与其余控件共用 hiddenWidgetIds() 这一个入口。
     // ★ CC-02：可见性由 isWidgetVisible 承担（与渲染处同一判据）。
@@ -171,13 +242,101 @@ export function SolidControlCenter() {
   // The registered cc-send-button owns the send block (F1=A)：槽位/显隐/缩放统一记在
   // `cc-send-button` 这个 id 上，legacy `send` 已随刀4 迁走。
   const visibleIds = createMemo(() => CC_WIDGET_IDS.filter(id => isWidgetVisible(id, visibilityContext())))
+  /**
+   * ★★ 刀4（小活①）：插件件渲染**读显隐** —— 与内置件同一个谓词（`isWidgetVisible`）配同一份
+   * 生效名单（`visibilityContext()` 交出的合并结果：主管表 + 门开时的再藏表 + 详细档折叠）
+   * ⇒ 编辑列里那两个开关对插件件**真的生效**（被藏 = 不渲染）；空态再藏随门生效。
+   * ★ 声明位置必须在 `visibilityContext` **之后**：本 memo 立即求值（Solid 的 createMemo 不是惰性的），
+   *   写在前面的 `const` 会有 TDZ（实测报 "Cannot access 'visibilityContext' before initialization"）。
+   * ★ 刀5：本 memo 只服务**渲染**；计数类（最小高 / 宽、显示前校验）另走 `ccPluginWidgetSizings()`
+   *   ——那份递的是**全量**插件件，在场判据由算式按每个切面各过一遍（见下）。
+   */
+  const visiblePluginWidgets = createMemo(() => ccPluginWidgetsOrdered()
+    .filter(entry => isWidgetVisible(entry.id, visibilityContext())))
+  /**
+   * ★★ 刀5：三处算式（`minHeight` / `minWidth` / 显示前校验）共用的**插件件输入** = 活名单里
+   * 「报了尺寸」的那些件（`{ id, width?, height? }`，定形见 `ccWidgetRoster.resolvePluginWidgetSizing`）。
+   *
+   * ★ 递**全量**（不先过 `visiblePluginWidgets`）：在场判据住在算式里，按**每个切面各自的名单**
+   *   逐条过 `isWidgetVisible` —— 与内置件同源；「显示前校验」算的是**改完之后**的那一态，
+   *   在调用方先筛一遍会把"换个态才看得见的件"算错。
+   * ★ 没报尺寸的件不进这份输入 ⇒ 算式那边按 0 计（下界），读数与"没登记该插件件"逐位相同。
+   */
+  const ccPluginWidgetSizings = createMemo(() => resolveCcPluginWidgetSizings(ccPluginWidgets()))
+
+  /** 活名单的拒绝与「渲染标识未命中」都不许静默 —— 经 workbench 诊断口上报（带原因）。 */
+  const reportCcWidgetDiagnostic = (code: string, message: string, phase: 'resolve' | 'update' | 'action') => {
+    workbench.hostPort?.diagnostics.report({ code, message, phase })
+  }
+  createEffect(() => {
+    for (const rejection of ccRoster().rejected) {
+      reportCcWidgetDiagnostic('cc-widget.roster.rejected', rejection.reason === 'id-collision'
+        ? `插件元件 id 与内置件冲突，登记被拒：${rejection.id}（插件 ${rejection.ownerPluginId}）`
+        : `插件元件缺渲染声明，登记被拒：${rejection.id}（插件 ${rejection.ownerPluginId}）`, 'update')
+    }
+  })
+  /**
+   * ★ CC-13 刀4：**属性字段声明被拒**也要响亮（不静默）—— 字段被丢弃、该件照常上屏，
+   * 但作者得能从诊断口看到"我声明的那条为什么没出现"。
+   */
+  createEffect(() => {
+    for (const rejection of ccRoster().propertyFieldRejections) {
+      reportCcWidgetDiagnostic('cc-widget.property-field.rejected',
+        `插件元件 ${rejection.widgetId} 的属性字段声明被拒（第 ${rejection.index + 1} 条：${PROPERTY_FIELD_REJECTION_TEXT[rejection.reason]}）`,
+        'resolve')
+    }
+  })
+  /**
+   * ★ CC-13 刀5：**尺寸声明被忽略**同样要响亮（不静默）—— 该维度不进算式、该件照常上屏，
+   * 但作者得能从诊断口看到"我报的尺寸为什么没生效"。
+   */
+  createEffect(() => {
+    for (const rejection of ccRoster().sizingRejections) {
+      reportCcWidgetDiagnostic('cc-widget.sizing.rejected',
+        `插件元件 ${rejection.widgetId} 的尺寸声明被忽略（${rejection.dimension === 'both' ? '整条声明' : rejection.dimension}：${SIZING_REJECTION_TEXT[rejection.reason]}）`,
+        'resolve')
+    }
+  })
+  /**
+   * ★★ #266 CC-13 刀3 立、**刀4 泛化**：**卸载即清**（`clear-cc-widget-data`）。
+   *
+   * 口径（用户 2026-10-05 定的落点）：插件**撤下那一刻**把它在该元件上的用户数据删掉
+   * —— 位置记录 / 属性值（`ccPluginProps`）/ 两份显隐表里的记录，**一次清三样**
+   * ⇒ 重装回来 = "新加入"，落回计算默认（状态区末尾、按登记序连号）+ 参数归声明缺省。
+   * ★ 为什么不是"读盘顺手丢"：读盘发生在插件登记**之前** ⇒ 读盘丢会在**每次重启时误删**
+   *   插件数据，「重启后仍在」直接失效（见施工单 §4.4）。
+   * ★ 热替换（shadow）不误清：撤下与重新登记可能同帧发生 ⇒ 清理**延迟一个微任务后复查**，
+   *   该 id 又回到名单就不派发。
+   * ★ 幂等：先查三样**任一存在**才派发（都不存在 = 无事可做）；命令两侧自身也幂等。
+   */
+  let knownPluginIds = new Set<string>()
+  createEffect(() => {
+    const currentIds = ccPluginWidgets().map(entry => entry.id)
+    const removed = [...knownPluginIds].filter(id => !currentIds.includes(id))
+    knownPluginIds = new Set(currentIds)
+    if (removed.length === 0) return
+    queueMicrotask(() => {
+      const present = new Set(ccPluginWidgets().map(entry => entry.id))
+      for (const id of removed) {
+        if (present.has(id)) continue
+        const snapshot = appearance()
+        const touched = Boolean(snapshot.ccLayout.placements[id])
+          || snapshot.ccPluginProps[id] !== undefined
+          || snapshot.ccHidden.includes(id)
+          || snapshot.ccHiddenEmpty.includes(id)
+        if (!touched) continue
+        workbench.appearance.dispatch({ type: 'clear-cc-widget-data', id })
+      }
+    })
+  })
   // ★ #266 刀3：最小高 = **按边算取最大**（算式见 ccHeightState.resolveCcMinHeight）——
   //   输入栏那一组（贴上边）与下边组（贴下边）各算"组高 + 到边距离"，两组取 **max**（不是 sum：
   //   输入栏是绝对定位、不占流），再与下界 64 取大。挂成 `--cc-min-height` 交给 CSS 消费。
   //   ★ 在场集合 = **两态各算一遍取 max**（`ccMinHeightInputOf(appearance())` 交出常态 + 空态两份
   //     切面，`resolveCcMinHeight` 逐态取大 ⇒ 下界由要求更高的那一份决定）：与落值侧 / 设置页同一口径
   //     —— 同一个值算两处，口径必须一致，否则会出现"存进去的值低于渲染出来的下界"。
-  const minHeight = () => resolveCcMinHeight(ccMinHeightInputOf(appearance()))
+  // ★ 刀5：插件件（报了尺寸的）并入同一算式 —— 他们在场就抬下界、被藏就回落，与内置件同一口径。
+  const minHeight = () => resolveCcMinHeight(ccMinHeightInputOf(appearance(), ccPluginWidgetSizings()))
   // ★ #266 刀2.5：宽度算式的输入 —— 件 id → 宽度字段值。只有三个触发器有宽度字段；
   //   用量胶囊 / 命令行提示是**内容撑**（`width:max-content`）⇒ 索引里缺席（算式按 0 计 = 下界）。
   const widthIndexOf = (): CcWidgetWidthIndex => ({
@@ -188,7 +347,8 @@ export function SolidControlCenter() {
   // ★★ #266 刀2.5：**最小宽**（约束值）—— 与最小高同构：`max over 各组 ( 组宽 + 到所贴横边的距离 )`。
   //   本刀**只暴露、不强制**（不横向滚动、不撑宽，见规范 §7.6 形态决定 2）⇒ 没有任何 CSS 规则
   //   消费它，消费者留给刀 4 的"显示前校验"。挂成变量是为了让这个值可读、可验收。
-  const minWidth = () => resolveCcMinWidth(resolveCcWidthGroups(hiddenWidgetIds(), widthIndexOf()))
+  //   ★ 刀5：插件件（报了宽度的）并入状态区队列求和 —— 与最小高同源的一档输入。
+  const minWidth = () => resolveCcMinWidth(resolveCcWidthGroups(hiddenWidgetIds(), widthIndexOf(), ccPluginWidgetSizings()))
 
   // ── ★★ #266 刀4：显示前校验（点"显示"前先判"显示之后装不装得下"） ─────────────────────
   /**
@@ -205,6 +365,7 @@ export function SolidControlCenter() {
     })),
     scalars: appearance(),
     widths: widthIndexOf(),
+    pluginWidgets: ccPluginWidgetSizings(),
   })
   /**
    * 校验用的**实测尺寸**（点下去的那一刻现读，不用信号里的旧值 —— 拖动高度时 `ResizeObserver`
@@ -273,7 +434,8 @@ export function SolidControlCenter() {
   const landingOf = (id: CcWidgetId) => coerceInputLanding(id, ccWidgetLanding(id))
   const idsForLanding = (landing: string | undefined) => visibleIds()
     .filter(id => landingOf(id) === landing)
-    .sort((left, right) => appearance().ccLayout.placements[left].order - appearance().ccLayout.placements[right].order)
+    // ★ 刀3：走兜底解析（内置件缺项回定义表默认；插件件走 `ccPluginWidgetsOrdered`，不经过这里）
+    .sort((left, right) => ccPlacements()[left].order - ccPlacements()[right].order)
 
   const createEmptySession = async (text: string, attachments: readonly WorkbenchAttachment[]) => {
     // 旧模型在这里按「左栏是否处于工作页签」拦截未选工作区的提交（`请先选择工作区`）。
@@ -314,64 +476,48 @@ export function SolidControlCenter() {
     after: <Show when={submitError()}>{message => <div class="solid-agent-empty-error" role="alert">{message()}</div>}</Show>,
   } : undefined)
 
-  const renderBody = (id: CcWidgetId): JSX.Element | null => {
-    switch (id) {
-      case 'input':
-        return <SolidInputBar disabled={readonly()} predictionProvider={workbench.predictionProvider} empty={emptyComposer} />
-      case 'tokens': {
-        // S11 用量控件：按钮型外观、不可点击（无 onClick / 无菜单 / 无 aria-haspopup）。
-        // 外观沿用 model 控件的外观字段 —— 本控件不新增属性字段（S11 拍板「光秃秃」），
-        // 但必须与 model/reasoning/mode 是同一族按钮，否则会退化成裸文字。
-        const usage = () => resolveContextUsage(runtime().document?.session.usage)
-        const limit = () => usage().limit
-        const pillStyle = () => ({
-          height: `${appearance().modelHeight ?? 28}px`,
-          'border-radius': `${appearance().modelRadius ?? 0}px`,
-          // ★ #238 刀7：原先这里还乘一个「缩放」(`ccScale.tokens`)。缩放已整体删除
-          //   ⇒ 用量字号直接取基准字号（`modelFontSize`）。对没调过缩放的人（= 100）逐位相同。
-          'font-size': `${appearance().modelFontSize ?? 12}px`,
-          // ★ #266 遗留①：直读模型控件的颜色字段（借用关系见定义表 `borrowsFrom: 'model'`）——
-          //   模型底色/文字色改成自由选色后，胶囊跟着模型走。
-          background: appearance().modelBgColor,
-          color: appearance().modelTextColor,
-        })
-        return <span class="cc-usage-pill" style={pillStyle()}>
-          <span class="cc-usage-count">{usage().used !== undefined ? formatUsageTokens(usage().used!) : '—'}/{limit() && limit()! > 0 ? formatUsageTokens(limit()!) : '—'}</span>
-          <span class="cc-usage-percent">{usage().percent !== undefined ? formatUsagePercent(usage().percent! / 100) : '—'}</span>
-        </span>
+  /**
+   * ★★ #266 CC-13 刀1：渲染体搬进渲染层组件表（`createCcWidgetRenderers.solid.tsx`）——
+   * 原先写死在这儿的 `renderBody` switch 退场；本组件只留「建表一次 + 按 id 取用」。
+   * 表键 = 定义表全部 8 行的 id（`Record<CcWidgetGroupId, …>` 做**编译期全覆盖**）；
+   * 两处特例（`.cc-bg` 背景板 / 发送按钮）的渲染体同样从表里取。
+   * ★ 传进去的一律是**访问器**（不是取值）：Solid 响应性靠调用时机（见该文件的 ctx 纪律）。
+   * ★ CC-13 刀2：`.cc-bg` 的 `data-cc-widget` 已常量化、发送按钮的在场门已撤（注册轨两件退役）。
+   */
+  const renderers = createCcWidgetRenderers({
+    appearance,
+    runtime,
+    hasNoSession,
+    modelId,
+    setModelId,
+    reasoningLevel,
+    setReasoningLevel,
+    mode,
+    setMode,
+    readonly,
+    submitting,
+    emptyComposer,
+    predictionProvider: workbench.predictionProvider,
+    sendButtonMode,
+  })
+
+  /** 刀1 渲染表的键查询（插件件的 `host-renderer` 走它；未命中 ⇒ 显式诊断占位，不静默）。 */
+  const lookupHostRenderer = (rendererKey: string) =>
+    (renderers as Record<string, (() => JSX.Element | null) | undefined>)[rendererKey]
+
+  createEffect(() => {
+    for (const entry of ccPluginWidgets()) {
+      if (entry.render.kind === 'host-renderer' && !lookupHostRenderer(entry.render.rendererKey)) {
+        reportCcWidgetDiagnostic('cc-widget.renderer.missing', `插件元件 ${entry.id} 的渲染标识未命中组件表：${entry.render.rendererKey}`, 'resolve')
       }
-      case 'model':
-        // ★ CC-28 拆词：草稿态只认「无会话」——进场期（有会话）走实值。
-        return <SolidModelWidget
-          draftValue={hasNoSession() ? modelId : undefined}
-          onDraftChange={hasNoSession() ? setModelId : undefined}
-          forceDropdown={hasNoSession()}
-        />
-      case 'reasoning':
-        return <SolidReasoningWidget draftValue={hasNoSession() ? reasoningLevel : undefined} onDraftChange={hasNoSession() ? setReasoningLevel : undefined} />
-      case 'mode':
-        return <SolidModeWidget
-          draftValue={hasNoSession() ? mode : undefined}
-          onDraftChange={hasNoSession() ? setMode : undefined}
-          forceDropdown={hasNoSession()}
-        />
-      case 'cc-command-hint':
-        // ★ #238 刀5B：命令行提示从「裸渲染」升格为表里的普通行内元件（本分支就是它的渲染实现）。
-        //   ★ #266 ⑰：运行期条件（有会话 / 命令行模式 / 详细档不为 hidden）**已全部撤销** ——
-        //   判据只剩「隐藏名单」（预设的值 + 详细档折叠 + 空态名单），由 `isWidgetVisible` 统一裁决
-        //   ⇒ 渲染与高度计数共用一个谓词，不可见时自然不计数。
-        return <div class="cc-command-hint" aria-label="输入快捷键提示">
-          <span class="cc-command-hint-key">/: 命令</span>
-          <span class="cc-hint-secondary"><i>|</i> Shift+Enter: 换行</span>
-          {appearance().cliHintMode === 'full' && <span class="cc-hint-tertiary"><i>|</i> Shift+Tab: 模式</span>}
-        </div>
     }
-  }
+  })
 
   const isDetached = (id: CcWidgetId) => resolveCcWidgetGroup(id)?.detachX !== undefined
   const renderWidget = (id: CcWidgetId) => {
-    const placement = () => appearance().ccLayout.placements[id]
-    const body = renderBody(id)
+    // ★ 刀3：兜底解析（不再是 `placements[id]` 直读）
+    const placement = () => ccPlacements()[id]
+    const body = renderers[id]()
     if (body === null) return null
     return <div
       // ★ #266 刀2.5：声明了 `detachX` 的件挂 `cc-detach-x`（脱离队列，见 CSS）；未声明不挂。
@@ -383,28 +529,99 @@ export function SolidControlCenter() {
     >{body}</div>
   }
 
-  const setProperty = (command: CcPropertyCommand) => workbench.appearance.dispatch(command)
-  // 注册轨控件（`cc-send-button`）没有 WIDGET_PROPERTY_FIELDS 条目 —— 属性面板只给
-  // 布局四项，它的外观字段在设置页编辑。
-  // ★ #266 刀9：原先这里还有一层 `showIf` 过滤（按 `inputMode` 判明）；该字段已删除、
-  //   全表也早已没有任何声明方 ⇒ 属性项一律常态显示。
-  const propertyFields = (id: CcLayoutWidgetId) => {
-    if (!(id in WIDGET_PROPERTY_FIELDS)) return []
-    return WIDGET_PROPERTY_FIELDS[id as CcWidgetId]
+  /**
+   * ★★ #266 CC-13 刀2/刀3：插件件的**包装 + 渲染体**（判别式分诊 —— `render` 是唯一入口）。
+   * - `host-renderer`：查刀1 组件表（键 = `rendererKey`）；**未命中 ⇒ 显式诊断占位**
+   *   （上面那条 effect 同步上报），不静默画空白。
+   * - `isolated-surface`：挂 `CcIsolatedWidget`（宿主接线 + §4 I/O 契约）。
+   * ★ 刀3：包装与内置件**同款**（`renderWidget` 那一支的同构写法）——位置内联样式走兜底解析、
+   *   编辑 / 选中态类名跟随、拖动接线走同一条 `update-cc-placement`（阈值与占区守卫都在控制器里）。
+   *   `.cc-plugin-widget` 是窄窗不可压缩的挂点（见 ControlCenter.css）。
+   */
+  const renderPluginWidget = (entry: CcWidgetRosterEntry): JSX.Element => {
+    const body = (): JSX.Element | null => {
+      if (entry.render.kind === 'isolated-surface') {
+        return <CcIsolatedWidget widgetId={entry.id} surfaceId={entry.render.surfaceId} readonly={readonly} submitting={submitting} />
+      }
+      const renderer = lookupHostRenderer(entry.render.rendererKey)
+      return renderer
+        ? renderer()
+        : <div class="cc-widget-error" role="alert">{`未命中渲染器：${entry.render.rendererKey}`}</div>
+    }
+    return (
+      <div
+        class={`cc-widget cc-plugin-widget${appearance().ccEditMode ? ' cc-edit' : ''}${selected() === entry.id ? ' cc-selected' : ''}`}
+        data-widget-id={entry.id}
+        style={placementStyle(ccPlacements()[entry.id])}
+        onPointerDown={event => drag.beginWidgetDrag(event, entry.id)}
+      >{body()}</div>
+    )
   }
-  const renderPropertyField = (field: WidgetPropertyField, index: number): JSX.Element | null => {
+
+  const setProperty = (command: CcPropertyCommand) => workbench.appearance.dispatch(command)
+  /**
+   * 行内展开区的属性字段：
+   * - **插件件** ⇒ 插件自报的声明（合成时已过校验与定形，见 `ccWidgetRoster`）；
+   * - **内置件** ⇒ 定义表行的属性表单（`WIDGET_PROPERTY_FIELDS`，与改造前逐项相同）。
+   * 注册轨控件（`cc-send-button`）没有定义表表单 —— 属性面板只给布局四项，它的外观字段在设置页编辑。
+   * ★ #266 刀9：原先这里还有一层 `showIf` 过滤（按 `inputMode` 判明）；该字段已删除、
+   *   全表也早已没有任何声明方 ⇒ 属性项一律常态显示。
+   */
+  const propertyFields = (id: CcLayoutWidgetId): readonly CcWidgetPropertyFieldDecl[] => {
+    const plugin = ccPluginEntry(id)
+    if (plugin) return plugin.propertyFields ?? []
+    return (WIDGET_PROPERTY_FIELDS as Readonly<Record<string, readonly CcWidgetPropertyFieldDecl[]>>)[id] ?? []
+  }
+  /**
+   * 内置字段的读写口：与改造前**逐字相同**（值 = 主题 cc 区字段，写 `set-cc-property`）。
+   * ★ 那处类型断言：写入路径按字段声明分诊（number 走数字输入、color/chips 走字符串），
+   *   而 `CcPropertyCommand` 的联合按主题字段键分两支 —— 面板这一层拿不到更细的类型。
+   */
+  const builtinPropertyAccess: CcPropertyFieldAccess = {
+    read: field => (appearance().ccProperties as Readonly<Record<string, string | number>>)[field.key] ?? '',
+    write: (field, value) => setProperty({
+      type: 'set-cc-property',
+      key: field.key as CcColorPropertyKey | CcStringPropertyKey,
+      value,
+    } as CcPropertyCommand),
+  }
+  /**
+   * 插件字段的读写口：值住 `ccPluginProps[元件 id]`（随预设走），读不到用户值 ⇒ **声明缺省**。
+   * ★ 写前过**面板侧取值白名单**（与内置件同款口径）：不合规 ⇒ 拒绝 + 诊断，**一个字节都不落**
+   *   （命令侧只查类型 / 存在 —— 插件的取值白名单不进命令层，见施工单 §2「不做」）。
+   */
+  const pluginPropertyAccess = (id: string): CcPropertyFieldAccess => ({
+    read: field => appearance().ccPluginProps[id]?.[field.key] ?? resolveCcPropertyFieldDefault(field),
+    write: (field, value) => {
+      if (!isValidPropertyValue(field, value)) {
+        reportCcWidgetDiagnostic('cc-widget.property-field.rejected',
+          `插件元件 ${id} 的属性取值被拒：${field.kind} 字段 ${field.key} 不接受 ${JSON.stringify(value)}（不在声明的取值范围内）`,
+          'action')
+        return
+      }
+      workbench.appearance.dispatch({ type: 'set-cc-plugin-prop', id, key: field.key, value })
+    },
+  })
+  /** 一个元件的字段读写口（插件件走 `ccPluginProps`，其余走主题 cc 区字段）。 */
+  const propertyAccess = (id: CcLayoutWidgetId): CcPropertyFieldAccess =>
+    ccPluginEntry(id) ? pluginPropertyAccess(id) : builtinPropertyAccess
+  /**
+   * 四种 kind 的渲染分支（内置件与插件件**共用这一段**，差别只在 `access` 注入的读写口）：
+   * section = 分组标题；number 取 min–max（面板侧 clamp）；color 自由文本；chips 只发声明里的值。
+   */
+  const renderPropertyField = (field: CcWidgetPropertyFieldDecl, index: number, access: CcPropertyFieldAccess): JSX.Element | null => {
     if (field.kind === 'section') return <div class="cc-prop-sec" data-field-index={index}>{field.title}</div>
-    const value = () => appearance().ccProperties[field.key]
-    if (field.kind === 'color') return <div class="cc-prop-field"><label>{field.label}</label><input type="text" class="set-color-input" aria-label={field.label} value={String(value())} onChange={event => setProperty({ type: 'set-cc-property', key: field.key, value: event.currentTarget.value })} /></div>
+    const value = () => access.read(field)
+    if (field.kind === 'color') return <div class="cc-prop-field"><label>{field.label}</label><input type="text" class="set-color-input" aria-label={field.label} value={String(value())} onChange={event => access.write(field, event.currentTarget.value)} /></div>
     if (field.kind === 'number') return <div class="cc-prop-field"><label>{field.label}</label><input type="number" class="set-num" aria-label={field.label} value={Number(value())} min={field.min} max={field.max} step={field.step ?? 1} onInput={event => {
       const next = event.currentTarget.valueAsNumber
-      if (Number.isFinite(next)) setProperty({ type: 'set-cc-property', key: field.key, value: Math.max(field.min, Math.min(field.max, next)) })
+      if (Number.isFinite(next)) access.write(field, Math.max(field.min, Math.min(field.max, next)))
     }} />{field.suffix && <span>{field.suffix}</span>}</div>
-    if (field.kind === 'chips') return <div class="cc-prop-field"><label>{field.label}</label><div class="set-preset-row"><For each={field.options}>{option => (
+    if (field.kind === 'chips') return <div class="cc-prop-field"><label>{field.label}</label><div class="set-preset-row"><For each={[...field.options]}>{option => (
       <button type="button" class={`set-preset-chip${value() === option.value ? ' active' : ''}`} onClick={() => {
         // ★ #266 刀9：原先点 chips 还会连带写 `option.sync`（inputMode↔inputVariant 双写）；
         //   两个字段删除后该机制没有声明方 ⇒ 只写本字段。
-        setProperty({ type: 'set-cc-property', key: field.key, value: option.value })
+        access.write(field, option.value)
       }}>{option.label}</button>
     )}</For></div></div>
     return null
@@ -541,8 +758,8 @@ export function SolidControlCenter() {
         workbench.appearance.dispatch({ type: 'set-cc-height', height: appearance().ccHeight + (event.key === 'ArrowUp' ? 4 : -4) })
       }}
     ><div class="cc-edit-hdr-bar" /><span class="cc-edit-hdr-label">{appearance().ccHeight}px</span></div></Show>
-    <div class="cc-bg" data-cc-widget={ccSurfaceRegistered() ? 'cc-surface' : undefined} />
-    <Show when={ccSendButtonRegistered() && sendButtonMode()}><SolidCcSendButton disabled={readonly() || submitting()} mode={sendButtonMode() as 'inline' | 'external'} /></Show>
+    {renderers['cc-surface']()}
+    <Show when={sendButtonMode()}>{renderers['cc-send-button']()}</Show>
     <div class="cc-input-shadow-clip" aria-hidden="true" />
     <div class="cc-body">
       <Show when={selectorPending()}><span role="status" aria-live="polite">{selectorPending()}</span></Show>
@@ -550,7 +767,15 @@ export function SolidControlCenter() {
           （原 peri 分支的 `.cc-footer-peri` 包装 div 与相关 CSS 一并退场）。
           元件位置不新增任何机制：仍由定义表的 layout 声明 + 区域预设记的值决定。 */}
       <div class="cc-input-slot"><For each={idsForLanding(INPUT_LANDING)}>{renderWidget}</For></div>
-      <div class="cc-status-row"><Show when={statusRowContent()}>{statusGroup()}</Show></div>
+      <div class="cc-status-row">
+        <Show when={statusRowContent()}>{statusGroup()}</Show>
+        {/* ★★ #266 CC-13 刀2/刀3：插件件默认**排最后**（状态组之后、同一状态行内）——
+            未落盘时用计算默认（状态区末尾、按登记序连号）；落盘后按数据排（`ccPluginWidgetsOrdered`）。
+            位置 / 拖动 / 编辑列 / 微调都走与内置件同一条通路。
+            ★ 刀4（小活①）：名单再走一道**显隐门**（`visiblePluginWidgets` —— 与内置件同一谓词
+            `isWidgetVisible` + 同一份生效名单）⇒ 编辑列那两个开关对插件件真的生效。 */}
+        <For each={visiblePluginWidgets()}>{entry => renderPluginWidget(entry)}</For>
+      </div>
     </div>
   </div>
   {/* ★★ #266 刀5：编辑清单 = **左侧一列**（一列到底 · 行内展开），替换刀4 的底部横栏 + 独立属性面板。
@@ -560,40 +785,46 @@ export function SolidControlCenter() {
     <div class="cc-edit-column" role="group" aria-label="中控元件">
       <div class="cc-edit-column-header">中控元件</div>
       <div class="cc-edit-column-list">
-        <For each={CC_EDIT_TOOLBAR_IDS}>{id => {
+        {/* ★★ #266 CC-13 刀3：名单来自**活名单派生**（`resolveCcDraggableWidgetIds`：内置表序在前、
+            插件登记序在后）—— `CC_EDIT_TOOLBAR_IDS` 常量已退场。行名：内置查标签表、插件用自报 label。 */}
+        <For each={ccDraggableIds()}>{id => {
           // ① 行首的 `＋/●` + `dim`：按**当前生效名单**（门决定）——「你眼下看到的样子」
           const hidden = () => hiddenWidgetIds().includes(id)
           // ② 两个开关各读**自己那一份表**（不要用合并后的名单判某个开关的态，
           //    否则"我在哪个状态改的"这种隐性依赖会从后门回来）
           const baseHidden = () => appearance().ccHidden.includes(id)
           const extraHidden = () => appearance().ccHiddenEmpty.includes(id)
+          // ③ 刀3：位置读**兜底解析**（插件件未落盘 = 计算默认；直读 placements 会 undefined.order）
+          const placement = () => ccPlacements()[id]
           return <div class={`cc-edit-row${selected() === id ? ' active' : ''}${hidden() ? ' dim' : ''}`}>
             <div class="cc-edit-row-main">
-              <button type="button" class="cc-edit-row-name" aria-label={`${CC_WIDGET_LABELS[id]} 属性`} onClick={() => setSelected(selected() === id ? undefined : id)}>{hidden() ? '＋' : '●'} {CC_WIDGET_LABELS[id]}</button>
+              <button type="button" class="cc-edit-row-name" aria-label={`${ccWidgetLabel(id)} 属性`} onClick={() => setSelected(selected() === id ? undefined : id)}>{hidden() ? '＋' : '●'} {ccWidgetLabel(id)}</button>
+              {/* ★ 刀4：**来源小签** —— 插件件一眼可辨（内置件不挂；样式见 ControlCenter.css 的单条规则） */}
+              <Show when={ccPluginEntry(id)}><span class="cc-edit-row-source">插件</span></Show>
               {/* 开关①「隐藏 / 显示」= **主管表**（两种状态都生效） */}
-              <button type="button" class="cc-chip-toggle" aria-label={`${baseHidden() ? '显示' : '隐藏'} ${CC_WIDGET_LABELS[id]}`} onClick={() => requestHiddenChange(id, !baseHidden(), 'base')}>{baseHidden() ? '显示' : '隐藏'}</button>
+              <button type="button" class="cc-chip-toggle" aria-label={`${baseHidden() ? '显示' : '隐藏'} ${ccWidgetLabel(id)}`} onClick={() => requestHiddenChange(id, !baseHidden(), 'base')}>{baseHidden() ? '显示' : '隐藏'}</button>
               {/* 开关②「空态里再藏 / 空态放出」= **再藏表**（只在空态再加一层；只能加不能抵消） */}
-              <button type="button" class="cc-chip-toggle extra" aria-label={`${extraHidden() ? '空态放出' : '空态里再藏'} ${CC_WIDGET_LABELS[id]}`} onClick={() => requestHiddenChange(id, !extraHidden(), 'empty')}>{extraHidden() ? '空态放出' : '空态里再藏'}</button>
+              <button type="button" class="cc-chip-toggle extra" aria-label={`${extraHidden() ? '空态放出' : '空态里再藏'} ${ccWidgetLabel(id)}`} onClick={() => requestHiddenChange(id, !extraHidden(), 'empty')}>{extraHidden() ? '空态放出' : '空态里再藏'}</button>
             </div>
             {/* 行内展开区：**同一时刻只有一行** —— 展开态就是 `selected` 那一份真值
                 （点行 ⇒ 选中并展开；点另一行 ⇒ 换过去；再点同一行 ⇒ 收起）。
                 `role="dialog"` + 名字沿用改造前的属性面板，不新增无障碍契约。 */}
             <Show when={selected() === id}>
-              <div class="cc-edit-row-props" role="dialog" aria-label={`${CC_WIDGET_LABELS[id]} 属性`}>
+              <div class="cc-edit-row-props" role="dialog" aria-label={`${ccWidgetLabel(id)} 属性`}>
                 <div class="cc-prop-sec">布局</div>
-                <div class="cc-prop-field"><label>顺序</label><input type="number" class="set-num" aria-label="控件顺序" min="0" max="99" step="1" value={appearance().ccLayout.placements[id].order} onInput={event => {
+                <div class="cc-prop-field"><label>顺序</label><input type="number" class="set-num" aria-label="控件顺序" min="0" max="99" step="1" value={placement().order} onInput={event => {
                   const value = event.currentTarget.valueAsNumber
                   if (Number.isFinite(value)) drag.updatePlacement(id, { order: value })
                 }} /></div>
-                <div class="cc-prop-field"><label>水平微调</label><input type="number" class="set-num" aria-label="水平微调" min="-48" max="48" step="1" value={appearance().ccLayout.placements[id].offsetX} onInput={event => {
+                <div class="cc-prop-field"><label>水平微调</label><input type="number" class="set-num" aria-label="水平微调" min="-48" max="48" step="1" value={placement().offsetX} onInput={event => {
                   const value = event.currentTarget.valueAsNumber
                   if (Number.isFinite(value)) drag.updatePlacement(id, { offsetX: value })
                 }} /><span>px</span></div>
-                <div class="cc-prop-field"><label>垂直微调</label><input type="number" class="set-num" aria-label="垂直微调" min="-16" max="16" step="1" value={appearance().ccLayout.placements[id].offsetY} onInput={event => {
+                <div class="cc-prop-field"><label>垂直微调</label><input type="number" class="set-num" aria-label="垂直微调" min="-16" max="16" step="1" value={placement().offsetY} onInput={event => {
                   const value = event.currentTarget.valueAsNumber
                   if (Number.isFinite(value)) drag.updatePlacement(id, { offsetY: value })
                 }} /><span>px</span></div>
-                <For each={propertyFields(id)}>{(field, index) => renderPropertyField(field, index())}</For>
+                <For each={propertyFields(id)}>{(field, index) => renderPropertyField(field, index(), propertyAccess(id))}</For>
               </div>
             </Show>
           </div>

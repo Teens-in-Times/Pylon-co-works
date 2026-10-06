@@ -185,6 +185,8 @@ const GLASS_THEME: Partial<ThemeSettings> = {
   msgLineHeight: 1.75,
   ccHeight: 96,
   ccBg: "rgba(255,255,255,0.20)",
+  // ★ #266 CC-13 刀4：插件元件属性值的载体字段 —— 与 glass 的出厂 cc 条目逐字一致（空表 = 不携带插件参数）。
+  ccPluginProps: {},
   ccHidden: [
     "cc-send-button"
   ],
