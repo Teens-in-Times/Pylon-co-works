@@ -8,10 +8,15 @@
  * 处理器只读 clientX/clientY/pointerId/key）。
  */
 import { describe, expect, it } from 'vitest'
-import { CC_DRAG_THRESHOLD_PX, CC_EDIT_TOOLBAR_IDS, createCcDragController, exceedsDragThreshold, type CcDragPorts } from '../createCcDragController.ts'
+import { CC_DRAG_THRESHOLD_PX, createCcDragController, exceedsDragThreshold, type CcDragPorts } from '../createCcDragController.ts'
 import type { CcLayoutWidgetId, CcWidgetPlacement } from '../../../../domains/cc/ccLayoutState.ts'
+import { resolveCcDraggableWidgetIds, resolveCcWidgetRoster } from '../../../../domains/cc/ccWidgetRoster.ts'
+import { CC_REGISTERED_SLOT_IDS, CC_WIDGET_IDS } from '../../../../domains/cc/widgetDefinitions.ts'
 
 const placement = (order = 0, offsetX = 0, offsetY = 0): CcWidgetPlacement => ({ order, offsetX, offsetY })
+
+/** 无插件登记时的可拖件 id 序（= 生产同源派生：内置表序在前、插件登记序在后）。 */
+const BUILTIN_DRAGGABLE_IDS = resolveCcDraggableWidgetIds(resolveCcWidgetRoster([]))
 
 /** 最小 ports：布局快照存内存，提交记录进 calls。 */
 function makePorts(overrides: Partial<CcDragPorts> = {}) {
@@ -19,6 +24,7 @@ function makePorts(overrides: Partial<CcDragPorts> = {}) {
   const calls: Array<{ kind: 'placement' | 'height' | 'exit' | 'select'; args: unknown[] }> = []
   const ports: CcDragPorts = {
     isEditMode: () => true,
+    draggableIds: () => BUILTIN_DRAGGABLE_IDS,
     placementOf: id => placements.get(id) ?? placement(),
     currentHeight: () => 150,
     select: id => { calls.push({ kind: 'select', args: [id] }) },
@@ -154,6 +160,19 @@ describe('createCcDragController · 占区守卫接线（#238 刀4）', () => {
     controller.dispose()
   })
 
+  it('障碍集取自端口（`draggableIds`）：名单里没有的件当场退出障碍集', () => {
+    mountWidgets({
+      model: { left: 0, right: 100, top: 0, bottom: 40 },
+      reasoning: { left: 140, right: 240, top: 0, bottom: 90 },
+    })
+    // 同一个几何场景，只把障碍名单缩到 ['model'] ⇒ 原障碍 reasoning 不再参与 ⇒ 候选取值原样放行
+    const { ports, calls } = makePorts({ draggableIds: () => ['model'] })
+    const controller = createCcDragController(ports)
+    controller.updatePlacement('model', { offsetX: 50, offsetY: 60 })
+    expect(calls[0]?.args).toEqual(['model', { offsetX: 50, offsetY: 60 }])
+    controller.dispose()
+  })
+
   it('根元素缺席（未挂载）⇒ 守卫拿不到占区，原样放行', () => {
     document.body.innerHTML = ''
     const { ports, calls } = makePorts()
@@ -261,11 +280,22 @@ describe('createCcDragController · 生命周期', () => {
     controller.dispose()
   })
 
-  it('障碍集全集 = 编辑工具栏名单（内置轨 ∪ 注册槽位轨，不含 cc-surface）', () => {
-    expect(CC_EDIT_TOOLBAR_IDS).toContain('model')
-    expect(CC_EDIT_TOOLBAR_IDS).toContain('input')
-    expect(CC_EDIT_TOOLBAR_IDS).toContain('cc-send-button')
-    expect(CC_EDIT_TOOLBAR_IDS).not.toContain('cc-surface')
+  // ★ #266 CC-13 刀3：障碍集不再是编译期常量 —— 改读**活名单派生**（`resolveCcDraggableWidgetIds`：
+  //   内置表序在前、插件登记序在后）。本用例锁「内置那一半」；插件那一半见下面第二条。
+  it('障碍集全集 = 活名单派生的可拖件序（内置轨 ∪ 注册槽位轨，不含 cc-surface）', () => {
+    expect(BUILTIN_DRAGGABLE_IDS).toContain('model')
+    expect(BUILTIN_DRAGGABLE_IDS).toContain('input')
+    expect(BUILTIN_DRAGGABLE_IDS).toContain('cc-send-button')
+    expect(BUILTIN_DRAGGABLE_IDS).not.toContain('cc-surface')
+    // 表序在前、与定义表派生逐项一致（不是手写的第二份名单）
+    expect(BUILTIN_DRAGGABLE_IDS).toEqual([...CC_WIDGET_IDS, ...CC_REGISTERED_SLOT_IDS])
+  })
+
+  it('障碍集含插件件：登记的插件 id 追加在内置之后（同一派生函数）', () => {
+    const derived = resolveCcDraggableWidgetIds(resolveCcWidgetRoster([
+      { ownerPluginId: 'test.cc', value: { id: 'test.cc-alpha', label: '插件件甲', render: { kind: 'host-renderer', rendererKey: 'tokens' } } },
+    ]))
+    expect(derived).toEqual([...BUILTIN_DRAGGABLE_IDS, 'test.cc-alpha'])
   })
 
   it('事件目标可注入（不碰 window 的嵌入宿主）', () => {

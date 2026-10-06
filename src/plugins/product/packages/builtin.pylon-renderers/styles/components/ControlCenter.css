@@ -185,6 +185,13 @@
    改造前的行为是折到第二行、提示完整可见；本刀把"折行"整体去掉，这条是它的直接连带。 */
 .cc-widget.cc-natural[data-widget-id='cc-command-hint'] { flex:0 0 auto; }
 
+/* ★ #266 CC-13 刀3：**插件件与内置件同款不可压缩**（窄窗下不被压扁）。
+   内置件靠上面那组 `[data-widget-id=…]` 白名单拿到 `flex:0 0 auto`；插件件的 id 在编译期
+   不存在（注册表来的）⇒ 由宿主渲染侧挂 `.cc-plugin-widget` 类作挂点。
+   排队 / 换行口径与内置件一致：本行与 `.cc-status-group` 都是 `flex-wrap:nowrap`
+   （行数恒 1 是高度算式的前提）⇒ 装不下时**横向溢出**，不折行、也不压扁。 */
+.cc-widget.cc-plugin-widget { flex:0 0 auto; }
+
 @media (max-width:900px) {
   .cc-command-hint .cc-hint-tertiary { display:none; }
 }

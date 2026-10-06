@@ -1,5 +1,6 @@
 /**
- * ccWidgetRoster — 中控元件的**活名单**合成（#266 CC-13 刀2 · 画面开闸）。
+ * ccWidgetRoster — 中控元件的**活名单**合成（#266 CC-13 刀2 · 画面开闸）+
+ * **工位派生**（刀3 · 工位开闸：可拖件 id 序 / 插件件默认落点 / 位置兜底解析）。
  *
  * 一份真值、两处来源，本文件是**唯一的合并点**：
  * - **内置**：定义表 8 行（`CC_WIDGET_GROUPS`）。渲染体按约定推导为
@@ -18,7 +19,9 @@
  *   由调用方走诊断口。插件件之间不会重 id：注册表以 `contributionId` = 元件 id 保证唯一，
  *   重复登记在注册表侧当场抛错。
  */
-import { CC_WIDGET_GROUPS } from './widgetDefinitions.ts'
+import { CC_WIDGET_GROUPS, ccWidgetLanding, resolveCcWidgetGroup } from './widgetDefinitions.ts'
+import { DEFAULT_CC_LAYOUT } from './ccLayoutState.ts'
+import type { CcLayoutV3, CcWidgetPlacement } from './ccLayoutState.ts'
 import type { CcWidgetContribution, CcWidgetRenderSpec } from '../../plugin-runtime/cc-widget/ccWidgetTypes.ts'
 
 /**
@@ -91,4 +94,67 @@ export function resolveCcWidgetRoster(registered: readonly CcWidgetRosterSourceE
     })
   }
   return { entries, rejected }
+}
+
+// ── ★★ #266 CC-13 刀3：工位（位置 / 拖动 / 编辑列）─────────────────────────────
+
+/**
+ * 可拖件 id 序 —— **编辑列 / 拖动名单 / 碰撞障碍集的唯一来源**。
+ *
+ * 内置按**表序**在前（以定义表行的 `draggable` 声明为准 ⇒ 容器 `cc-surface` 不进），
+ * 插件按**登记序**在后（同一插件的件天然连着成一块）。
+ * ★ 它取代了渲染层那个编译期常量 `CC_EDIT_TOOLBAR_IDS`（后者已退场）：插件件不在编译期
+ * 名单里，任何"再平行维护一份名单"的写法都会把它们漏掉。
+ */
+export function resolveCcDraggableWidgetIds(roster: CcWidgetRoster): string[] {
+  return roster.entries
+    .filter(entry => entry.source === 'plugin' || resolveCcWidgetGroup(entry.id)?.draggable === true)
+    .map(entry => entry.id)
+}
+
+/** 插件件的落脚处 = **状态区**（与 model / reasoning / mode / tokens / cc-command-hint 同一落脚处）。 */
+const STATUS_LANDING = ccWidgetLanding('model')
+
+/**
+ * 该落脚处**内置件**的最大 `order` —— 插件件默认排它之后（`+ 1 + 登记序`）。
+ * 从 `DEFAULT_CC_LAYOUT` 派生（内置默认位置的唯一真值），不另写一份序号。
+ */
+const STATUS_LANDING_MAX_ORDER = Math.max(
+  0,
+  ...Object.entries(DEFAULT_CC_LAYOUT.placements)
+    .filter(([id]) => ccWidgetLanding(id) === STATUS_LANDING)
+    .map(([, placement]) => placement.order),
+)
+
+/**
+ * 插件件的**计算默认位置**：状态区末尾，按登记序连号
+ * ⇒ 同一插件的件连着成一块、新加入的在更下（用户口径 2026-10-05）。
+ *
+ * ★ 它**不写进数据**（`DEFAULT_CC_LAYOUT` 只含内置件）：用户真的改动过之后才落盘，此后以数据为准。
+ */
+export function resolvePluginWidgetPlacement(registrationIndex: number): CcWidgetPlacement {
+  return { order: STATUS_LANDING_MAX_ORDER + 1 + registrationIndex, offsetX: 0, offsetY: 0 }
+}
+
+/**
+ * 位置兜底解析（#266 CC-13 刀3 的**唯一**读取入口）：`placements[id] ?? 计算默认`。
+ *
+ * - 内置件缺项 ⇒ `DEFAULT_CC_LAYOUT`（定义表派生，与归一化补缺同源）；
+ * - 插件件缺项 ⇒ `resolvePluginWidgetPlacement`（`pluginIds` 的下标 = 登记序）。
+ *
+ * ⇒ 插件件在**未落盘前**也不会读到 `undefined.order`（排序会 NaN、编辑列输入框会抛错）。
+ * ★ 纯函数：只读入参，不碰 store / 全局。
+ */
+export function resolveCcWidgetPlacements(
+  layout: CcLayoutV3,
+  pluginIds: readonly string[],
+): Record<string, CcWidgetPlacement> {
+  const resolved: Record<string, CcWidgetPlacement> = { ...layout.placements }
+  for (const [id, placement] of Object.entries(DEFAULT_CC_LAYOUT.placements)) {
+    if (!resolved[id]) resolved[id] = { ...placement }
+  }
+  pluginIds.forEach((id, index) => {
+    if (!resolved[id]) resolved[id] = resolvePluginWidgetPlacement(index)
+  })
+  return resolved
 }

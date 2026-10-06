@@ -71,20 +71,25 @@ describe('#238 刀2 · (a) 缺项的旧版数据 ⇒ 自动补齐，用户 offse
     expect(aligned.ccBgImage).toBe('url(fixture.png)')
   })
 
-  it('多余项忽略（不在当前控件全集里的旧 id 自然丢弃）', () => {
+  // ★ #266 CC-13 刀3 语义改：「多余项忽略」→「**未知键保留**」——读盘不再丢名单外的键。
+  //   原因：读盘发生在**插件登记之前**，读盘丢会在每次重启时误删插件位置（「重启后仍在」失效）。
+  //   代价（点名）：已退场的内置 id（session / ekg）也随之**留在数据里**（无消费者 ⇒ 界面不可见）；
+  //   要清它们得在 `migration.ts` 写显式迁移，不在这条归一化里做。
+  it('未知键保留（名单外的旧 id 留在数据里，逐键 clamp；用户值仍不拍平）', () => {
     const withLegacyIds = {
       ccLayout: {
         version: 9,
         placements: {
           model: { ...USER_PLACEMENT },
           session: { slot: 'status-secondary', order: 1, offsetX: 0, offsetY: 0 },
-          ekg: { slot: 'status-primary', order: 2, offsetX: 0, offsetY: 0 },
+          ekg: { slot: 'status-primary', order: 2, offsetX: 999, offsetY: 0 },
         },
       },
     }
     const aligned = alignThemeStructure(withLegacyIds, defaults) as unknown as Aligned
-    expect(aligned.ccLayout.placements).not.toHaveProperty('session')
-    expect(aligned.ccLayout.placements).not.toHaveProperty('ekg')
+    expect(aligned.ccLayout.placements.session).toEqual({ order: 1, offsetX: 0, offsetY: 0 })
+    // 未知键同过 clamp（offsetX 999 → 48）
+    expect(aligned.ccLayout.placements.ekg).toEqual({ order: 2, offsetX: 48, offsetY: 0 })
     expect(aligned.ccLayout.placements.model).toEqual(USER_EXPECTED)
   })
 })

@@ -1,6 +1,6 @@
 import { attachSolidPersist, createSolidStoreKernel, resolveLocalStorage, type SolidStoreKernel } from '../../infrastructure/state/solidStoreKernel'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
-import { DEFAULT_CC_LAYOUT, cloneCcLayout, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
+import { clearCcPlacementState, DEFAULT_CC_LAYOUT, cloneCcLayout, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
 import type { CcVisibilityTarget } from '../cc/ccLayoutState.ts'
 import type { CcWidgetPlacement } from '../cc/ccLayoutState.ts'
 import { markZoneCustom } from './themePresetState.ts'
@@ -40,6 +40,11 @@ export type ThemeState = ThemeSettings & {
   setCcEditMode: (enabled: boolean) => void
   setCcHeight: (height: number) => void
   updateCcPlacement: (id: string, partial: Partial<CcWidgetPlacement>) => void
+  /**
+   * ★ #266 CC-13 刀3：删掉某元件的位置记录（插件**撤下那一刻**由宿主派发）。
+   * ★ 不置 zone custom：这是**插件侧事件**，不是用户手改该区域（口径见施工单 §4.4）。
+   */
+  clearCcPlacement: (id: string) => void
   resetCcLayout: () => void
   /**
    * ★ #266 刀4（结构 C）：`target` = 写**哪一份表** —— `'base'` 主管（两种门态都生效）/
@@ -110,6 +115,12 @@ const themeKernel = createSolidStoreKernel<ThemeState>({
     ccLayout: updateCcPlacementState(state.ccLayout, id, partial),
     ...markZoneCustom(state, 'cc'),
   })),
+  // ★ #266 CC-13 刀3：撤下清位 —— 记录不存在 ⇒ 原样返回同一 state（幂等、不广播）。
+  //   不置 custom：插件撤下不是"用户手改该区域"（见 ThemeState 上的类型注释）。
+  clearCcPlacement: (id) => themeKernel.setState(state => {
+    const ccLayout = clearCcPlacementState(state.ccLayout, id)
+    return ccLayout === state.ccLayout ? state : { ccLayout }
+  }),
   resetCcLayout: () => themeKernel.setState(state => ({
     ccLayout: cloneCcLayout(DEFAULT_CC_LAYOUT),
     ...markZoneCustom(state, 'cc'),

@@ -4,7 +4,7 @@
  * 与 `themeProjectedWorkbenchAppearanceStore.dispatchAppearanceCommand`（themeStore 真源生产路径）
  * 的等价性由 `__tests__/appearanceCommandEquivalence.test.ts` 守卫。
  */
-import { cloneCcLayout, DEFAULT_CC_LAYOUT, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
+import { clearCcPlacementState, cloneCcLayout, DEFAULT_CC_LAYOUT, setCcHiddenState, updateCcPlacementState } from '../cc/ccLayoutState.ts'
 import type { ThemeSettings } from '../theme/themeStore.ts'
 import { clampCcHeight, ccMinHeightInputOf, clampInputTypography } from '../cc/ccHeightState.ts'
 import {
@@ -122,6 +122,11 @@ export function reduceAppearanceCommand(
     }
     case 'update-cc-placement':
       return { ...theme, ccLayout: updateCcPlacementState(theme.ccLayout, command.id, command.placement) }
+    case 'clear-cc-placement': {
+      // ★ CC-13 刀3：记录不存在 ⇒ **原样返回同一份 theme**（幂等、不产无谓发布）
+      const ccLayout = clearCcPlacementState(theme.ccLayout, command.id)
+      return ccLayout === theme.ccLayout ? theme : { ...theme, ccLayout }
+    }
     case 'set-cc-property':
       return typeof command.value === 'number' && !Number.isFinite(command.value)
         ? theme

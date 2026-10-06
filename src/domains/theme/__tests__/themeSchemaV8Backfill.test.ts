@@ -80,7 +80,7 @@ describe('theme schema v10：用量控件（S11）', () => {
   // 回归锚点（2026-09-15）：pct 控件并入 tokens，用量控件的默认槽位也从
   // status-primary/3 挪到 status-secondary/5。布局补位只挂在 migrate 钩子上 ——
   // 不 bump 主题版本，存量安装的用量控件会一直停在旧位置，老 pct 键也清不掉。
-  it('存量 v7 布局（pct 时代）迁移后：pct 消失，用量控件落到权限控件右侧', () => {
+  it('存量 v7 布局（pct 时代）迁移后：用量控件补位到权限控件右侧（pct 键随新归一化留在数据里）', () => {
     // v7 只有 pct、没有 tokens（tokens 随 v8 才出现）；#197 起 v7 进入白名单、
     // 用户布局不再整份重置，tokens 的新默认位由「缺失 id 补位」达成。
     const legacyPlacements: Record<string, unknown> = { ...DEFAULT_CC_LAYOUT.placements }
@@ -89,7 +89,9 @@ describe('theme schema v10：用量控件（S11）', () => {
     const legacy = { version: 7, placements: legacyPlacements }
     const migrated = themeDomainMigrate({ ccLayout: legacy }, defaults, 9) as unknown as Migrated
 
-    expect(migrated.ccLayout.placements.pct).toBeUndefined()
+    // ★ #266 CC-13 刀3：归一化改「未知键保留」⇒ `pct` **不再被读盘丢掉**（它没有消费者 ⇒ 界面不可见）。
+    //   本用例真正锚定的仍是下面那条：tokens 由「缺失 id 补位」拿到默认位。
+    expect(migrated.ccLayout.placements.pct).toMatchObject({ order: 2 })
     expect(migrated.ccLayout.placements.tokens).toMatchObject({ order: 5 })
   })
 })

@@ -118,6 +118,11 @@ export type AppearanceCommand =
   | { type: 'set-cc-hidden'; id: string; hidden: boolean; target: CcVisibilityTarget }
   | { type: 'set-cc-height'; height: number }
   | { type: 'update-cc-placement'; id: string; placement: Partial<CcWidgetPlacement> }
+  /**
+   * ★ #266 CC-13 刀3：**删掉某元件的位置记录**（插件撤下那一刻由宿主派发）。
+   * 记录不存在 ⇒ 两路都**原样不动**（幂等）；数据里没有这条 ⇒ 读取侧回计算默认（状态区末尾）。
+   */
+  | { type: 'clear-cc-placement'; id: string }
   | CcPropertyCommand
   | { type: 'reset-cc-layout' }
 
