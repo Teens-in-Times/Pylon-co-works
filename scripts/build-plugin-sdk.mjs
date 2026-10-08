@@ -32,6 +32,8 @@ cpSync(manifestSchema, join(normalOut, 'pylon-plugin-manifest.schema.json'))
 const typesOut = join(normalOut, 'types')
 try {
   execTsc([
+    // 显式 entry 与下方 CLI 选项构成独立声明构建；TS6 要求忽略 cwd 的 tsconfig。
+    '--ignoreConfig',
     'src/sdk/index.ts',
     'src/sdk/testing.ts',
     '--declaration', '--emitDeclarationOnly', '--allowImportingTsExtensions',
