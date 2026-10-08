@@ -7,17 +7,29 @@ import {
   type SheetWorkspaceState,
 } from './sheetPersistence.ts'
 import { pushTouchedFile, type TouchedFile } from '../../infrastructure/acp/touchedFiles.ts'
-import type { SheetInput, SheetId } from '../../contracts/sheets.ts'
+import type { SheetInput, SheetId, SheetRecord } from '../../contracts/sheets.ts'
 import type { AgentContext, AgentContextKey } from '../agent/agentContext.ts'
 import { toAgentContextKey } from '../agent/agentContext.ts'
 import { readLegacyLayoutSnapshot } from '../../infrastructure/persistence/legacyKeyMigration.ts'
 import { railPersistLayoutMaterialized, useRightRailStore } from './layoutRailsStore.ts'
 import { normalizeFilePath } from '../file/fileRelations.ts'
 import { resolveWorkspace } from '../../plugin-runtime/workspaces/workspaceRegistry.ts'
+import { notifyAgentSheetsClosed } from './workspaceSheetClosePort.ts'
 
 /** I01-W3：touchedFiles 刷新版本戳 key——context key + normalized path 二元（禁止冒号 split）。 */
 export function touchedFileVersionKey(context: AgentContext, path: string): string {
   return JSON.stringify([toAgentContextKey(context), normalizeFilePath(path)])
+}
+
+/**
+ * CC-23 接续单 v3：关闭动作族的通知判定——将被关闭的 sheet（`closingIds` 命中且未 pin，
+ * 与 sheetState.closeIds 的 pinned 过滤一致）中含任一会话工作台类（kind `'agent'`，即
+ * Peri\Serina 这类会话现场标签）⇒ 经端口通知接线端清中控编辑态。设置（'settings'）/文件/
+ * 历史等其它 kind 不通知——「进入布局编辑器」= 置位 + 仅关设置页，靠这条不被误伤。
+ * 是否处于编辑态由接线端（theme store 归属）判定，本域不跨域读状态。
+ */
+function closingIncludesAgentSheet(sheets: readonly SheetRecord[], closingIds: ReadonlySet<SheetId>): boolean {
+  return sheets.some(sheet => closingIds.has(sheet.id) && !sheet.pinned && sheet.kind === 'agent')
 }
 
 /**
@@ -129,18 +141,32 @@ const workspaceKernel = createSolidStoreKernel<WorkspaceStoreState>({
     const workspaceSheets = sheetReducer(state.workspaceSheets, { type: 'togglePin', id, now: Date.now() })
     return commitWorkspaceMutation(state, { workspaceSheets })
   }),
-  closeSheet: (id) => workspaceKernel.setState(state => {
+  closeSheet: (id) => {
+    const state = workspaceKernel.getState()
+    if (closingIncludesAgentSheet(state.workspaceSheets.sheets, new Set([id]))) {
+      notifyAgentSheetsClosed()
+    }
     const workspaceSheets = sheetReducer(state.workspaceSheets, { type: 'close', id, now: Date.now() })
-    return commitWorkspaceMutation(state, { workspaceSheets })
-  }),
-  closeOtherSheets: (id) => workspaceKernel.setState(state => {
+    workspaceKernel.setState(commitWorkspaceMutation(state, { workspaceSheets }))
+  },
+  closeOtherSheets: (id) => {
+    const state = workspaceKernel.getState()
+    if (closingIncludesAgentSheet(state.workspaceSheets.sheets, new Set(state.workspaceSheets.sheets.filter(sheet => sheet.id !== id).map(sheet => sheet.id)))) {
+      notifyAgentSheetsClosed()
+    }
     const workspaceSheets = sheetReducer(state.workspaceSheets, { type: 'closeOthers', id, now: Date.now() })
-    return commitWorkspaceMutation(state, { workspaceSheets })
-  }),
-  closeRightSheets: (id) => workspaceKernel.setState(state => {
+    workspaceKernel.setState(commitWorkspaceMutation(state, { workspaceSheets }))
+  },
+  closeRightSheets: (id) => {
+    const state = workspaceKernel.getState()
+    const index = state.workspaceSheets.sheets.findIndex(sheet => sheet.id === id)
+    const closing = index < 0 ? new Set<SheetId>() : new Set(state.workspaceSheets.sheets.slice(index + 1).map(sheet => sheet.id))
+    if (closingIncludesAgentSheet(state.workspaceSheets.sheets, closing)) {
+      notifyAgentSheetsClosed()
+    }
     const workspaceSheets = sheetReducer(state.workspaceSheets, { type: 'closeRight', id, now: Date.now() })
-    return commitWorkspaceMutation(state, { workspaceSheets })
-  }),
+    workspaceKernel.setState(commitWorkspaceMutation(state, { workspaceSheets }))
+  },
   reopenSheet: () => {
     const state = workspaceKernel.getState()
     const workspaceSheets = sheetReducer(state.workspaceSheets, { type: 'reopen', now: Date.now() })

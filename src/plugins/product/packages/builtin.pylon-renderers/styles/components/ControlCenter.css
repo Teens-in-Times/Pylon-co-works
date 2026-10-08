@@ -210,7 +210,6 @@
      下内边距（状态行是最后一个在流内子节点，其行底 = 背景板底 − 该内边距）。 */
   --cc-status-line-inset:3px;
 }
-.control-center.cli-mode .cc-bg { background:transparent; }
 .control-center.cli-mode .cc-body {
   display:flex;
   flex-direction:column;
