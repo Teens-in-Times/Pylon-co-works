@@ -20,6 +20,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const typescriptVersion = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).devDependencies.typescript
 const kitRoot = join(repoRoot, 'dist-plugin-devkit', 'pylon-plugin-devkit')
 const sdkOut = join(kitRoot, 'sdk')
 
@@ -77,16 +78,16 @@ writeFileSync(join(tsStarter, 'pylon-plugin.json'), JSON.stringify({
 writeFileSync(join(tsStarter, 'package.json'), JSON.stringify({
   name: 'starter-hello', private: true, type: 'module',
   scripts: {
-    build: 'esbuild src/index.ts --bundle --format=esm --platform=browser --alias:@pylon/plugin-sdk=../sdk/pylon-plugin-sdk.js --outfile=dist/index.js',
+    build: 'esbuild src/index.ts --bundle --format=esm --platform=browser --alias:@pylon/plugin-sdk=../../sdk/pylon-plugin-sdk.js --outfile=dist/index.js',
+    typecheck: 'tsc -p tsconfig.json',
   },
-  devDependencies: { esbuild: '^0.24.0' },
+  devDependencies: { esbuild: '^0.24.0', typescript: typescriptVersion },
 }, null, 2))
 writeFileSync(join(tsStarter, 'tsconfig.json'), JSON.stringify({
   compilerOptions: {
     strict: true, noEmit: true, target: 'ES2021', module: 'ESNext',
     moduleResolution: 'bundler', lib: ['ES2022', 'DOM', 'DOM.Iterable'],
     skipLibCheck: true, allowImportingTsExtensions: true, isolatedModules: true,
-    baseUrl: '.',
     paths: { '@pylon/plugin-sdk': ['../../sdk/types/sdk/index.d.ts'] },
   },
   include: ['src', '../../sdk/types/sdk/index.d.ts'],
@@ -133,14 +134,13 @@ writeFileSync(join(managerDemo, 'package.json'), JSON.stringify({
     build: 'esbuild src/index.ts --bundle --format=esm --platform=browser --alias:@pylon/plugin-sdk=../../sdk/pylon-plugin-sdk.js --outfile=dist/index.js',
     typecheck: 'tsc -p tsconfig.json',
   },
-  devDependencies: { esbuild: '^0.24.0', typescript: '^5.6.0' },
+  devDependencies: { esbuild: '^0.24.0', typescript: typescriptVersion },
 }, null, 2))
 writeFileSync(join(managerDemo, 'tsconfig.json'), JSON.stringify({
   compilerOptions: {
     strict: true, noEmit: true, target: 'ES2021', module: 'ESNext',
     moduleResolution: 'bundler', lib: ['ES2022', 'DOM', 'DOM.Iterable'],
     skipLibCheck: true, allowImportingTsExtensions: true, isolatedModules: true,
-    baseUrl: '.',
     paths: { '@pylon/plugin-sdk': ['../../sdk/types/sdk/index.d.ts'] },
   },
   include: ['src', '../../sdk/types/sdk/index.d.ts'],

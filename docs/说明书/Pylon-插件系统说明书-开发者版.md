@@ -992,6 +992,7 @@ import {
 
 - 类型一律 `export type` re-export（`PluginActivationContext`、`CommandDefinition`、`HookDefinition`、`PluginUiSurface`、`WorkspaceTypeDefinition`、renderer/settings/presentation/sessionCreation/process/scope 等），编译期消失；
 - 运行时值仅限常量表与纯函数，禁止 import 宿主运行时模块——SDK 可安全内联进插件 bundle，不会泄漏宿主代码。
+- SDK 声明与示例插件使用仓库同源的 TypeScript 6.0.x 验证。SDK 别名通过相对 `paths` 映射，不使用已弃用的 `baseUrl`；仓内示例的 `rootDir` 覆盖 SDK 所在的仓库根。发行开发套件的两个 TS starter 都携带同源 TypeScript 版本约束与 `npm run typecheck` 入口，其路径映射指向套件内声明树。
 
 **契约类型出口覆盖 API 1.0–1.3 / 2.0–2.4 的全部 context 面**（application/workspace/renderer/commands/hooks/sessions/turns/process/ui/services/sidebar/fileWorkbench/contextPanel/presentation/settings/fonts/sessionCreation/interfaceModes/shellRecipes/titlebar/storage/ccWidget/presets/management），以及按域分组的贡献类型（2.0 region 左栏模块、2.1 `CommandTitlebarContribution` app-menu、cc-widget placement、preset 注册、1.2 管理面投影类型、Renderer Suite/Slot 贡献类型 `RendererSuiteContribution` / `RendererSlotContribution`（#520 补齐）等）。**隔离面 wire 协议**也是 SDK 出口：左栏模块与右栏面板的 `renderKind: 'isolated-surface'` 形态，宿主经 `host:input` 推送的输入类型（`AgentSidebarSurfaceInput` / `ContextPanelSurfaceInput`）与可回传事件词表（`SIDEBAR_SURFACE_EVENTS` / `CONTEXT_PANEL_SURFACE_EVENTS`）——写隔离面插件不必再反推宿主桥接协议。
 

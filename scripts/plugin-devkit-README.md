@@ -29,7 +29,7 @@
 
 - 需要自备 Node ≥ 18；
 - `src/index.ts` 用 `import ... from '@pylon/plugin-sdk'`；`sdk/package.json` 的 `exports` 自动提供 runtime 与类型；
-- `npm install`（装 esbuild）→ `npm run build` → 安装 `dist/` 所在目录；
+- `npm install`（装 esbuild 与 TypeScript 6.0.x）→ `npm run typecheck` → `npm run build` → 安装 `dist/` 所在目录；
 - 不想装 esbuild 也行：包内 `dist/index.js` 是预构建产物，直接安装即可。
 
 两种 starter 的源码即文档：五个最常用面（命令 / Hook / 会话元数据 / Scope 纪律 / 隔离设置页）各有一段带注释的最小代码。
