@@ -1,0 +1,115 @@
+{
+  "checks": {
+    "bodyStationary": true,
+    "faceMovesTogether": true,
+    "expressionsPreserved": true,
+    "neutralRestoresExactly": true
+  },
+  "samples": [
+    {
+      "eye": 1,
+      "mouth": 0,
+      "value": -30,
+      "degrees": 7.000000140256167,
+      "maxResidualPixels": 0.00004945226986951974
+    },
+    {
+      "eye": 1,
+      "mouth": 0,
+      "value": -15,
+      "degrees": 3.5000002738185434,
+      "maxResidualPixels": 0.000044501232602471395
+    },
+    {
+      "eye": 1,
+      "mouth": 0,
+      "value": 15,
+      "degrees": -3.500000284107392,
+      "maxResidualPixels": 0.00003491278545411405
+    },
+    {
+      "eye": 1,
+      "mouth": 0,
+      "value": 30,
+      "degrees": -7.000000196196148,
+      "maxResidualPixels": 0.00004868650412119409
+    },
+    {
+      "eye": 1,
+      "mouth": 0,
+      "value": 0,
+      "degrees": 0,
+      "maxResidualPixels": 0
+    },
+    {
+      "eye": 0.5,
+      "mouth": 1,
+      "value": -30,
+      "degrees": 7.000000140256167,
+      "maxResidualPixels": 0.00004945226986951974
+    },
+    {
+      "eye": 0.5,
+      "mouth": 1,
+      "value": -15,
+      "degrees": 3.5000002738185434,
+      "maxResidualPixels": 0.000044501232602471395
+    },
+    {
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 15,
+      "degrees": -3.500000284107392,
+      "maxResidualPixels": 0.00003491278545411405
+    },
+    {
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 30,
+      "degrees": -7.000000196196148,
+      "maxResidualPixels": 0.00004868650412119409
+    },
+    {
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 0,
+      "degrees": 0,
+      "maxResidualPixels": 0
+    },
+    {
+      "eye": 0,
+      "mouth": -1,
+      "value": -30,
+      "degrees": 7.000000140256167,
+      "maxResidualPixels": 0.00004945226986951974
+    },
+    {
+      "eye": 0,
+      "mouth": -1,
+      "value": -15,
+      "degrees": 3.5000002738185434,
+      "maxResidualPixels": 0.000044501232602471395
+    },
+    {
+      "eye": 0,
+      "mouth": -1,
+      "value": 15,
+      "degrees": -3.500000284107392,
+      "maxResidualPixels": 0.00003491278545411405
+    },
+    {
+      "eye": 0,
+      "mouth": -1,
+      "value": 30,
+      "degrees": -7.000000196196148,
+      "maxResidualPixels": 0.00004868650412119409
+    },
+    {
+      "eye": 0,
+      "mouth": -1,
+      "value": 0,
+      "degrees": 0,
+      "maxResidualPixels": 0
+    }
+  ]
+}

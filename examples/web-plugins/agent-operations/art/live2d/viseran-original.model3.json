@@ -1,0 +1,10 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "viseran-original.moc3",
+		"Textures": [
+			"viseran-original.2048/texture_00.png"
+		],
+		"DisplayInfo": "viseran-original.cdi3.json"
+	}
+}

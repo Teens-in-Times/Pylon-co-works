@@ -1,0 +1,11 @@
+import { build } from 'esbuild';
+import { mkdir, copyFile, cp } from 'node:fs/promises';
+await mkdir('dist', { recursive: true });
+await build({ entryPoints: ['src/index.js','src/preview.js','src/live2d-player.js'], bundle: true, outdir: 'dist', format: 'esm', target: 'es2022', loader: { '.css': 'text' }, sourcemap: true });
+await copyFile('preview.html', 'dist/preview.html');
+await cp('art', 'dist/art', { recursive: true, filter: p => !p.includes('source') });
+await mkdir('dist/licenses/anime25d', { recursive: true });
+for (const file of ['LICENSE','NOTICE.md']) await copyFile(`vendor/anime25d/${file}`,`dist/licenses/anime25d/${file}`);
+await mkdir('dist/licenses/live2d', { recursive: true });
+await copyFile('vendor/live2d/FRAMEWORK-LICENSE.md','dist/licenses/live2d/FRAMEWORK-LICENSE.md');
+console.log('Built isolated plugin and standalone preview.');
