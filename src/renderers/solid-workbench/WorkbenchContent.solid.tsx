@@ -144,130 +144,134 @@ export function WorkbenchContent(props: WorkbenchContentProps) {
       }}
       aria-label="Solid Agent Workbench"
     >
-      <Show
-        when={props.context.input().sessionId}
-        fallback={<div class="solid-workbench-chat-shell solid-workbench-empty-chat-shell" data-chat-viewport="empty">
-          <div
-            ref={node => { scroll.registerViewport(node) }}
-            class="chat-view solid-workbench-chat solid-workbench-empty-chat-viewport"
-            data-chat-viewport="scroll"
-            onScroll={scroll.onViewportScroll}
-            onWheel={scroll.scrollIntent.onWheel}
-            onTouchStart={scroll.scrollIntent.onTouchStart}
-            onTouchMove={scroll.scrollIntent.onTouchMove}
-            onTouchEnd={scroll.scrollIntent.onTouchEnd}
-            onTouchCancel={scroll.scrollIntent.onTouchEnd}
-            onKeyDown={scroll.scrollIntent.onKeyDown}
-          >
-            <div class="solid-workbench-empty-space">
-              <WorkbenchEmptyBrand />
-            </div>
-          </div>
-          <CreationOverlayHost
-            visible={creationProgressVisible()}
-            reducedMotion={props.context.input().reducedMotion === true}
-          />
-        </div>}
-      >
-        <div class="solid-workbench-chat-shell" data-chat-viewport="session">
-          <div
-            ref={node => { scroll.registerViewport(node) }}
-            class="chat-view solid-workbench-chat"
-            data-chat-viewport="scroll"
-            data-reduced-motion={props.context.input().reducedMotion ? 'true' : 'false'}
-            onScroll={scroll.onViewportScroll}
-            onWheel={scroll.scrollIntent.onWheel}
-            onTouchStart={scroll.scrollIntent.onTouchStart}
-            onTouchMove={scroll.scrollIntent.onTouchMove}
-            onTouchEnd={scroll.scrollIntent.onTouchEnd}
-            onTouchCancel={scroll.scrollIntent.onTouchEnd}
-            onKeyDown={scroll.scrollIntent.onKeyDown}
-          >
-            <div ref={node => { scroll.registerContent(node) }} class="term">
-              <SolidToolConnectorLayer edges={connectorEdges()} layoutPort={connectorPort} />
-              <div class="solid-workbench-reading-column mx-auto w-full min-w-0" style={{ 'max-width': `${readingWidth()}px` }}>
-                <CanonicalActivityList
-                  activities={activityPlacement().leading}
-                  document={document()}
-                  context={props.context}
-                  connectorPort={connectorPort}
-                />
-                <PlainMessageList
-                  initialItems={items()}
-                  renderItem={item => <WorkbenchRow
-                    descriptor={item.descriptor}
-                    appearance={appearance()}
-                    connectorPort={connectorPort}
-                    context={props.context}
-                  >
-                    <CanonicalActivityList
-                      activities={activityPlacement().afterMessage.get(item.descriptor.renderMessage.message.id) ?? []}
-                      document={document()}
-                      context={props.context}
-                      connectorPort={connectorPort}
-                    />
-                  </WorkbenchRow>}
-                  onPortReady={port => {
-                    setMessageListPort(() => port)
-                    port.setItems(items())
-                  }}
-                  onContentResize={scroll.onContentResize}
-                  rowLive={item => isAuthoritativelyLive(props.context, item.descriptor.renderMessage.message)}
-                  animateEntry={() => snapshot().generating
-                    && !props.context.input().replayReadonly
-                    && !props.context.input().reducedMotion}
-                  scrollViewport={scroll.viewport}
-                  scrollPosture={() => scroll.followBottom() ? 'follow' : 'pin'}
-                />
-                <WorkbenchDocumentSurface document={document()} context={props.context} commands={props.context.commands} sessionId={props.context.input().sessionId} reducedMotion={props.context.input().reducedMotion ?? false} />
-                <SolidGenerationFooter
-                  running={snapshot().generating}
-                  // The runtime snapshot carries the document and live
-                  // generation projection together.  Use its session identity
-                  // (rather than the independently-updated mount input) so a
-                  // session switch cannot reset the footer against the previous
-                  // session's start timestamp for one render.
-                  generationKey={snapshot().sessionId ?? ''}
-                  // #390：回合身份也由宿主给出（`turnEpoch` 每回合 +1），footer 不再本地铸号。
-                  turnId={snapshot().turnEpoch ?? 0}
-                  tokenCount={canonicalTokenCount(document()?.session.usage, snapshot().tokenCount)}
-                  startTime={snapshot().generationStart}
-                  lastTokenAt={snapshot().lastTokenAt}
-                  summary={snapshot().summary}
-                  phase={snapshot().generationPhase}
-                  activity={snapshot().generationActivity}
-                  thinkingStart={snapshot().thinkingStart}
-                  activeTaskContent={snapshot().tasks.find(task => task.status === 'in_progress')?.content}
-                  appearance={appearance().spinner}
-                  reducedMotion={props.context.input().reducedMotion}
-                  onStop={props.context.input().preview ? undefined : () => {
-                    const sessionId = props.context.input().sessionId
-                    if (sessionId) void props.context.commands.cancel(sessionId)
-                  }}
-                />
-                <WorkbenchContentSlot
-                  nodeId={`${props.context.input().sessionId ?? 'none'}:plan`}
-                  kind="content.plan"
-                  payload={{ entries: document()?.plan.entries ?? [], goal: document()?.goal.current }}
-                  context={props.context}
-                  fallback={<SolidPlanGoalContent payload={{ entries: document()?.plan.entries ?? [], goal: document()?.goal.current }} />}
-                />
+      <div class="solid-workbench-content-column">
+        <Show
+          when={props.context.input().sessionId}
+          fallback={<div class="solid-workbench-chat-shell solid-workbench-empty-chat-shell" data-chat-viewport="empty">
+            <div
+              ref={node => { scroll.registerViewport(node) }}
+              class="chat-view solid-workbench-chat solid-workbench-empty-chat-viewport"
+              data-chat-viewport="scroll"
+              onScroll={scroll.onViewportScroll}
+              onWheel={scroll.scrollIntent.onWheel}
+              onTouchStart={scroll.scrollIntent.onTouchStart}
+              onTouchMove={scroll.scrollIntent.onTouchMove}
+              onTouchEnd={scroll.scrollIntent.onTouchEnd}
+              onTouchCancel={scroll.scrollIntent.onTouchEnd}
+              onKeyDown={scroll.scrollIntent.onKeyDown}
+            >
+              <div class="solid-workbench-empty-space">
+                <WorkbenchEmptyBrand />
               </div>
             </div>
-            <div ref={bottomAnchor} class="solid-workbench-bottom-anchor" aria-hidden="true" />
+            <CreationOverlayHost
+              visible={creationProgressVisible()}
+              reducedMotion={props.context.input().reducedMotion === true}
+            />
+          </div>}
+        >
+          <div class="solid-workbench-chat-shell" data-chat-viewport="session">
+            <div
+              ref={node => { scroll.registerViewport(node) }}
+              class="chat-view solid-workbench-chat"
+              data-chat-viewport="scroll"
+              data-reduced-motion={props.context.input().reducedMotion ? 'true' : 'false'}
+              onScroll={scroll.onViewportScroll}
+              onWheel={scroll.scrollIntent.onWheel}
+              onTouchStart={scroll.scrollIntent.onTouchStart}
+              onTouchMove={scroll.scrollIntent.onTouchMove}
+              onTouchEnd={scroll.scrollIntent.onTouchEnd}
+              onTouchCancel={scroll.scrollIntent.onTouchEnd}
+              onKeyDown={scroll.scrollIntent.onKeyDown}
+            >
+              <div ref={node => { scroll.registerContent(node) }} class="term">
+                <SolidToolConnectorLayer edges={connectorEdges()} layoutPort={connectorPort} />
+                <div class="solid-workbench-reading-column mx-auto w-full min-w-0" style={{ 'max-width': `${readingWidth()}px` }}>
+                  <CanonicalActivityList
+                    activities={activityPlacement().leading}
+                    document={document()}
+                    context={props.context}
+                    connectorPort={connectorPort}
+                  />
+                  <PlainMessageList
+                    initialItems={items()}
+                    renderItem={item => <WorkbenchRow
+                      descriptor={item.descriptor}
+                      appearance={appearance()}
+                      connectorPort={connectorPort}
+                      context={props.context}
+                    >
+                      <CanonicalActivityList
+                        activities={activityPlacement().afterMessage.get(item.descriptor.renderMessage.message.id) ?? []}
+                        document={document()}
+                        context={props.context}
+                        connectorPort={connectorPort}
+                      />
+                    </WorkbenchRow>}
+                    onPortReady={port => {
+                      setMessageListPort(() => port)
+                      port.setItems(items())
+                    }}
+                    onContentResize={scroll.onContentResize}
+                    rowLive={item => isAuthoritativelyLive(props.context, item.descriptor.renderMessage.message)}
+                    animateEntry={() => snapshot().generating
+                      && !props.context.input().replayReadonly
+                      && !props.context.input().reducedMotion}
+                    scrollViewport={scroll.viewport}
+                    scrollPosture={() => scroll.followBottom() ? 'follow' : 'pin'}
+                  />
+                  <WorkbenchDocumentSurface document={document()} context={props.context} commands={props.context.commands} sessionId={props.context.input().sessionId} reducedMotion={props.context.input().reducedMotion ?? false} />
+                  <SolidGenerationFooter
+                    running={snapshot().generating}
+                    // The runtime snapshot carries the document and live
+                    // generation projection together.  Use its session identity
+                    // (rather than the independently-updated mount input) so a
+                    // session switch cannot reset the footer against the previous
+                    // session's start timestamp for one render.
+                    generationKey={snapshot().sessionId ?? ''}
+                    // #390：回合身份也由宿主给出（`turnEpoch` 每回合 +1），footer 不再本地铸号。
+                    turnId={snapshot().turnEpoch ?? 0}
+                    tokenCount={canonicalTokenCount(document()?.session.usage, snapshot().tokenCount)}
+                    startTime={snapshot().generationStart}
+                    lastTokenAt={snapshot().lastTokenAt}
+                    summary={snapshot().summary}
+                    phase={snapshot().generationPhase}
+                    activity={snapshot().generationActivity}
+                    thinkingStart={snapshot().thinkingStart}
+                    activeTaskContent={snapshot().tasks.find(task => task.status === 'in_progress')?.content}
+                    appearance={appearance().spinner}
+                    reducedMotion={props.context.input().reducedMotion}
+                    onStop={props.context.input().preview ? undefined : () => {
+                      const sessionId = props.context.input().sessionId
+                      if (sessionId) void props.context.commands.cancel(sessionId)
+                    }}
+                  />
+                  <WorkbenchContentSlot
+                    nodeId={`${props.context.input().sessionId ?? 'none'}:plan`}
+                    kind="content.plan"
+                    payload={{ entries: document()?.plan.entries ?? [], goal: document()?.goal.current }}
+                    context={props.context}
+                    fallback={<SolidPlanGoalContent payload={{ entries: document()?.plan.entries ?? [], goal: document()?.goal.current }} />}
+                  />
+                </div>
+              </div>
+              <div ref={bottomAnchor} class="solid-workbench-bottom-anchor" aria-hidden="true" />
+            </div>
+            <CreationOverlayHost
+              visible={creationProgressVisible()}
+              reducedMotion={props.context.input().reducedMotion === true}
+            />
           </div>
-          <CreationOverlayHost
-            visible={creationProgressVisible()}
-            reducedMotion={props.context.input().reducedMotion === true}
-          />
-          <SolidScrollRail controller={scroll} />
-        </div>
-      </Show>
-      <Show when={!props.context.input().replayReadonly}>
-        <SolidControlCenter />
-      </Show>
-      <Show when={props.context.input().replayReadonly && props.context.input().sessionId}>
-        <div class="solid-workbench-replay-overlay" role="status">历史回放 · 只读</div>
+        </Show>
+        <Show when={!props.context.input().replayReadonly}>
+          <SolidControlCenter />
+        </Show>
+        <Show when={props.context.input().replayReadonly && props.context.input().sessionId}>
+          <div class="solid-workbench-replay-overlay" role="status">历史回放 · 只读</div>
+        </Show>
+      </div>
+      <Show when={props.context.input().sessionId}>
+        <SolidScrollRail controller={scroll} />
       </Show>
     </section>
   )

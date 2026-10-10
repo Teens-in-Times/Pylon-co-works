@@ -120,6 +120,9 @@ export const INTERFACE_MODE_PRESET_BUCKET: Readonly<Record<string, PresetInterfa
  *   「整体风格」已整套删除（字段不存在了，不再是契约字段）。
  *   ★ #266 刀9：原第 6/7 项 `inputMode` / `inputVariant` 已随「固定命令行」删除
  *   （连同那条「两者必须同写」的联动不变量）。
+ *   ★ #266 CC-18：终端默认另有一处**有意差异** —— `ccMarginX: 0`（中控左右边距的右零点改挂
+ *   滚动条左缘，0 = 中控右缘与滚动条左缘齐平）。**它不是**「终端契约字段」那一组里的，
+ *   而是单独定的取值；出厂预设那 6 处 15 与字段默认值本件不动。
  */
 /**
  * 两条默认预设的**值来源**（刀3 改）：
@@ -134,6 +137,9 @@ export const INTERFACE_MODE_PRESET_BUCKET: Readonly<Record<string, PresetInterfa
  * 的 `:85` 与 `:209`，不在 `effectivePresetTheme.test.ts` —— 那里只断言"视图对默认预设 == 它自己的 theme"）：
  * `DEFAULT_PRESETS.gui.theme` 必须逐字段等于 glass 的有效值，终端默认 = 它 + 4 个终端契约字段
  * （★ #238 刀8：原为 5 个，其中「整体风格」已整套删除）。
+ * ★ #266 CC-18：终端默认在该集合之上**再多一个 `ccMarginX: 0`**（有意差异，理由见本块末条与
+ * `TERMINAL_DEFAULT_THEME`）—— 守卫的比对集随之把这一键算作"契约字段"（`defaultPresets.solid.test.tsx`
+ * 的 `TERMINAL_CONTRACT`）。
  *
  * 值取自刀2 落盘的工厂数据（glass 的 5 个区域切面之并集，键序 = `PRESET_ZONES` 顺序）。
  */
@@ -217,11 +223,18 @@ const GLASS_THEME: Partial<ThemeSettings> = {
   rightWidth: 250,
 }
 
-/** 终端默认 = `glass` 的副本 + 终端契约字段（★ #266 刀9：`inputVariant` / `inputMode` 已删）。 */
+/** 终端默认 = `glass` 的副本 + 终端契约字段（★ #266 刀9：`inputVariant` / `inputMode` 已删）
+ *  + `ccMarginX: 0`（★ #266 CC-18：右零点挂滚动条左缘后的"贴齐"取值，有意与 GUI 默认不同）。 */
 const TERMINAL_DEFAULT_THEME: Partial<ThemeSettings> = {
   ...structuredClone(GLASS_THEME),
   msgStyle: 'terminal',
   messageLayout: 'classic',
+  // ★ #266 CC-18：中控「左右边距」的**右零点**改挂滚动条左缘后（见 `ControlCenter.css` 的
+  //   `.control-center` margin-right），0 = 中控右缘与滚动条左缘齐平 —— 终端默认取 0（用户
+  //   2026-10-09 定：「零点」就是给贴齐用的）。这是终端默认与 GUI 默认**唯一有意不同的取值**
+  //   （GUI 默认不含该键 ⇒ 回落字段默认）。★ 出厂预设里已写的 6 处 15 与字段默认值本刀一律
+  //   不动 ⇒ 其它预设（含 GUI-默认）仍是 15。
+  ccMarginX: 0,
 }
 
 /**
