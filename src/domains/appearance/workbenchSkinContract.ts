@@ -153,7 +153,7 @@ function boundaryValue(key: ThemeFieldKey, edge: 'min' | 'max'): unknown {
   if (definition.type === 'color') return edge === 'min' ? '' : '#abcdef'
   if (key === 'ccLayout') return cloneCcLayout(DEFAULTS.ccLayout)
   // ★ #266 刀2：显隐的两份切面同形（常态 / 空态）⇒ 边界夹具一视同仁给 id 名单
-  if (key === 'ccHidden' || key === 'ccHiddenEmpty') return edge === 'min' ? [] : ['ekg', 'tasks']
+  if (key === 'ccHidden' || key === 'ccHiddenEmpty') return edge === 'min' ? [] : ['model', 'tokens']
   return edge === 'min' ? '' : `fixture-${key}`
 }
 
@@ -189,7 +189,7 @@ function createDirtyTheme(): ThemeSettings {
     messageLayout: 'bubble',
     assistantDot: true,
     assistantDotGlyph: '✦',
-    ccHidden: ['ekg'],
+    ccHidden: ['model'],
   })
 }
 

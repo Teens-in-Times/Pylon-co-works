@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-10T04:55:22.793Z",
+  "generatedAt": "2026-10-11T13:17:31.095Z",
   "source": {
     "builtinPresetIds": [
       "claude",
@@ -4242,7 +4242,7 @@
         "rightBlur": 0,
         "ccEditMode": false,
         "ccHidden": [
-          "ekg"
+          "model"
         ],
         "ccHiddenEmpty": [
           "model",
@@ -4857,12 +4857,12 @@
         "rightBlur": 40,
         "ccEditMode": false,
         "ccHidden": [
-          "ekg",
-          "tasks"
+          "model",
+          "tokens"
         ],
         "ccHiddenEmpty": [
-          "ekg",
-          "tasks"
+          "model",
+          "tokens"
         ],
         "ccLayout": {
           "version": 9,
