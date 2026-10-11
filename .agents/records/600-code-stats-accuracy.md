@@ -5,7 +5,7 @@
 - issue：[#600](https://github.com/Teens-in-Times/Pylon-co-works/issues/600)
 - 署名：Codex
 - 分支：codex/code-stats-accuracy
-- 基准：15659279（github/main）；施工声明：9f81ccd9
+- 基准：15659279（github/main）；施工声明：9f81ccd9；实现提交：95446dd9
 - 日期：2026-10-11
 
 ## 目标与范围
@@ -73,4 +73,4 @@
 
 ## issue 与 PR
 
-#600 由本分支 PR 的 Closes #600 在合并后关闭，完工评论与 PR 链接见 issue；#231/#259 为历史背景，已关闭，不另行更改状态。
+[PR #604](https://github.com/Teens-in-Times/Pylon-co-works/pull/604) 已开，Closes #600 在合并后关闭；[完工评论](https://github.com/Teens-in-Times/Pylon-co-works/issues/600#issuecomment-6108682621) 已回写上述证据。#231/#259 为历史背景，已关闭，不另行更改状态。
