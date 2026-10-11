@@ -74,3 +74,12 @@
 ## issue 与 PR
 
 [PR #604](https://github.com/Teens-in-Times/Pylon-co-works/pull/604) 已开，Closes #600 在合并后关闭；[完工评论](https://github.com/Teens-in-Times/Pylon-co-works/issues/600#issuecomment-6108682621) 已回写上述证据。#231/#259 为历史背景，已关闭，不另行更改状态。
+
+## PR 冲突修复复验（2026-10-11）
+
+- GitHub 的 PR 状态为 mergeable=false / dirty；当时 head 无 Actions 或 check-runs。冲突来自 main #597 发行声明与 #600 声明都追加到 .agents/L.md 尾部。
+- 保留 #593、#597、#600 三条声明；合入 main 4f22b8c1，合并提交 8e73eb21。发行版本与依赖按 main 保留，统计脚本、测试、skill 均无新增变更。
+- 合并后的定向 Vitest：1 file passed，29 tests passed，exit 0；check:docs（文档链接 4 项及 maintenance，unmapped=[]）exit 0；两个统计脚本 ESLint exit 0。
+- 合并后的 check:clippy 重跑 exit 0；7 个 crate added=[]；锁卫 17 文件 / 55 处，裸 allow 0。前一轮检查因会话中断而未取得退出状态，不作为通过证据。
+- git diff --cached --check 通过；未解决冲突路径为 0。只在本任务隔离树完成合并，共享树他人暂存内容未改动。
+- 本轮只处理声明冲突并接入 main 的发行更新；前序完整 check:frontend 证据保留，未重新跑全量前端链。推送后由 PR CI 验证合并后的完整链。
