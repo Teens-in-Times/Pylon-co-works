@@ -29,6 +29,23 @@ describe('custom preset apply (D-fix)', () => {
     resetStores()
   })
 
+  it('CC-21 saves and restores input fonts through custom and cc presets without chat-zone overwrite', async () => {
+    useThemeStore.getState().setZoneField('cc', { inputFont: 'vendor.input' })
+    const id = useCustomPresetStore.getState().saveCustomPreset('CC-21字体往返')
+    const persisted = JSON.parse(localStorage.getItem('pylon-custom-presets')!).state
+    expect(persisted.customPresets.find((preset: { id: string }) => preset.id === id).theme.inputFont).toBe('vendor.input')
+    useCustomPresetStore.setState({ customPresets: normalizeCustomPresets(persisted.customPresets) })
+    useThemeStore.getState().setZoneField('cc', { inputFont: 'follow-message' })
+    await useCustomPresetStore.getState().applyCustomPreset(id)
+    expect(useThemeStore.getState().inputFont).toBe('vendor.input')
+    useThemeStore.getState().applyZonePreset('chat', 'font-chat', { msgFont: 'serif' })
+    expect(useThemeStore.getState().inputFont).toBe('vendor.input')
+    expect(useThemeStore.getState().msgFont).toBe('serif')
+    useThemeStore.getState().applyZonePreset('cc', 'font-cc', { inputFont: 'mono' })
+    expect(useThemeStore.getState().inputFont).toBe('mono')
+    expect(useThemeStore.getState().msgFont).toBe('serif')
+  })
+
   it('applies the saved theme delta back when switching to a custom preset', async () => {
     const store = useThemeStore.getState()
     store.setZoneField('chat', {

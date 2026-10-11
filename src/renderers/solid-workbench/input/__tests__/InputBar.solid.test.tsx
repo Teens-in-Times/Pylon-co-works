@@ -6,7 +6,7 @@ import { DEFAULTS } from '../../../../domains/theme/themeDefaults.ts'
 import { createPreviewWorkbenchServices } from '../../preview/previewWorkbenchServices.ts'
 import { SolidWorkbenchContext, type SolidWorkbenchContextValue } from '../../SolidWorkbenchContext.solid.tsx'
 import { SolidInputBar } from '../InputBar.solid.tsx'
-import { getCommandRegistry } from '../../../../plugin-runtime/runtimeServices.ts'
+import { getCommandRegistry, getFontContributionRegistry } from '../../../../plugin-runtime/runtimeServices.ts'
 import { createPluginIdentity } from '../../../../plugin-runtime/pluginIdentity.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../../domains/workbench/events/workbenchEventSchema.ts'
 import { projectWorkbench } from '../../../../domains/workbench/workbenchProjector.ts'
@@ -82,8 +82,93 @@ function renderInput(
     },
     slot: inInputSlot ? document.querySelector<HTMLElement>('.cc-input-slot') : undefined,
     controlCenter: inInputSlot ? document.querySelector<HTMLElement>('.control-center') : undefined,
+    unmount: () => cleanup(),
   }
 }
+
+// CC-21：输入栏字体（独立/跟随）与字体资源变化都是测高响应依赖；卸载即清理监听。
+describe('CC-21 输入字体测高响应与生命周期', () => {
+  it('独立输入字体变化立即重测高度（字体引起的折行不需再敲字符），不写回主题设置', async () => {
+    const { services, textarea, slot } = renderInput('session-a', 'composer', undefined, true)
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
+    fireEvent.input(textarea, { target: { value: '长草稿' } })
+    await waitFor(() => expect(slot?.style.height).toBe('100px'))
+    // 模拟换字体后同段草稿折行更多（115px 仍在 3 倍静态高封顶 120px 之内）：
+    // 只改 inputFont、不动草稿。
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 115 })
+    const theme = { ...structuredClone(DEFAULTS), inputFont: 'serif' } as typeof DEFAULTS
+    services.appearance.setTheme(theme)
+    await waitFor(() => expect(slot?.style.height).toBe('115px'))
+    expect(services.appearance.getSnapshot().inputHeight).toBe(40)
+    expect(services.appearance.getSnapshot().inputFont).toBe('serif')
+  })
+
+  it('跟随态下消息字体变化同样触发重测', async () => {
+    const { services, textarea, slot } = renderInput('session-a', 'composer', undefined, true)
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
+    fireEvent.input(textarea, { target: { value: '长草稿' } })
+    await waitFor(() => expect(slot?.style.height).toBe('100px'))
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 115 })
+    const theme = { ...structuredClone(DEFAULTS), inputFont: 'follow-message', msgFont: 'serif' } as typeof DEFAULTS
+    services.appearance.setTheme(theme)
+    await waitFor(() => expect(slot?.style.height).toBe('115px'))
+    expect(services.appearance.getSnapshot().inputFontFamily).toBe('var(--font-serif-default, var(--serif))')
+  })
+
+  it('字体注册变化与 document.fonts 事件触发重测；卸载后监听全部解绑、不再触碰节点', async () => {
+    // jsdom 未实现 FontFaceSet ⇒ mock 一个最小面（登记监听 + 手动派发）。
+    const fontListeners = new Map<string, Set<EventListener>>()
+    const fakeFonts = {
+      addEventListener: (type: string, listener: EventListener) => {
+        fontListeners.set(type, (fontListeners.get(type) ?? new Set()).add(listener))
+      },
+      removeEventListener: (type: string, listener: EventListener) => {
+        fontListeners.get(type)?.delete(listener)
+      },
+      // 永不 resolve：排除「ready 一次性重测」对事件触发断言的干扰（真实环境 ready 只跑一次，
+      // 本用例只验证 loadingdone/loadingerror 通路与卸载清理）。
+      ready: new Promise<void>(() => {}),
+      dispatch: (type: string) => {
+        for (const listener of [...fontListeners.get(type) ?? []]) listener(new Event(type))
+      },
+      listenerCount: (type: string) => fontListeners.get(type)?.size ?? 0,
+    }
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fakeFonts })
+    try {
+      const registry = getFontContributionRegistry()
+      const realSubscribe = registry.subscribe.bind(registry)
+      let unsubscribed = false
+      const subscribeSpy = vi.spyOn(registry, 'subscribe').mockImplementation(listener => {
+        const real = realSubscribe(listener)
+        return () => {
+          unsubscribed = true
+          real()
+        }
+      })
+      const { textarea, slot, unmount } = renderInput('session-a', 'composer', undefined, true)
+      Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
+      fireEvent.input(textarea, { target: { value: '长草稿' } })
+      await waitFor(() => expect(slot?.style.height).toBe('100px'))
+      // 改 scrollHeight（模拟字体资源就绪后字宽变化）→ fonts 事件触发重测到 115px。
+      Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 115 })
+      fakeFonts.dispatch('loadingdone')
+      await waitFor(() => expect(slot?.style.height).toBe('115px'))
+      unmount()
+      expect(unsubscribed).toBe(true)
+      expect(fakeFonts.listenerCount('loadingdone')).toBe(0)
+      expect(fakeFonts.listenerCount('loadingerror')).toBe(0)
+      // 卸载后再来的字体事件不得重测：scrollHeight 变 140，若监听仍在高度会被重写。
+      Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 140 })
+      fakeFonts.dispatch('loadingdone')
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(slot?.style.height).toBe('115px')
+      subscribeSpy.mockRestore()
+    } finally {
+      delete (document as unknown as Record<string, unknown>).fonts
+    }
+  })
+})
 
 describe('SolidInputBar', () => {
   it('temporarily expands upward to three times the static input height without writing to appearance', async () => {

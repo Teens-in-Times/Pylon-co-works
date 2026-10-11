@@ -10,8 +10,15 @@ const terminal = GLOBAL_PRESETS.filter(preset =>
 describe('Terminal-like preset snapshots', () => {
   it('覆盖所有主题字段，切换后不会继承旧预设的渲染器状态', () => {
     for (const preset of terminal) {
+      const theme = effectivePresetTheme(preset)
       for (const key of THEME_SETTING_KEYS) {
-        expect(Object.prototype.hasOwnProperty.call(effectivePresetTheme(preset), key), `${preset.name}.${key}`).toBe(true)
+        // ★ #266 CC-21：`inputFont` 为后置字段，预设不显式声明 ⇒ 读时按字段默认值
+        //   （follow-message，跟随消息字体）归属；其余字段仍要求预设显式覆盖。
+        if (key === 'inputFont') {
+          expect(theme.inputFont ?? 'follow-message', `${preset.name}.${key}`).toBe('follow-message')
+          continue
+        }
+        expect(Object.prototype.hasOwnProperty.call(theme, key), `${preset.name}.${key}`).toBe(true)
       }
     }
   })

@@ -7,15 +7,17 @@ const css = readFileSync(
 )
 
 describe('input message-rail typography contract', () => {
-  it('uses the shared message font and line-height for every input variant', () => {
-    expect(css).toMatch(/\.input-textarea\s*\{[^}]*font-family:var\(--msg-font,var\(--chat-font,var\(--mono\)\)\);/s)
+  // ★ #266 CC-21：输入栏字体独立（--cc-input-font-family 显式解析输出；缺变量时兜底回
+  //   旧消息字体链）。原「输入框字体=消息字体链」的期望随定案变更同步到这里。
+  it('uses the independent input font chain and shared line-height for every input variant', () => {
+    expect(css).toMatch(/\.input-textarea\s*\{[^}]*font-family:var\(--cc-input-font-family,var\(--msg-font,var\(--chat-font,var\(--mono\)\)\)\);/s)
     // A6-5：输入行距为用户可调项（--cc-input-line-height），优先于共享消息行高；回退链保持 main 的 msg/chat 体系
     expect(css).toMatch(/\.input-textarea\s*\{[^}]*line-height:var\(--cc-input-line-height,var\(--msg-line-height,var\(--chat-line-height,1\.35\)\)\);/s)
     expect(css).not.toContain('font-family:var(--msg-font,var(--mono)) !important')
   })
 
-  it('keeps queued-message prose on the shared fallback rail', () => {
-    expect(css).toMatch(/\.queued-message-editor\s*\{[^}]*font-family:var\(--msg-font,var\(--chat-font,var\(--mono\)\)\);/s)
+  it('keeps queued-message prose on the independent input font rail', () => {
+    expect(css).toMatch(/\.queued-message-editor\s*\{[^}]*font-family:var\(--cc-input-font-family,var\(--msg-font,var\(--chat-font,var\(--mono\)\)\)\);/s)
     // ★ #266 CC-29：原来这里还锁了 composer meta 那段 `font:600 10px …`。该规则是悬空规则
     //   （类名在生产代码里零命中），已随本单删除 ⇒ 断言失去靶子，移出本用例。
     expect(css).not.toMatch(/\.input-textarea[^}]*font-family:var\(--msg-font,var\(--chat-font,var\(--font\)\)\)/s)

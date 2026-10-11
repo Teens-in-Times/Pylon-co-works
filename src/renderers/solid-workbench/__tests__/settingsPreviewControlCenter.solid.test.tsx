@@ -34,6 +34,26 @@ describe('settingsPreviewControlCenter（P52 D4 Solid 中控预览）', () => {
     host.remove()
   })
 
+  it('CC-21 standalone setTheme changes the inline font for follow and preserves independent input', async () => {
+    const { mountSettingsPreviewControlCenter } = await loadSettingsPreviewControlCenter()
+    const { DEFAULTS } = await import('../../../domains/theme/themeDefaults.ts')
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const handle = mountSettingsPreviewControlCenter(host)
+    try {
+      const font = () => host.querySelector<HTMLElement>('.control-center')!.style.getPropertyValue('--cc-input-font-family')
+      handle.setTheme({ ...structuredClone(DEFAULTS), inputFont: 'follow-message', msgFont: 'serif' })
+      expect(font()).toBe('var(--font-serif-default, var(--serif))')
+      handle.setTheme({ ...structuredClone(DEFAULTS), inputFont: 'system', msgFont: 'mono' })
+      expect(font()).toBe('var(--font-system, var(--font))')
+      handle.setTheme({ ...structuredClone(DEFAULTS), inputFont: 'system', msgFont: 'serif' })
+      expect(font()).toBe('var(--font-system, var(--font))')
+    } finally {
+      handle.destroy()
+      host.remove()
+    }
+  })
+
   it('setTheme 同步外观 store（预览随主题实时变化）', async () => {
     const { mountSettingsPreviewControlCenter } = await loadSettingsPreviewControlCenter()
     const host = document.createElement('div')

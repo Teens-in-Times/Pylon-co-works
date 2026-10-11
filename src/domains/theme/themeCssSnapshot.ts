@@ -1,12 +1,13 @@
 /**
  * themeCssSnapshot — 主题 → CSS 变量快照纯 selector（FE-AUD-013 / 报告 9B.1）。
  *
- * 由 defs 驱动普通字段（THEME_CSS_VAR_MAP 循环），仅保留背景转换/字体选择/
- * 布局宽度等显式派生。App 主布局与独立 ThemeRuntimeBridge 共用同一快照源。
+ * 由 defs 驱动普通字段（THEME_CSS_VAR_MAP 循环），仅保留背景转换/布局宽度等
+ * 显式派生；字体选择换算住 fontTokens.ts（叶子模块）。App 主布局与独立
+ * ThemeRuntimeBridge 共用同一快照源。
  */
 import { THEME_CSS_VAR_MAP, THEME_FIELD_DEFS } from './themeFieldDefs.ts'
 import { toCssBackgroundImage } from '../../infrastructure/skin/backgroundImage.ts'
-import { fontContributionCssVariable } from '../../contracts/fonts.ts'
+import { resolveFontToken, resolveInputFontToken } from './fontTokens.ts'
 import { VISUAL_SEMANTIC_ROLE_TOKENS, type VisualSemanticRole } from './visualSemantics.ts'
 
 export interface ThemeCssLayout {
@@ -19,28 +20,6 @@ export interface ThemeCssLayout {
    * 由调用方查注册表得出（声明 'sheet' 但未提供 sidebar 组件的 kind 为 false）。
    */
   sidebarEnabled: boolean
-}
-
-/**
- * Resolve a persisted font selection to a CSS token.
- *
- * `fallback` is deliberately role-aware: an unavailable code contribution
- * must remain monospaced after plugin deactivation, while interface/content
- * contributions may safely fall back to the system UI stack.
- */
-export function resolveFontToken(value: unknown, fallback: 'system' | 'code' = 'system'): string {
-  const fallbackToken = fallback === 'code'
-    ? 'var(--font-mono-default, var(--mono))'
-    : 'var(--font-system, var(--font))'
-  if (value === 'mono') return 'var(--font-mono-default, var(--mono))'
-  // `codeFont` only exposes mono plus plugin ids. Treat legacy/invalid
-  // proportional selections as unavailable instead of allowing code to lose
-  // its monospaced role after migration or a hand-edited persisted value.
-  if (fallback === 'code' && (value === 'serif' || value === 'system' || value === 'sans')) return fallbackToken
-  if (value === 'serif') return 'var(--font-serif-default, var(--serif))'
-  if (typeof value !== 'string' || !value.trim()) return fallbackToken
-  if (value === 'system' || value === 'sans') return 'var(--font-system, var(--font))'
-  return `var(${fontContributionCssVariable(value)}, ${fallbackToken})`
 }
 
 /** Private CSS fallback variable; public role names remain in visualSemantics. */
@@ -150,6 +129,7 @@ export function selectThemeCssSnapshot(
     '--mono': resolveFontToken(s.codeFont ?? 'mono', 'code'),
     '--chat-font': resolveFontToken(s.chatFont),
     '--msg-font': resolveFontToken(s.msgFont),
+    '--cc-input-font-family': resolveInputFontToken(s.inputFont, s.msgFont),
     '--msg-text': (s.msgTextColor as string) || 'var(--chat-text-color,var(--text))',
     // #154：左列宽度只有这一个真值——展开取用户宽度，折叠或本 Sheet 无左栏取 0。
     // 标题栏左轨道与各 Sheet 左栏外壳共用它，分割线因此天然共线；不再保留紧凑轨道。

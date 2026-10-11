@@ -3,7 +3,8 @@
  * 显式派生（背景/字体/布局）+ defs 循环注入 + 空 color 省略 + 布局宽度。
  */
 import { describe, expect, it } from 'vitest'
-import { resolveFontToken, selectThemeCssSnapshot } from '../themeCssSnapshot'
+import { resolveFontToken, resolveInputFontToken } from '../fontTokens.ts'
+import { selectThemeCssSnapshot } from '../themeCssSnapshot'
 import { THEME_FIELD_DEFS } from '../themeFieldDefs.ts'
 
 const LAYOUT = { sidebarCollapsed: false, sidebarWidth: 250, sidebarEnabled: true }
@@ -11,6 +12,23 @@ const LAYOUT = { sidebarCollapsed: false, sidebarWidth: 250, sidebarEnabled: tru
 function makeState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { ...overrides }
 }
+
+describe('CC-21 input font projection', () => {
+  it('missing, blank and follow selections resolve the current message font in production snapshots', () => {
+    for (const inputFont of [undefined, '', ' ', 'follow-message']) {
+      expect(resolveInputFontToken(inputFont, 'serif')).toBe('var(--font-serif-default, var(--serif))')
+      expect(selectThemeCssSnapshot({ inputFont, msgFont: 'serif' }, LAYOUT)['--cc-input-font-family']).toBe('var(--font-serif-default, var(--serif))')
+    }
+  })
+
+  it('explicit input fonts stay independent and plugin ids retain the content-safe fallback', () => {
+    const expected = 'var(--pylon-font-vendor-input, var(--font-system, var(--font)))'
+    for (const msgFont of ['mono', 'serif']) {
+      expect(resolveInputFontToken('system', msgFont)).toBe('var(--font-system, var(--font))')
+      expect(selectThemeCssSnapshot({ inputFont: 'vendor.input', msgFont }, LAYOUT)['--cc-input-font-family']).toBe(expected)
+    }
+  })
+})
 
 describe('selectThemeCssSnapshot', () => {
   it('界面字体同时投影到继承入口与显式 UI 字体 token', () => {

@@ -723,6 +723,7 @@ export function SolidControlCenter() {
       '--cc-input-border': appearance().inputBorder || 'transparent',
       '--cc-input-border-width': `${appearance().inputBorderWidth}px`,
       '--cc-input-border-opacity': `${inputBorderOpacityPercent()}%`,
+      '--cc-input-font-family': appearance().inputFontFamily,
       '--cc-input-font-size': `${appearance().inputFontSize}px`,
       '--cc-input-line-height': appearance().inputLineHeight,
       '--cc-input-text': appearance().inputTextColor,

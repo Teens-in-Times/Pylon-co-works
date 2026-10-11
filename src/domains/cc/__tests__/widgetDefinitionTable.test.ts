@@ -69,9 +69,10 @@ describe('#238 · 定义表不变量 1-2：字段覆盖完整、无重叠', () =
   //   刀2 的空态切面又把系统桶补到 **69**。
   // ★ #266 CC-32：`inputBorderColor` 搬去 global 区（全应用通用边线色）⇒ 69 → **68**（用例名的"68"在此对齐）。
   // ★ #266 CC-13 刀4：`ccPluginProps`（插件元件属性值，内部字段）进系统桶 ⇒ 68 → **69**。
-  it('69 个 cc 字段每一个恰好有一个归属行，无遗漏', () => {
+  // ★ #266 CC-21：`inputFont`（输入栏字体）进「输入框本体」⇒ 69 → **70**。
+  it('70 个 cc 字段每一个恰好有一个归属行，无遗漏', () => {
     const owners = fieldOwners()
-    expect(ccFields).toHaveLength(69)
+    expect(ccFields).toHaveLength(70)
     expect([...owners.keys()].sort()).toEqual([...ccFields].sort())
   })
 
@@ -87,7 +88,7 @@ describe('#238 · 定义表不变量 1-2：字段覆盖完整、无重叠', () =
     ]))
     expect(counts).toEqual({
       'cc-surface': 7,
-      input: 25,
+      input: 26,
       model: 7,
       reasoning: 7,
       mode: 9,
@@ -107,9 +108,10 @@ describe('#238 · 定义表不变量 1-2：字段覆盖完整、无重叠', () =
     //     出厂那 10 份空态切面的键集由 `ccVisibilitySliceGuard.test.ts` 钉住。
     // ★ #266 CC-32：`inputBorderColor` 搬去 global 区 ⇒ 输入栏 26 → 25、总数 69 → **68**。
     // ★ #266 CC-13 刀4：`ccPluginProps` 进系统桶（跨元件：值是插件自定义短键，不属任何行）⇒ 总数 68 → **69**。
+    // ★ #266 CC-21：`inputFont` 进「输入框本体」⇒ 输入栏 25 → 26、总数 69 → **70**。
     expect(CC_SYSTEM_FIELDS).toEqual(['ccLayout', 'ccHidden', 'ccHiddenEmpty', 'ccPluginProps'])
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0) + CC_SYSTEM_FIELDS.length
-    expect(total).toBe(69)
+    expect(total).toBe(70)
   })
 
   it('成员字段必须落在 cc zone 内', () => {
@@ -131,7 +133,7 @@ describe('#238 · 定义表不变量 1-2：字段覆盖完整、无重叠', () =
         'inputHighlightOpacity', 'inputShadowEnabled', 'inputBg', 'inputBgImage',
         'inputTextColor', 'inputPlaceholder',
         'inputFocusBorder', 'inputBorder', 'inputBorderWidth', 'inputBorderOpacity',
-        'inputRadius', 'inputFontSize', 'inputLineHeight',
+        'inputRadius', 'inputFont', 'inputFontSize', 'inputLineHeight',
         'cliTextColor',
       ],
       'input/cli-prefix': ['cliPromptColor'],
