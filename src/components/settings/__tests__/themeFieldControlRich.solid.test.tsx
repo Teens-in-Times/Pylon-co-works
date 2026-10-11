@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 // #515：迁移自 themeFieldControlRich.test.tsx（React RTL → Solid 实体直连；
 // 断言集原样保留，无改写点）。
-import { cleanup, render, screen, within } from '@solidjs/testing-library'
+import { cleanup, fireEvent, render, screen, within } from '@solidjs/testing-library'
 import { afterEach, describe, expect, it } from 'vitest'
 
 // 全局 afterEach(cleanup) 已由 vitest.setup.ts 统一接通（@solidjs/testing-library）；此处显式注册为冗余保险。
 afterEach(cleanup)
 import { ZoneGroupFields, type RenderCtx } from '../themeFieldRenderer.solid.tsx'
 import { THEME_DEFAULTS } from '../../../domains/theme/themeFieldDefs'
+import type { ThemeSettings } from '../../../domains/theme/themeStore'
 
 /** T1 第一批：链A control 丰富——segmented 覆盖 + assistantDotImage 文件选择。 */
 
@@ -39,5 +40,27 @@ describe('T1-A assistantDotImage bgImage control', () => {
   it('头像图标字段渲染文件选择按钮', () => {
     render(() => <ZoneGroupFields zone="chat" ctx={makeCtx()} />)
     expect(screen.getByRole('button', { name: '选择' })).toBeInTheDocument()
+  })
+})
+
+// CC-21：真实字段 inputFont 接线到原 FontContributionPicker（跟随首项）并写回主题。
+describe('CC-21 inputFont 字段接线', () => {
+  it('输入栏字体渲染原选择器，跟随项在首、选择即写回 inputFont', () => {
+    const changes: Partial<ThemeSettings>[] = []
+    render(() => <ZoneGroupFields zone="cc" ctx={{ ...makeCtx(), onChange: partial => changes.push(partial) }} />)
+    const trigger = screen.getByRole('combobox', { name: '输入栏字体' })
+    expect(trigger.textContent).toContain('跟随消息字体')
+    fireEvent.click(trigger)
+    const options = within(screen.getByRole('listbox')).getAllByRole('option')
+    expect(options[0].textContent).toContain('跟随消息字体')
+    // Select 的选项走 onMouseDown（preventDefault 防失焦），不是 click。
+    fireEvent.mouseDown(options[0])
+    expect(changes).toEqual([{ inputFont: 'follow-message' }])
+  })
+
+  it('跟随态示例实时读当前消息字体的解析值（ctx 的 msgFont）', () => {
+    render(() => <ZoneGroupFields zone="cc" ctx={makeCtx({ inputFont: 'follow-message', msgFont: 'serif' })} />)
+    expect(document.querySelector<HTMLElement>('.font-contribution-sample')?.style.fontFamily)
+      .toBe('var(--font-serif-default, var(--serif))')
   })
 })

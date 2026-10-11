@@ -18,6 +18,32 @@ function theme(overrides: Partial<ThemeSettings> = {}): ThemeSettings {
   }
 }
 
+describe('CC-21 appearance input font', () => {
+  it('follow font updates notify the appearance consumer without changing static typography', () => {
+    const store = createStaticWorkbenchAppearanceStore(theme({ inputFont: 'follow-message', msgFont: 'mono' }))
+    const listener = vi.fn()
+    store.subscribe(listener)
+    store.setTheme(theme({ inputFont: 'follow-message', msgFont: 'serif' }))
+    expect(store.getSnapshot().inputFontFamily).toBe('var(--font-serif-default, var(--serif))')
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(store.getSnapshot()).toMatchObject({ inputFont: 'follow-message', inputHeight: 40, inputFontSize: 15, inputLineHeight: '1', ccHeight: DEFAULTS.ccHeight })
+    store.destroy()
+  })
+
+  it('independent input font ignores message-only changes and preserves the plugin selection', () => {
+    const store = createStaticWorkbenchAppearanceStore(theme({ inputFont: 'vendor.input', msgFont: 'mono' }))
+    const listener = vi.fn()
+    store.subscribe(listener)
+    const before = store.getSnapshot()
+    store.setTheme(theme({ inputFont: 'vendor.input', msgFont: 'serif' }))
+    expect(store.getSnapshot().inputFontFamily).toBe('var(--pylon-font-vendor-input, var(--font-system, var(--font)))')
+    expect(store.getSnapshot().inputFont).toBe('vendor.input')
+    expect(store.getSnapshot()).toBe(before)
+    expect(listener).not.toHaveBeenCalled()
+    store.destroy()
+  })
+})
+
 describe('selectWorkbenchAppearance', () => {
   it('fresh appearance 使用 A6-2 默认值', () => {
     expect(DEFAULTS).toMatchObject({

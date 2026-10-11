@@ -76,6 +76,16 @@ function localTemplateCcTheme(host: HTMLElement): Record<string, unknown> {
   if (inputBorder) overrides.inputBorder = inputBorder
   if (inputText) overrides.inputTextColor = inputText
   if (inputPlaceholder) overrides.inputPlaceholder = inputPlaceholder
+  // CC-21 接续：模板字体选择走私有搬运变量（原始选择值，非解析栈）。有消息选择
+  // 无输入选择 = 旧模板 ⇒ 补 follow-message；有输入无消息 ⇒ 补主题默认 msgFont；
+  // 两项都没有 ⇒ 不覆盖字体字段（保持旧读回行为）。不把已解析的 --cc-input-font-
+  // family / --msg-font 字体栈当字体编号读回。
+  const inputFontSelection = template.style.getPropertyValue('--pylon-template-input-font-selection').trim()
+  const messageFontSelection = template.style.getPropertyValue('--pylon-template-message-font-selection').trim()
+  if (messageFontSelection) overrides.msgFont = messageFontSelection
+  if (inputFontSelection) overrides.inputFont = inputFontSelection
+  if (messageFontSelection && !inputFontSelection) overrides.inputFont = 'follow-message'
+  if (inputFontSelection && !messageFontSelection) overrides.msgFont = THEME_DEFAULTS.msgFont
   return overrides
 }
 

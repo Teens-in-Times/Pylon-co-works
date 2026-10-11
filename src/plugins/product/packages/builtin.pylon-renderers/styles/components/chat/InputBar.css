@@ -41,7 +41,7 @@
 .queued-message-title { margin-bottom:5px; color:var(--text-dim); font-size:12px; }
 .queued-message { display:flex; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--border); }
 .queued-message-text { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); font-size:13px; }
-.queued-message-editor { min-width:0; flex:1; min-height:34px; padding:5px 7px; resize:vertical; color:var(--text); background:var(--input-bg,var(--bg-input)); border:1px solid var(--border); border-radius: 0; font:inherit; font-family:var(--msg-font,var(--chat-font,var(--mono))); }
+.queued-message-editor { min-width:0; flex:1; min-height:34px; padding:5px 7px; resize:vertical; color:var(--text); background:var(--input-bg,var(--bg-input)); border:1px solid var(--border); border-radius: 0; font:inherit; font-family:var(--cc-input-font-family,var(--msg-font,var(--chat-font,var(--mono)))); }
 .queued-message-actions { display:flex; gap:3px; flex-shrink:0; }
 .queued-message-actions button, .queued-message-clear { display:inline-flex; align-items:center; justify-content:center; padding:4px; color:var(--text-dim); background:transparent; border:1px solid transparent; border-radius: 0; cursor:pointer; }
 .queued-message-actions button:hover:not(:disabled), .queued-message-clear:hover { color:var(--text); background:var(--bg-hover); border-color:var(--border); }
@@ -58,9 +58,10 @@
   flex:1; min-width:0; background:color-mix(in srgb,var(--cc-input-surface,var(--input-bg,var(--bg-input))) var(--cc-input-surface-opacity,100%),transparent); border:var(--cc-input-border-width,1px) solid color-mix(in srgb,var(--cc-input-border) var(--cc-input-border-opacity,100%),transparent);
   background-image:var(--input-bg-image,none); background-size:cover; background-position:center;
   border-radius:var(--cc-input-radius,0); padding:12px var(--cc-input-text-right-inset,var(--cc-input-text-inset-x,5%)) 12px var(--cc-input-text-inset-x,5%); color:var(--cc-input-text,var(--text));
-  /* Conversation copy and the composer share the message-font role. Code,
-     command names and paths opt into --mono below. */
-  font-family:var(--msg-font,var(--chat-font,var(--mono))); font-size:var(--cc-input-font-size,15px); line-height:var(--cc-input-line-height,var(--msg-line-height,var(--chat-line-height,1.35)));
+  /* CC-21：主输入文字走独立的输入栏字体变量（--cc-input-font-family 由主题快照显式
+     解析输出；缺变量时兜底回旧消息字体链，不因变量缺失失效）。代码、命令名与路径
+     仍走 --mono（.cmd-name / .cli-prefix），不随本字段改。 */
+  font-family:var(--cc-input-font-family,var(--msg-font,var(--chat-font,var(--mono)))); font-size:var(--cc-input-font-size,15px); line-height:var(--cc-input-line-height,var(--msg-line-height,var(--chat-line-height,1.35)));
   resize:none; outline:none; overflow-y:hidden; scrollbar-width:none;
   min-height:calc(var(--cc-input-font-size,15px) * (1 + var(--cc-input-line-height,1)) + 18px); max-height:240px;
 }
@@ -73,7 +74,7 @@
   position:absolute; inset:0; pointer-events:none; z-index:0;
   padding:9px var(--cc-input-text-right-inset,var(--cc-input-text-inset-x,5%)) 9px var(--cc-input-text-inset-x,5%); white-space:pre-wrap; overflow:hidden;
   color:var(--text-placeholder,var(--text)); opacity:.48;
-  line-height:var(--msg-line-height,var(--chat-line-height,1.35)); font:inherit;
+  line-height:var(--cc-input-line-height,var(--msg-line-height,var(--chat-line-height,1.35))); font:inherit;
 }
 .input-ghost-prefix { visibility:hidden; }
 .input-editor-stack .input-textarea { position:relative; z-index:1; width:100%; background:transparent; }
@@ -166,7 +167,7 @@
   background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,var(--bg-input)),var(--bg-input) 42%);
   box-shadow:inset 3px 0 0 color-mix(in srgb,var(--accent) 70%,transparent),0 8px 22px rgba(0,0,0,.08);
 }
-.app[data-presentation-profile="builtin.presentation.terminal-modern"] .input-textarea { font-family:var(--msg-font,var(--chat-font,var(--mono))) !important; }
+.app[data-presentation-profile="builtin.presentation.terminal-modern"] .input-textarea { font-family:var(--cc-input-font-family,var(--msg-font,var(--chat-font,var(--mono)))) !important; }
 .app[data-presentation-profile="builtin.presentation.paper-low-contrast"] .input-bar:not(.cli-mode) {
   border-radius:5px;
   background:color-mix(in srgb,var(--input-bg,var(--bg-input)) 94%,#b88b50 6%);
@@ -191,7 +192,7 @@
    不再让整个输入行出现额外的 outline / 光环。 */
 .input-bar.cli-mode .input-textarea {
   background:transparent; border:none; resize:none; height:auto; min-height:auto;
-  color:var(--cc-input-text,var(--cli-text-color,var(--text))); font-family:var(--msg-font,var(--chat-font,var(--mono)));
+  color:var(--cc-input-text,var(--cli-text-color,var(--text))); font-family:var(--cc-input-font-family,var(--msg-font,var(--chat-font,var(--mono))));
   font-size:var(--cc-input-font-size,17px); padding:0; line-height:1.4;
   caret-color:var(--cli-text-color,var(--text));
   width:100%; flex:1; max-height:200px;
