@@ -8,7 +8,21 @@ import { GLOBAL_PRESETS } from '../presets/index.ts'
 import { effectivePresetTheme } from '../zones/index.ts'
 import { PROFILE_SCHEMA_VERSION } from '../../identity/profilePersistence.ts'
 import { readFileSync } from 'node:fs'
+import { DEFAULTS } from '../themeDefaults.ts'
 import { CC_LAYOUT_SCHEMA_VERSION } from '../../cc/ccLayoutState.ts'
+
+describe('CC-21 input font read-time alignment', () => {
+  it('old themes receive follow-message and existing plugin selections survive normalization', () => {
+    const completeDefaults = { ...defaults, base: DEFAULTS }
+    const old = alignThemeStructure({ msgFont: 'serif', accent: '#123456' }, completeDefaults)
+    expect(old.inputFont).toBe('follow-message')
+    expect(old.msgFont).toBe('serif')
+    expect(old.accent).toBe('#123456')
+    const plugin = alignThemeStructure({ inputFont: 'vendor.input', msgFont: 'mono' }, completeDefaults)
+    expect(plugin.inputFont).toBe('vendor.input')
+    expect(plugin.msgFont).toBe('mono')
+  })
+})
 
 const migrationSource = readFileSync('src/domains/theme/migration.ts', 'utf8')
 

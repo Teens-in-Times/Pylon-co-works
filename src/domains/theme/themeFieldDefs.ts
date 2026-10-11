@@ -286,6 +286,10 @@ export const THEME_FIELD_DEFS = {
   inputBorderWidth: { ...N('cc', '输入栏边框粗细', 0, 8), default: 1, group: '输入框本体', unit: 'px', suffix: 'px', cssVar: '--cc-input-border-width' },
   inputBorderOpacity: { ...N('cc', '输入栏边框透明度', 0, 1, 0.05), default: 0, group: '输入框本体', percent: true, suffix: '%', cssVar: '--cc-input-border-opacity' },
   inputRadius: { ...N('cc', '输入栏圆角', 0, 28), default: 20, group: '输入框本体', unit: 'px', suffix: 'px', cssVar: '--cc-input-radius' },
+  // ★ CC-21：--cc-input-font-family 由 themeCssSnapshot、workbenchSkinContract、
+  //   templateThemeVars 三处显式派生，不经 MAP 自动注入（同 ccBg / inputFocusBorder 模式）；
+  //   string 字段不进 THEME_CSS_VAR_MAP，声明 cssVar 会让 skinSchema 同源检查失配。
+  inputFont: { ...S('cc', '输入栏字体', ['follow-message', 'mono', 'system', 'serif']), optionLabels: { 'follow-message': '跟随消息字体', mono: '等宽代码体', system: '系统无衬线', serif: '阅读衬线' }, default: 'follow-message', group: '输入框本体', control: 'fontPicker', fontRole: 'content', allowCustomOptions: true, noCssVar: true },
   inputFontSize: { ...N('cc', '输入字号', 12, 22, 1), tier: 'basic', default: 15, group: '输入框本体', unit: 'px', cssVar: '--cc-input-font-size' },
   inputLineHeight: { ...S('cc', '输入行距', ['0.5', '1', '1.5']), default: '1', group: '输入框本体', cssVar: '--cc-input-line-height' },
   inputShowHistoryHint: { ...B('cc', '显示历史快捷提示'), default: true, group: "历史快捷提示", },

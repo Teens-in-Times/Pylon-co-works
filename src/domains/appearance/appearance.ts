@@ -2,6 +2,7 @@ import { cloneCcLayout, type CcLayoutV3 } from '../cc/ccLayoutState.ts'
 import { cloneCcPluginProps, type CcPluginProps } from '../cc/ccPluginProps.ts'
 import { getSpinnerAssetPreset, getSpinnerVerbPreset, type SpinnerAssetId } from '../chat/spinnerAssets.ts'
 import { resolveSpinnerFrames, type SpinnerMarkerMode } from '../chat/spinnerFrames.ts'
+import { resolveInputFontToken } from '../theme/fontTokens.ts'
 import type { ThemeSettings } from '../theme/themeStore.ts'
 import type { CcWidgetPlacement } from '../cc/ccLayoutState.ts'
 import type { CcVisibilityTarget } from '../cc/ccLayoutState.ts'
@@ -62,6 +63,8 @@ export interface WorkbenchAppearanceSnapshot {
   inputBorderWidth: number
   inputBorderOpacity: number
   inputRadius: number
+  inputFont: string
+  inputFontFamily: string
   inputFontSize: number
   inputLineHeight: string
   inputTextColor: string
@@ -196,6 +199,8 @@ export function selectWorkbenchAppearance(
     inputBorderWidth: theme.inputBorderWidth,
     inputBorderOpacity: theme.inputBorderOpacity,
     inputRadius: theme.inputRadius,
+    inputFont: theme.inputFont || 'follow-message',
+    inputFontFamily: resolveInputFontToken(theme.inputFont, theme.msgFont),
     inputFontSize: theme.inputFontSize,
     inputLineHeight: theme.inputLineHeight,
     inputTextColor: theme.inputTextColor,
