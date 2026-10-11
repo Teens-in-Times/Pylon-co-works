@@ -32,16 +32,26 @@
   min-height: 0;
 }
 
-/* ── Solid App 根：纵向骨架 ── */
+/* ── Solid App 根：内容列与全高滚动条列 ── */
 .solid-agent-workbench {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--scroll-action-rail-width);
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-width: 0;
   min-height: 0;
-  /* 右栏内边距联动与 React main-body 同语义 */
+  /* 右栏内边距联动与宿主同语义 */
   padding-right: var(--right-panel-inset, 0px);
+}
+.solid-workbench-content-column {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* 消息流区已消费 .chat-view{flex:1}（ChatView.css L6），此处仅保证可收缩下限 */
@@ -71,10 +81,13 @@
    轨道本身就是右侧滚动条：端点按钮、滑块和中间轨道连续铺开，
    不再呈现为悬浮在原生 scrollbar 旁边的两个控件。
    宽度取向（用户反馈「外壁太宽显得滚动条细」）：整条轨 12px、滑块近乎占满（左右各 1px），
-   端点按钮 16px；窄屏放大到 14/16。要调粗细改这三个变量与滑块的左右内缩即可。 */
-.solid-workbench-chat-shell {
+   端点按钮 16px；窄屏放大到 14/16。要调粗细改这三个变量与滑块的左右内缩即可。
+
+   轨宽由根变量统一声明，工作台两列布局负责给消息和中控让出右列。 */
+:root {
   --scroll-action-rail-width: 12px;
-  --scroll-action-end-size: 16px;
+}
+.solid-workbench-chat-shell {
   position: relative;
   display: flex;
   flex: 1 1 auto;
@@ -86,17 +99,9 @@
   min-width: 0;
   min-height: 0;
 }
-.solid-workbench-chat-shell {
-  /* The visual rail overlays this shell. Keep creation feedback centered in
-     the actual chat viewport, excluding the rail's occupied column. */
-  --creation-overlay-right-inset: var(--scroll-action-rail-width, 20px);
-}
-.solid-workbench-chat-shell.solid-workbench-empty-chat-shell {
-  --creation-overlay-right-inset: 0px;
-}
 .solid-workbench-creation-overlay-host {
   position: absolute;
-  inset: 0 var(--creation-overlay-right-inset) 0 0;
+  inset: 0;
   z-index: 5;
   display: grid;
   place-items: center;
@@ -151,8 +156,12 @@
   .solid-workbench-creation-progress-bar { animation: none; }
 }
 .solid-workbench-scroll-rail {
-  position: absolute;
-  inset: 0 0 0 auto;
+  --scroll-action-end-size: 16px;
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  align-self: stretch;
+  min-height: 0;
   z-index: 6;
   display: flex;
   width: var(--scroll-action-rail-width);
@@ -234,8 +243,10 @@
   cursor: grabbing;
 }
 @media (max-width: 640px) {
-  .solid-workbench-chat-shell {
+  :root {
     --scroll-action-rail-width: 14px;
+  }
+  .solid-workbench-scroll-rail {
     --scroll-action-end-size: 16px;
   }
   .solid-agent-workbench .solid-workbench-scroll-rail .scroll-rail-btn {
@@ -395,14 +406,15 @@
    are a bounded content track and vertical placement: with no chat shell it
    is centered in the available stage, then returns to the bottom dock once a
    session exists. The input/status track intentionally does not span the
-   whole window; this keeps the empty surface visually balanced on wide panes. */
+   whole window; this keeps the empty surface visually balanced on wide panes.
+   空态定位于左内容列，只清纵向边距；横向边距与有会话共享。 */
 .solid-workbench-control-center-slot.is-empty {
   position: absolute;
   inset-inline: 0;
   top: 50%;
-  width: 100%;
+  width: auto;
   align-self: stretch;
-  margin: 0;
+  margin-block: 0;
   flex: 0 0 auto;
   transform: translateY(-50%);
   --cc-empty-content-width: min(720px, calc(100% - 32px));

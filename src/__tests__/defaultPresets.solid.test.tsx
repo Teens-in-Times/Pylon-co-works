@@ -41,11 +41,15 @@ const GLASS = GLOBAL_PRESETS.find(preset => preset.name === 'glass')!
 /**
  * 终端契约字段（原「终端补全」层里的同一组字段；刀3 起该层已无）。
  * ★ #266 刀9：原第 3/4 项 `inputMode` / `inputVariant` 已随「固定命令行」删除
- *   （形态不再由预设区分），契约只剩这两项。
+ *   （形态不再由预设区分）。
+ * ★ #266 CC-18：`ccMarginX: 0` 进这一组 —— 终端默认与 GUI 默认在这一字段上**有意不同**
+ *   （中控右零点改挂滚动条左缘后，0 = 中控右缘与滚动条左缘齐平）。本文件两处比对都以本表为准：
+ *   `重置后 == GUI 默认 + 终端契约字段`（下方那条用例）与同处的 glass 切面过滤。
  */
 const TERMINAL_CONTRACT = {
   msgStyle: 'terminal',
   messageLayout: 'classic',
+  ccMarginX: 0,
 } as const
 const DEFAULT_NAMES: string[] = [DEFAULT_PRESETS.gui.name, DEFAULT_PRESETS.terminal.name]
 /**
@@ -174,6 +178,30 @@ describe('刀7 · 「重置主题」落点（#214）', () => {
       expect(pickZoneFields(useThemeStore.getState() as never, zone), `终端重置后 ${zone} 切面`)
         .toMatchObject(glassSlice)
     }
+  })
+
+  it('★ #266 CC-18：中控右零点挂滚动条 —— 终端默认落 0，GUI 默认与 6 条出厂条目不动', () => {
+    // 1) 终端默认（本件唯一改动的落点）：右零点挂滚动条左缘 ⇒ 0 = 中控右缘与滚动条左缘齐平
+    expect(DEFAULT_PRESETS.terminal.theme.ccMarginX).toBe(0)
+    withInterfaceMode('terminal-like')
+    useThemeStore.getState().resetTheme()
+    expect(useThemeStore.getState().ccMarginX).toBe(0)
+
+    // 2) GUI-默认不含该键 ⇒ 生效值回落字段默认（本件未动 GUI 默认 ⇒ GUI 重置后仍 15）
+    expect(DEFAULT_PRESETS.gui.theme.ccMarginX).toBeUndefined()
+    withInterfaceMode('modern-gui')
+    useThemeStore.getState().resetTheme()
+    expect(useThemeStore.getState().ccMarginX).toBe(DEFAULTS.ccMarginX)
+
+    // 3) 出厂预设里已写的 6 处仍是 15（用户 2026-10-09：「那几个都不管」）—— 逐条点名，防漏防多
+    const carrying = GLOBAL_PRESETS
+      .map(preset => ({
+        name: preset.name,
+        value: (pickZoneFields(effectivePresetTheme(preset) as never, 'cc') as Record<string, unknown>).ccMarginX,
+      }))
+      .filter(entry => entry.value !== undefined)
+    expect(carrying.map(entry => entry.name).sort()).toEqual(['amber', 'claude', 'matrix', 'nord', 'solarized', 'tokyo'])
+    for (const entry of carrying) expect(entry.value, entry.name).toBe(15)
   })
 
   it('未登记模式（tactical-blue）：回落 DEFAULTS、不报错、不悬空', () => {

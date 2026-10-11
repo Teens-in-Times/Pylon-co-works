@@ -1326,6 +1326,115 @@ describe('mountSolidWorkbench', () => {
     expect(third.host.querySelector<HTMLElement>('.control-center')!.style.getPropertyValue('--cc-min-width')).toBe('384px')
   })
 
+  it('滚动条在共同外层右列且唯一，不在消息壳内；中控与消息在左列', async () => {
+    const { host, lifecycle } = mountPreview()
+    const workbench = host.querySelector('.solid-agent-workbench')!
+    const column = host.querySelector('.solid-workbench-content-column')!
+    expect(column.parentElement).toBe(workbench)
+    const assertSession = () => {
+      const rail = host.querySelector('.solid-workbench-scroll-rail')!
+      expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(1)
+      expect(rail.parentElement).toBe(workbench)
+      expect(rail.closest('.solid-workbench-chat-shell')).toBeNull()
+      expect(host.querySelector('.solid-workbench-chat-shell')?.parentElement).toBe(column)
+      expect(host.querySelector('.chat-view')?.closest('.solid-workbench-content-column')).toBe(column)
+    }
+    assertSession()
+    expect(host.querySelector('.control-center')?.parentElement).toBe(column)
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: null, preview: true })
+    await screen.findByRole('region', { name: 'Agent 工作台空态' })
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(0)
+    expect(host.querySelector('.solid-workbench-empty-chat-shell')?.parentElement).toBe(column)
+    expect(host.querySelector('.control-center')?.parentElement).toBe(column)
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: 'preview-session', preview: true, replayReadonly: true })
+    await screen.findByText('历史回放 · 只读')
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelector('.solid-workbench-replay-overlay')?.parentElement).toBe(column)
+    expect(host.querySelector('.control-center')).toBeNull()
+    assertSession()
+    lifecycle.destroy()
+  })
+
+  it('全高轨道仍驱动消息viewport，不驱动中控', async () => {
+    const pump = createFramePump()
+    try {
+      const { host, lifecycle } = mountPreview()
+      const viewport = host.querySelector<HTMLElement>('.chat-view')!
+      const center = host.querySelector<HTMLElement>('.control-center')!
+      const centerModel = createScrollModel(center, { top: 17 })
+      const model = createScrollModel(viewport, { top: 0, height: 2_000, clientHeight: 400 })
+      installInstantScrollToSink(viewport, model, pump)
+      const track = host.querySelector<HTMLElement>('.solid-workbench-scroll-track')!
+      const thumb = host.querySelector<HTMLElement>('.solid-workbench-scroll-thumb')!
+      let trackHeight = 800
+      Object.defineProperty(track, 'getBoundingClientRect', { configurable: true, value: () => ({ top: 60, height: trackHeight }) })
+      fireEvent.scroll(viewport)
+      expect(thumb.style.height).toBe('160px')
+      fireEvent.click(host.querySelector('[data-scroll-action="top"]')!)
+      expect(model.top).toBe(0)
+      fireEvent.click(track, { clientY: 460 })
+      expect(model.top).toBeCloseTo(800)
+      expect(thumb.style.transform).toBe('translateY(320px)')
+      fireEvent.keyDown(track, { key: 'PageDown' })
+      expect(model.top).toBeCloseTo(1_160)
+      fireEvent.keyDown(track, { key: 'Home' })
+      expect(model.top).toBe(0)
+      fireEvent.click(host.querySelector('[data-scroll-action="bottom"]')!)
+      expect(model.top).toBe(1_600)
+      fireEvent.keyDown(track, { key: 'Home' })
+      trackHeight = 1_000
+      window.dispatchEvent(new Event('resize'))
+      expect(thumb.style.height).toBe('200px')
+      Object.defineProperty(thumb, 'getBoundingClientRect', { configurable: true, value: () => ({ height: 200 }) })
+      fireEvent.pointerDown(thumb, { clientY: 100, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientY: 500, pointerId: 1 })
+      expect(model.top).toBeCloseTo(800)
+      expect(thumb.style.transform).toBe('translateY(400px)')
+      fireEvent.pointerUp(window, { pointerId: 1 })
+      expect(thumb).not.toHaveAttribute('data-dragging')
+      expect(centerModel.top).toBe(17)
+      lifecycle.destroy()
+    } finally {
+      pump.dispose()
+    }
+  })
+
+  it('创建中与进入状态不换两列布局', async () => {
+    let finishCreation: ((value: { sessionId: string }) => void) | undefined
+    const { host, services, lifecycle } = mountPreview()
+    const workbench = host.querySelector('.solid-agent-workbench')!
+    const column = host.querySelector('.solid-workbench-content-column')!
+    services.commands.setHandler('createSession', vi.fn(() => new Promise<{ sessionId: string }>(resolve => { finishCreation = resolve })))
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: null, preview: true })
+    const prompt = await screen.findByRole('textbox', { name: '消息输入' })
+    const emptyViewport = host.querySelector('.chat-view')!
+    fireEvent.input(prompt, { target: { value: '受控创建测试，不发送给真实 Agent' } })
+    fireEvent.keyDown(prompt, { key: 'Enter', code: 'Enter', shiftKey: false })
+    await waitFor(() => expect(host.querySelector('.control-center')).toHaveAttribute('data-creation-state', 'creating'))
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelector('.control-center')?.parentElement).toBe(column)
+    expect(host.querySelector('.control-center')).toHaveClass('is-session-creating')
+    expect(host.querySelector('.control-center')).toHaveAttribute('aria-busy', 'true')
+    expect(prompt).toBeDisabled()
+    expect(host.querySelector('[data-creation-progress]')?.closest('.solid-workbench-chat-shell')?.parentElement).toBe(column)
+    expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(0)
+    finishCreation?.({ sessionId: 'created-session' })
+    await waitFor(() => expect(host.querySelector('[data-creation-progress]')).toBeNull())
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: 'created-session', preview: true })
+    await waitFor(() => expect(host.querySelector('.control-center')).toHaveClass('is-session-entering'))
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(1)
+    expect(host.querySelector('.solid-workbench-scroll-rail')?.parentElement).toBe(workbench)
+    const sessionViewport = host.querySelector<HTMLElement>('.chat-view')!
+    expect(sessionViewport).not.toBe(emptyViewport)
+    const model = createScrollModel(sessionViewport, { height: 1_400, clientHeight: 400 })
+    Object.defineProperty(sessionViewport, 'scrollTo', { configurable: true, value: (options: ScrollToOptions) => { model.top = options.top ?? 0 } })
+    fireEvent.click(host.querySelector('[data-scroll-action="bottom"]')!)
+    expect(model.top).toBe(1_000)
+    lifecycle.destroy()
+  })
+
   it('update 不重挂 root，并切换 replay/Session 输入', async () => {
     const { host, lifecycle } = mountPreview()
     const root = host.firstElementChild
