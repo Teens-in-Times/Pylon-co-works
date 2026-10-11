@@ -133,6 +133,7 @@ WebView2 时联网下载安装器，发布说明无需再区分常规/降级包�
 
 ### 构建前
 
+- [ ] Tauri 官方插件的 JS/Rust 依赖保持相同 major/minor；`plugin-fs` 两端约束为 2.5 系列（#598），升级时同步两套 manifest 与锁文件。CLI 的版本守卫通过后才进入 Rust 发行构建。
 - [ ] 三处版本号一致，目标架构为 win64。
 - [ ] 仅 `--with-runtime` 包：`python scripts/prepare_hermes_runtime.py` 成功，且运行时校验通过。
 - [ ] 仅 `--with-runtime` 包：`resources/runtime/git/bin/bash.exe`、`usr/bin/msys-2.0.dll` 和关键命令均存在，
