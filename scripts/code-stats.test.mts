@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   analyzeRust,
   analyzeTsLike,
   attrExcludesFromProduction,
   classifyPath,
+  collectSourceInventory,
+  countPhysicalLines,
   CRATES_FALLBACK,
   displayWidth,
   formatNumber,
@@ -11,6 +17,7 @@ import {
   isTestPathTs,
   parseWorkspaceCrates,
   rustParentCandidates,
+  scanLines,
 } from './code-stats.mts'
 
 /** 去掉模板字符串首行的换行与末尾换行产生的空元素，得到与词法器一致的物理行。 */
@@ -226,12 +233,12 @@ describe('路径分类', () => {
     expect(classifyPath('perf-phase.tmp.ts')?.bucket).toBe('other')
   })
 
-  it('非代码扩展名与声明文件不计入', () => {
+  it('非代码扩展名不计入；声明文件在独立排除面中计入全仓', () => {
     expect(classifyPath('Cargo.lock')).toBeNull()
     expect(classifyPath('bun.lock')).toBeNull()
     expect(classifyPath('package.json')).toBeNull()
     expect(classifyPath('docs/manual.md')).toBeNull()
-    expect(classifyPath('src/vite-env.d.ts')).toBeNull()
+    expect(classifyPath('src/vite-env.d.ts')).toMatchObject({ bucket: 'declarations', lang: 'ts' })
   })
 
   it('Rust 父模块候选覆盖 mod.rs 与 2018 布局', () => {
@@ -239,6 +246,120 @@ describe('路径分类', () => {
     expect(rustParentCandidates('src-tauri/src/lib.rs')).toEqual([])
     expect(rustParentCandidates('src-tauri/src/bin/pylon-cli.rs')).toEqual([])
     expect(rustParentCandidates('src-tauri/pylon-core/src/agent_detection.rs')).toContain('src-tauri/pylon-core/src/lib.rs')
+  })
+})
+
+describe('统计完整性与注释分类（#600）', () => {
+  it('空文件、空白尾行、CRLF、无末尾换行与 BOM 保留物理行', () => {
+    for (const [text, total, nonblank] of [
+      ['', 0, 0], ['\n', 1, 0], [' \t', 1, 0], ['x\n \t', 2, 1],
+      ['x\r\n\r\n', 2, 1], ['x', 1, 1], ['\uFEFF', 1, 0],
+    ] as const) {
+      expect(countPhysicalLines(text)).toEqual({ total, nonblank })
+      expect(analyzeTsLike(text)).toHaveLength(total)
+      expect(analyzeRust(text).lineClass).toHaveLength(total)
+    }
+  })
+
+  it('单引号字符串结束后仍能识别同行/下一行注释', () => {
+    expect(analyzeTsLike("const x = 'value'; /*\ncomment\n*/\n// tail\n")).toEqual(['code', 'comment', 'comment', 'comment'])
+    expect(analyzeTsLike("const x = 'a\\'b';\n// comment\n")).toEqual(['code', 'comment'])
+    for (const lang of ['css', 'html', 'c', 'rc'] as const) {
+      const comment = lang === 'html' ? '<!--\ncomment\n-->' : '/*\ncomment\n*/'
+      expect(scanLines(lang, `'text' ${comment}\n`)).toEqual(['code', 'comment', 'comment'])
+    }
+  })
+
+  it('Rust 多行门控属性从首行到 item 末行全部算测试，不把属性算空行', () => {
+    const analysis = analyzeRust('#[cfg(\n    test\n)]\nfn only_test() {}\nfn production() {}\n')
+    expect(analysis.lineClass).toEqual(['code', 'code', 'code', 'code', 'code'])
+    expect(analysis.isTestLine).toEqual([true, true, true, true, false])
+  })
+
+  it('未知平台和普通 feature 的否定不应误判测试代码', () => {
+    for (const cfg of ['cfg(not(windows))', 'cfg(not(feature = "portable"))', 'cfg(feature = "latest")', 'cfg(any(test, windows))']) {
+      expect(attrExcludesFromProduction(cfg)).toBe(false)
+    }
+    expect(attrExcludesFromProduction('cfg(all(test, windows))')).toBe(true)
+    expect(attrExcludesFromProduction('cfg(any())')).toBe(true)
+    expect(attrExcludesFromProduction('cfg(all())')).toBe(false)
+  })
+
+  it('Windows 源码扩展名入账，Batch 支持 rem 与 :: 注释', () => {
+    expect(classifyPath('launch.cmd')).toMatchObject({ lang: 'bat' })
+    expect(classifyPath('launch.bat')).toMatchObject({ lang: 'bat' })
+    expect(classifyPath('resources/app.rc')).toMatchObject({ lang: 'rc' })
+    expect(scanLines('bat', '@rem comment\n:: comment\necho rem is text\n')).toEqual(['comment', 'comment', 'code'])
+  })
+
+  it('Python 多行字符串关闭行算代码，未闭合 WIP 仍保留全部行', () => {
+    expect(scanLines('py', "value = '''hello\nworld\n'''\n")).toEqual(['code', 'code', 'code'])
+    expect(scanLines('py', "value = '''hello\nworld\n")).toEqual(['code', 'code'])
+  })
+})
+
+describe('Git 文件集与总量对账（#600）', () => {
+  const temporaryRoots: string[] = []
+  afterEach(() => {
+    for (const root of temporaryRoots.splice(0)) {
+      if (!resolve(root).startsWith(resolve(tmpdir(), 'pylon-code-stats-'))) throw new Error('临时目录越界')
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  function fixture() {
+    const root = mkdtempSync(join(tmpdir(), 'pylon-code-stats-'))
+    temporaryRoots.push(root)
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    const files: Record<string, string | Buffer> = {
+      '.gitignore': 'ignored.ts\n', '.gitattributes': '* text=auto\n',
+      '源码 file.ts': '// comment\nconst x = 1\n \t',
+      'types.d.ts': 'declare const x: number;\n', 'launch.cmd': '@echo off\n',
+      'app.rc': '1 ICON "app.ico"\r\n', 'empty.rs': '',
+      'trailing.ts': 'const trailing = 1\n\n', 'blank.ts': '\n',
+      'binary.ts': Buffer.from([0, 1, 2, 3]), 'image.png': Buffer.from([0, 1, 2]),
+      'font.woff2': 'even a text-looking font is excluded\n',
+      'settings.json': '{"key":1}\n',
+    }
+    for (const [path, content] of Object.entries(files)) writeFileSync(join(root, path), content)
+    execFileSync('git', ['-c', 'core.autocrlf=false', 'add', '--', ...Object.keys(files)], { cwd: root })
+    writeFileSync(join(root, 'untracked.ts'), 'const untracked = 1\n')
+    writeFileSync(join(root, 'ignored.ts'), 'const ignored = 1\n')
+    return root
+  }
+
+  it('默认只读已跟踪文件，声明/Windows/空文件入账，字体与伪装源码的二进制排除', () => {
+    const root = fixture()
+    const inventory = collectSourceInventory(root)
+    expect(inventory.files).toBe(7)
+    expect(inventory.total).toBe(9)
+    expect(inventory.nonblank).toBe(6)
+    expect(inventory.skipped.font).toEqual(['font.woff2'])
+    expect(inventory.skipped.binary).toEqual(['binary.ts', 'image.png'])
+    expect(inventory.skipped.nonSource).toContain('settings.json')
+    const emptyTree = execFileSync('git', ['hash-object', '-t', 'tree', '--stdin'], { cwd: root, input: '', encoding: 'utf8' }).trim()
+    const gitCounts = execFileSync('git', ['diff', '--numstat', '-z', '--no-renames', emptyTree], { cwd: root, encoding: 'utf8' })
+    for (const source of inventory.sources) {
+      expect(gitCounts).toContain(`${source.total}\t0\t${source.path}\0`)
+    }
+  })
+
+  it('显式纳入未跟踪文件仍遵守 ignore；已跟踪文件使用当前修改后的内容', () => {
+    const root = fixture()
+    writeFileSync(join(root, 'types.d.ts'), 'declare const x: number;\n// work in progress\n')
+    const inventory = collectSourceInventory(root, true)
+    expect(inventory.files).toBe(8)
+    expect(inventory.total).toBe(11)
+    expect(inventory.sources.some(source => source.path === 'untracked.ts')).toBe(true)
+    expect(inventory.sources.some(source => source.path === 'ignored.ts')).toBe(false)
+  })
+
+  it('工作树删除的 tracked 文件单列缺失，不导致扫描崩溃', () => {
+    const root = fixture()
+    rmSync(join(root, 'types.d.ts'))
+    const inventory = collectSourceInventory(root)
+    expect(inventory.skipped.missing).toEqual(['types.d.ts'])
+    expect(inventory.files).toBe(6)
   })
 })
 

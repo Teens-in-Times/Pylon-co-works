@@ -2,14 +2,15 @@
  * code-stats.mts — Pylon 代码量多维统计（issue #231）。`bun scripts/code-stats.mts` 直跑，`--json` 出机器可读结果。
  *
  * 口径（明文写死，skill 文档同步）：
- * - 扫描基础：git 工作树（tracked + 未跟踪未忽略），**含他人在途 WIP**——这是「当前真实状态」。
- * - 计入语言：TS/TSX/JS/JSX、Rust、CSS、HTML、Python、Shell、C。JSON/TOML/YAML/Markdown 属配置与
- *   文档不计入（锁文件因此天然排除，另显式排除 .d.ts 声明文件）。
+ * - 默认文件集：Git 已跟踪的当前工作树；--include-untracked 才加入未跟踪未忽略文件。
+ * - 全仓源码总量包括声明文件、SDK、测试、工具与示例；物理行/非空行独立计数，可与 Git 对账。
+ * - 语言：TS/TSX/JS/JSX、Rust、CSS、HTML、Python、Shell、C、PowerShell、Batch、RC。
+ *   字体显式排除，二进制用 Git grep -I 排除；JSON/TOML/YAML/Markdown/锁文件不入源码。
  * - crate 区域清单：动态解析 `src-tauri/Cargo.toml` 的 `[workspace] members`（剔除主包 "."），
  *   解析失败才退回 CRATES_FALLBACK 静态快照——新拆 crate 不再需要改本脚本（#247 拆分 → #259 漂移修复）。
  * - 插件开发 SDK 不计入生产/测试：`src/sdk/`（SDK 源码，build-plugin-sdk.mjs 的输入）与
  *   `src-tauri/resources/`（发行包内嵌 SDK 与数据）。`examples/`、`src-tauri/vendor/`、构建产物同属排除面，
- *   但在「排除面」表中**单列存照，不隐瞒**。
+ *   但在「生产口径排除面」表中单列；声明文件也单列，不从全仓总量中消失。
  * - 测试拆分：
  *   · TS/JS 按文件级：`__tests__` / `__fixtures__` / `__mocks__` / `test` / `tests` 目录、
  *     `*.test.*` / `*.spec.*` 文件名、`src/test-utils/`；
@@ -17,23 +18,24 @@
  *     词法器处理 raw string（`r#"…"#`，可跨行）、嵌套块注释、char 与生命周期歧义；
  *   · Rust 测试专属文件：父模块中 `#[cfg(test)] mod x;` 声明的文件、`tests/` 目录（集成测试）、
  *     `src-tauri/pylon-fake-agent/**`（test-agent 专属假 agent，#382 起为独立 crate）。
- * - 行类型：代码行=非空非纯注释；注释行=整行均为注释；空行=纯空白；行内尾注计入代码行。
+ * - 行类型按轻量词法分析估算，不等同于编译器；代码行=非空非纯注释，行内尾注计入代码行。
  *   跨行字符串/块注释的内部行按内容归类（code/comment），内部纯空行仍为空行（#259 前内部行一律误计空行）。
  * - 工具链（scripts/、tools/、markdown gen+parity、根配置）与排除面一样不计入生产口径，单列存照。
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { basename, dirname as posixDirname } from 'node:path/posix'
 import { fileURLToPath } from 'node:url'
 
 // ── 语言与扩展名 ────────────────────────────────────────────────────────────
 
-type LangId = 'ts' | 'tsx' | 'js' | 'jsx' | 'rs' | 'css' | 'html' | 'py' | 'sh' | 'c' | 'ps1'
+type LangId = 'ts' | 'tsx' | 'js' | 'jsx' | 'rs' | 'css' | 'html' | 'py' | 'sh' | 'c' | 'ps1' | 'bat' | 'rc'
 
 const LANG_LABEL: Record<LangId, string> = {
   ts: 'TypeScript', tsx: 'TSX (Solid)', js: 'JavaScript', jsx: 'JSX',
   rs: 'Rust', css: 'CSS', html: 'HTML', py: 'Python', sh: 'Shell', c: 'C', ps1: 'PowerShell',
+  bat: 'Batch', rc: 'Windows RC',
 }
 
 const LANG_BY_EXT: Record<string, LangId> = {
@@ -41,13 +43,12 @@ const LANG_BY_EXT: Record<string, LangId> = {
   tsx: 'tsx', jsx: 'jsx',
   js: 'js', mjs: 'js', cjs: 'js',
   rs: 'rs', css: 'css', html: 'html', htm: 'html',
-  py: 'py', sh: 'sh', bash: 'sh', c: 'c', h: 'c', ps1: 'ps1',
+  py: 'py', sh: 'sh', bash: 'sh', c: 'c', h: 'c', ps1: 'ps1', bat: 'bat', cmd: 'bat', rc: 'rc',
 }
 
 const TS_FAMILY = new Set<LangId>(['ts', 'tsx', 'js', 'jsx'])
-const CODE_EXT = new Set(Object.keys(LANG_BY_EXT))
-void CODE_EXT
-const DECLARATION_FILE = /\.d\.[cm]?ts$/
+const DECLARATION_FILE = /\.d\.[cm]?ts$/i
+const FONT_FILE = /\.(?:woff2?|ttf|ttc|otf|eot)$/i
 // 锁文件按扩展名已被排除（.lock/.json/.yaml 不在计入集），此处显式列全作为口径存照。
 const LOCK_FILES = new Set([
   'bun.lock', 'bun.lockb', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock',
@@ -56,7 +57,7 @@ const LOCK_FILES = new Set([
 
 // ── 路径分类 ────────────────────────────────────────────────────────────────
 
-export type Bucket = 'production' | 'test' | 'tooling' | 'sdk' | 'examples' | 'vendored' | 'other'
+export type Bucket = 'production' | 'test' | 'tooling' | 'sdk' | 'examples' | 'vendored' | 'declarations' | 'other'
 
 export interface Classification {
   bucket: Bucket
@@ -88,6 +89,7 @@ export const AREA_LABEL: Record<string, string> = {
   sdk: '插件开发 SDK（src/sdk + resources）',
   examples: '示例插件 examples/',
   vendored: '第三方 vendor/',
+  declarations: '类型声明（不进入运行时代码拆分）',
   'root-misc': '根目录散置',
 }
 
@@ -102,10 +104,10 @@ export function classifyPath(
   rustParentTestMods?: ReadonlySet<string>,
   crates: readonly string[] = CRATES_FALLBACK,
 ): Classification | null {
-  const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1) : ''
+  const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1).toLowerCase() : ''
   const lang = LANG_BY_EXT[ext]
   if (!lang) return null
-  if (DECLARATION_FILE.test(path)) return null
+  if (DECLARATION_FILE.test(path)) return { bucket: 'declarations', area: 'declarations', lang }
   if (LOCK_FILES.has(basename(path))) return null
 
   // 排除面（优先于一切生产规则）
@@ -256,7 +258,8 @@ abstract class LineScanner {
       if (ch === ' ' || ch === '\t') { i++; continue }
       i = this.consume(src, i)
     }
-    if (this.lineHasCode || this.lineHasComment || this.lineHasNonWs) this.flushLine()
+    // 末尾纯空白且无换行仍是一个物理行；末尾换行不产生额外行。
+    if (text.length > 0 && !/[\r\n]$/.test(text)) this.flushLine()
     return this.lineClass
   }
 }
@@ -274,6 +277,7 @@ function skipQuoted(text: string, i: number): number {
 
 /** TS/JS 语义的单行字符串（不可跨行，`\<换行>` 续行除外）。step 用于把续行换行计入物理行。 */
 function skipEscapedString(text: string, i: number, step?: (j: number) => number): number {
+  const quote = text[i]
   for (let j = i + 1; j < text.length; j++) {
     const ch = text[j]
     if (ch === '\\') {
@@ -281,7 +285,7 @@ function skipEscapedString(text: string, i: number, step?: (j: number) => number
       if (step && (nx === '\n' || nx === '\r')) { j = step(j + 1) - 1; continue } // 续行：换行仍占一个物理行
       j++; continue
     }
-    if (ch === '"') return j + 1
+    if (ch === quote) return j + 1
     if (ch === '\n' || ch === '\r') return j // 未闭合容错
   }
   return text.length
@@ -305,14 +309,14 @@ export interface RustAnalysis {
 
 /**
  * 求 `cfg(...)` 在「生产构建」下的真值：false = 该 item 只在测试构建编译（test-only）。
- * test→false；feature→false（本仓 feature 均为 dev/test 性质）；目标平台与未知谓词→true（保守留在生产侧）。
+ * test/test-agent→false；其他谓词视为未知，只有所有可能的生产构建均不成立才排入测试侧。
  * `cfg_attr(...)` 不是门禁，恒留在生产侧。
  */
 export function attrExcludesFromProduction(attrInner: string): boolean {
-  return !evalCfgProduction(attrInner.trim())
+  return evalCfgProduction(attrInner.trim()) === false
 }
 
-function evalCfgProduction(expr: string): boolean {
+function evalCfgProduction(expr: string): boolean | undefined {
   const m = /^cfg\s*\(/.exec(expr)
   if (!m) return true // 非 cfg 门禁（含 cfg_attr）：不排除
   const inner = matchParens(expr, m[0].length - 1)
@@ -320,26 +324,29 @@ function evalCfgProduction(expr: string): boolean {
   return evalCfgListProduction(inner)
 }
 
-function evalCfgListProduction(expr: string): boolean {
+function evalCfgListProduction(expr: string): boolean | undefined {
   const s = expr.trim()
   const notM = /^not\s*\(/.exec(s)
   if (notM) {
     const inner = matchParens(s, notM[0].length - 1)
-    return inner === null ? true : !evalCfgListProduction(inner)
+    const value = inner === null ? undefined : evalCfgListProduction(inner)
+    return value === undefined ? undefined : !value
   }
   const combM = /^(?:any|all)\s*\(/.exec(s)
   if (combM) {
     const inner = matchParens(s, combM[0].length - 1)
     if (inner === null) return true
-    const parts = splitTopLevel(inner).map(p => evalCfgListProduction(p))
-    return s.startsWith('any') ? parts.some(Boolean) : parts.every(Boolean)
+    const parts = splitTopLevel(inner).filter(part => part.trim().length > 0).map(p => evalCfgListProduction(p))
+    if (s.startsWith('any')) return parts.includes(true) ? true : parts.includes(undefined) ? undefined : false
+    return parts.includes(false) ? false : parts.includes(undefined) ? undefined : true
   }
   const kv = /^([\w]+)\s*=\s*"([^"]*)"/.exec(s)
   if (kv) {
-    if (kv[1] === 'feature') return !kv[2].includes('test') // 本仓 feature 仅 test-agent（dev/test 性质，生产侧不成立）；其余 feature 保守留在生产侧
-    return true // target_os/target_family 等 → 生产侧成立
+    if (kv[1] === 'feature' && kv[2] === 'test-agent') return false
+    return undefined
   }
-  return s !== 'test'
+  if (s === 'test') return false
+  return undefined
 }
 
 function matchParens(expr: string, openIdx: number): string | null {
@@ -409,18 +416,19 @@ class RustScanner extends LineScanner {
     }
     // 内层属性 #![...] → 可整文件门控
     if (ch === '#' && text[i + 1] === '!' && text[i + 2] === '[') {
-      const attr = this.readAttr(text, i + 2)
       this.markCode()
+      const attr = this.readAttr(text, i + 2)
       if (attr && attrExcludesFromProduction(attr.inner)) this.fileExcludedByInnerAttr = true
       return attr ? attr.endAfter : i + 3
     }
     // 外层属性 #[...]
     if (ch === '#' && text[i + 1] === '[') {
-      const attr = this.readAttr(text, i + 1)
+      const attrStartLine = this.lineCount
       this.markCode()
+      const attr = this.readAttr(text, i + 1)
       if (attr) {
         if (attr.inner === 'test' || attr.inner === 'tokio::test' || attr.inner.startsWith('tokio::test(')) this.testAttrCount++
-        if (attrExcludesFromProduction(attr.inner)) this.pendingGateLine = this.lineCount
+        if (attrExcludesFromProduction(attr.inner)) this.pendingGateLine = attrStartLine
       }
       return attr ? attr.endAfter : i + 2
     }
@@ -536,6 +544,7 @@ class RustScanner extends LineScanner {
     while (j < text.length) {
       const ch = text[j]
       if (ch === '"') {
+        this.markCode()
         j++
         while (j < text.length) {
           if (text[j] === '\\') {
@@ -545,6 +554,7 @@ class RustScanner extends LineScanner {
           }
           const stepped = this.stepInner(text, j)
           if (stepped !== j) { j = stepped; continue }
+          if (!/\s/.test(text[j])) this.markCode()
           if (text[j] === '"') { j++; break }
           j++
         }
@@ -552,6 +562,7 @@ class RustScanner extends LineScanner {
       }
       const stepped = this.stepInner(text, j)
       if (stepped !== j) { j = stepped; continue }
+      if (!/\s/.test(ch)) this.markCode()
       if (ch === '[') depth++
       else if (ch === ']') {
         depth--
@@ -638,7 +649,7 @@ class TsScanner extends LineScanner {
       this.markComment()
       i += 2
       while (i < n) {
-        if (text[i] === '*' && text[i + 1] === '/') { this.noteSig('/'); return i + 2 }
+        if (text[i] === '*' && text[i + 1] === '/') { this.markComment(); this.noteSig('/'); return i + 2 }
         const stepped = this.stepInner(text, i)
         if (stepped !== i) { i = stepped; continue } // 换行已消费，禁止再 i++
         this.markComment()
@@ -723,7 +734,7 @@ class CssScanner extends LineScanner {
       this.markComment()
       i += 2
       while (i < text.length) {
-        if (text[i] === '*' && text[i + 1] === '/') return i + 2
+        if (text[i] === '*' && text[i + 1] === '/') { this.markComment(); return i + 2 }
         const stepped = this.stepInner(text, i)
         if (stepped !== i) { i = stepped; continue } // 换行已消费，禁止再 i++
         this.markComment()
@@ -743,7 +754,7 @@ class HtmlScanner extends LineScanner {
       this.markComment()
       i += 4
       while (i < text.length) {
-        if (text.slice(i, i + 3) === '-->') return i + 3
+        if (text.slice(i, i + 3) === '-->') { this.markComment(); return i + 3 }
         const stepped = this.stepInner(text, i)
         if (stepped !== i) { i = stepped; continue } // 换行已消费，禁止再 i++
         this.markComment()
@@ -787,12 +798,14 @@ class PythonScanner extends LineScanner {
       if (triple === '"""' || triple === "'''") {
         this.markCode()
         const close = text.indexOf(triple, i + 3)
-        if (close < 0) return text.length
-        for (let j = i + 3; j < close; j++) {
+        const end = close < 0 ? text.length : close
+        for (let j = i + 3; j < end; j++) {
           const stepped = this.stepInner(text, j)
           if (stepped !== j) { j = stepped - 1; continue } // 抵消 for 的 j++：换行已消费
           this.markCode() // 三引号内部行：有内容即 code
         }
+        if (close < 0) return text.length
+        this.markCode()
         return close + 3
       }
       this.markCode()
@@ -815,7 +828,7 @@ class CScanner extends LineScanner {
       this.markComment()
       i += 2
       while (i < text.length) {
-        if (text[i] === '*' && text[i + 1] === '/') return i + 2
+        if (text[i] === '*' && text[i + 1] === '/') { this.markComment(); return i + 2 }
         const stepped = this.stepInner(text, i)
         if (stepped !== i) { i = stepped; continue } // 换行已消费，禁止再 i++
         this.markComment()
@@ -829,7 +842,20 @@ class CScanner extends LineScanner {
   }
 }
 
-function scanLines(lang: LangId, src: string): LineClass[] {
+class BatchScanner extends LineScanner {
+  protected consume(text: string, i: number): number {
+    const lineStart = text.lastIndexOf('\n', i - 1) + 1
+    if (/^\s*$/.test(text.slice(lineStart, i)) && /^(?:@?rem(?:\s|$)|::)/i.test(text.slice(i))) {
+      this.markComment()
+      while (i < text.length && text[i] !== '\n' && text[i] !== '\r') i++
+      return i
+    }
+    this.markCode()
+    return i + 1
+  }
+}
+
+export function scanLines(lang: LangId, src: string): LineClass[] {
   switch (lang) {
     case 'rs': return new RustScanner().run(src)
     case 'ts': case 'tsx': case 'js': case 'jsx': return new TsScanner().run(src)
@@ -837,7 +863,8 @@ function scanLines(lang: LangId, src: string): LineClass[] {
     case 'html': return new HtmlScanner().run(src)
     case 'py': return new PythonScanner().run(src)
     case 'sh': case 'ps1': return new HashCommentScanner().run(src)
-    case 'c': return new CScanner().run(src)
+    case 'c': case 'rc': return new CScanner().run(src)
+    case 'bat': return new BatchScanner().run(src)
   }
 }
 
@@ -854,29 +881,82 @@ interface FileRecord {
 }
 
 function git(root: string, args: string[]): string {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
 }
 
-function collect(root: string, crates: readonly string[]): FileRecord[] {
-  const paths = git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
-    .split('\0')
-    .filter(p => p.length > 0)
-  const pathSet = new Set(paths)
+export interface SourceInventory {
+  files: number
+  total: number
+  nonblank: number
+  byLang: Partial<Record<LangId, { files: number; total: number; nonblank: number }>>
+  skipped: Record<'font' | 'binary' | 'nonSource' | 'missing', string[]>
+  sources: { path: string; lang: LangId; text: string; total: number; nonblank: number }[]
+}
+
+/** Git 的物理行口径：LF 分行（兼容 CRLF），无末尾 LF 的最后一行也计入。 */
+export function countPhysicalLines(text: string): { total: number; nonblank: number } {
+  if (text.length === 0) return { total: 0, nonblank: 0 }
+  const lines = text.split('\n')
+  if (text.endsWith('\n')) lines.pop()
+  return { total: lines.length, nonblank: lines.filter(line => /\S/.test(line)).length }
+}
+
+/** 全仓总量不经过生产/测试排除规则；Git -I 负责二进制判定，空文件仍计文件数。 */
+export function collectSourceInventory(root: string, includeUntracked = false): SourceInventory {
+  const paths = [...new Set(git(root, ['ls-files', '-z', '--cached',
+    ...(includeUntracked ? ['--others', '--exclude-standard'] : [])]).split('\0').filter(Boolean))]
+  let textPaths: string
+  try {
+    textPaths = git(root, ['grep', '--no-textconv', '-I', '-l', '-z',
+      ...(includeUntracked ? ['--untracked', '--exclude-standard'] : []), '-e', '^', '--', '.'])
+  } catch (error) {
+    if (typeof error !== 'object' || error === null || !('status' in error) || error.status !== 1) throw error
+    textPaths = '' // Git grep 的 1 表示无匹配（空仓或只有空文件/二进制）。
+  }
+  const textPathSet = new Set(textPaths.split('\0'))
+  const inventory: SourceInventory = {
+    files: 0, total: 0, nonblank: 0, byLang: {},
+    skipped: { font: [], binary: [], nonSource: [], missing: [] }, sources: [],
+  }
+  for (const path of paths) {
+    if (FONT_FILE.test(path)) { inventory.skipped.font.push(path); continue }
+    const absolutePath = resolve(root, path)
+    if (!existsSync(absolutePath)) { inventory.skipped.missing.push(path); continue }
+    // 先按 Git 结果判断非空文件，避免把未识别扩展名的图片藏进 nonSource。
+    const content = readFileSync(absolutePath)
+    // Git grep 会跳过只有一个末尾空行的文本；纯换行内容仍是文本。
+    const onlyNewlines = content.every(byte => byte === 10 || byte === 13)
+    if (content.length > 0 && !textPathSet.has(path) && !onlyNewlines) { inventory.skipped.binary.push(path); continue }
+    const lang = LANG_BY_EXT[path.slice(path.lastIndexOf('.') + 1).toLowerCase()]
+    if (!lang) { inventory.skipped.nonSource.push(path); continue }
+    const text = content.toString('utf8')
+    const counts = countPhysicalLines(text)
+    inventory.files++
+    inventory.total += counts.total
+    inventory.nonblank += counts.nonblank
+    const totals = inventory.byLang[lang] ?? { files: 0, total: 0, nonblank: 0 }
+    totals.files++
+    totals.total += counts.total
+    totals.nonblank += counts.nonblank
+    inventory.byLang[lang] = totals
+    inventory.sources.push({ path, lang, text, ...counts })
+  }
+  return inventory
+}
+
+function collect(inventory: SourceInventory, crates: readonly string[]): FileRecord[] {
+  const sourceByPath = new Map(inventory.sources.map(source => [source.path, source]))
   const rustParentCache = new Map<string, Set<string>>()
   const records: FileRecord[] = []
 
-  for (const path of paths) {
-    const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1) : ''
-    const lang = LANG_BY_EXT[ext]
-    if (!lang) continue
-
+  for (const { path, lang, text: src, total } of inventory.sources) {
     let parentMods: Set<string> | undefined
     if (lang === 'rs' && !/(?:^|\/)tests\//.test(path)) {
-      const parent = rustParentCandidates(path).find(c => pathSet.has(c))
+      const parent = rustParentCandidates(path).find(c => sourceByPath.has(c))
       if (parent) {
         let mods = rustParentCache.get(parent)
         if (!mods) {
-          mods = analyzeRust(readFileSync(resolve(root, parent), 'utf8')).testModDecls
+          mods = analyzeRust(sourceByPath.get(parent)!.text).testModDecls
           rustParentCache.set(parent, mods)
         }
         parentMods = mods
@@ -884,9 +964,8 @@ function collect(root: string, crates: readonly string[]): FileRecord[] {
     }
 
     const cls = classifyPath(path, parentMods, crates)
-    if (!cls) continue
+    if (!cls) throw new Error(`源码未分类：${path}`)
 
-    const src = readFileSync(resolve(root, path), 'utf8')
     if (lang === 'rs') {
       const analysis = analyzeRust(src)
       const isTestFile = cls.bucket === 'test'
@@ -907,6 +986,10 @@ function collect(root: string, crates: readonly string[]): FileRecord[] {
         // 粗计数：it(/test( 调用次数，仅测试文件的参考维度
         tsTestCases: isTestFile ? (src.match(/\b(?:it|test)\s*\(/g) ?? []).length : 0,
       })
+    }
+    const record = records[records.length - 1]
+    if (record.prod.total + record.test.total !== total) {
+      throw new Error(`物理行数不一致：${path}（Git 口径 ${total}，词法器 ${record.prod.total + record.test.total}）`)
     }
   }
   return records
@@ -967,9 +1050,15 @@ function loadWorkspaceCrates(root: string): string[] {
 // ── 主流程 ──────────────────────────────────────────────────────────────────
 
 async function main() {
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const rootIndex = process.argv.indexOf('--root')
+  if (rootIndex >= 0 && (!process.argv[rootIndex + 1] || process.argv[rootIndex + 1].startsWith('--'))) {
+    throw new Error('--root 需要仓库路径')
+  }
+  const root = rootIndex >= 0 ? resolve(process.argv[rootIndex + 1]) : resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const includeUntracked = process.argv.includes('--include-untracked')
   const crates = loadWorkspaceCrates(root)
-  const records = collect(root, crates)
+  const inventory = collectSourceInventory(root, includeUntracked)
+  const records = collect(inventory, crates)
   const head = git(root, ['rev-parse', '--short', 'HEAD']).trim()
   const branch = git(root, ['rev-parse', '--abbrev-ref', 'HEAD']).trim()
 
@@ -983,14 +1072,14 @@ async function main() {
   const topFiles: FileRecord[] = []
   let rustInlineTestFiles = 0
   let rustInlineRegions = 0
-  let rustInlineStat = emptyStat()
+  const rustInlineStat = emptyStat()
   let rustUnitTestFiles = 0
-  let rustUnitTestStat = emptyStat()
+  const rustUnitTestStat = emptyStat()
   let rustIntegFiles = 0
-  let rustIntegStat = emptyStat()
+  const rustIntegStat = emptyStat()
   let rustTestAttrCount = 0
   let tsTestFiles = 0
-  let tsTestStat = emptyStat()
+  const tsTestStat = emptyStat()
   let tsTestCaseCount = 0
 
   const bump = (map: Map<string, { files: number; prod: LineStat; test: LineStat }>, key: string, rec: FileRecord) => {
@@ -1045,10 +1134,18 @@ async function main() {
   // ── 输出 ──
   const out: string[] = []
   out.push(`Pylon 代码量统计 · ${localDate()} · ${branch}@${head}`)
-  out.push('口径：生产代码 vs 测试代码；排除插件开发 SDK（src/sdk、resources）、examples、vendor、锁文件与 .d.ts；')
-  out.push(`crate 区域随 Cargo workspace members（当前 ${crates.length} 个）；扫描基础：git 工作树（tracked + 未跟踪未忽略，含他人在途 WIP）。`)
-
-  const langOrder: LangId[] = ['ts', 'tsx', 'js', 'jsx', 'rs', 'css', 'html', 'py', 'sh', 'c', 'ps1']
+  const scanBasis = includeUntracked ? 'Git 当前工作树：已跟踪 + 未跟踪未忽略' : 'Git 当前工作树：仅已跟踪'
+  out.push(`扫描基础：${scanBasis}，含已跟踪文件的未提交修改。`)
+  out.push('全仓源码包含测试、声明、SDK、工具、示例；排除字体、Git 判定的二进制、文档/配置/锁文件。')
+  out.push('物理行包含注释与空行；非空行仍含注释。下方代码/注释分类及生产/测试拆分为词法估算。')
+  const langOrder: LangId[] = ['ts', 'tsx', 'js', 'jsx', 'rs', 'css', 'html', 'py', 'sh', 'c', 'ps1', 'bat', 'rc']
+  out.push(...section(`全仓源码 · ${inventory.files} 文件 · ${formatNumber(inventory.total)} 物理行 · ${formatNumber(inventory.nonblank)} 非空行`))
+  out.push(...table(['语言', '文件', '物理行', '非空行'], langOrder.filter(lang => inventory.byLang[lang]).map(lang => {
+    const totals = inventory.byLang[lang]!
+    return [LANG_LABEL[lang], String(totals.files), formatNumber(totals.total), formatNumber(totals.nonblank)]
+  }), ['l', 'r', 'r', 'r']))
+  out.push(`排除：字体 ${inventory.skipped.font.length}、二进制 ${inventory.skipped.binary.length}、非源码文本 ${inventory.skipped.nonSource.length}、工作树缺失 ${inventory.skipped.missing.length} 个文件（路径见 --json repository.skipped）。`)
+  out.push(`生产子集另排除声明、SDK、examples、vendor、工具链；crate 随 Cargo workspace（${crates.length} 个）。`)
   const langRows = langOrder.filter(l => prodByLang.has(l)).map(l => {
     const { stat, files } = prodByLang.get(l)!
     return [LANG_LABEL[l], String(files), formatNumber(stat.code), formatNumber(stat.comment), formatNumber(stat.blank), formatNumber(stat.total)]
@@ -1074,7 +1171,7 @@ async function main() {
     ['l', 'r', 'r', 'r', 'r', 'r'],
   ))
   out.push(`测试/生产 代码行比：${(test.code / Math.max(1, production.code)).toFixed(2)} : 1`)
-  out.push(`测试用例计数：Rust #[test]/#[tokio::test] ${formatNumber(rustTestAttrCount)} 个 · TS it()/test() 调用 ${formatNumber(tsTestCaseCount)} 个`)
+  out.push(`测试标记粗计数（非实际执行用例数）：Rust #[test]/#[tokio::test] ${formatNumber(rustTestAttrCount)} 个 · TS it()/test() 文本匹配 ${formatNumber(tsTestCaseCount)} 个`)
 
   out.push(...section('生产区域分布（代码行）'))
   out.push('（文件列含该区域的测试文件；合计行 = 生产 + 测试物理行）')
@@ -1083,7 +1180,7 @@ async function main() {
     [...areas.entries()]
       .filter(([id]) => id === 'frontend' || id === 'rust-app' || id.startsWith('crate:'))
       .sort((a, b) => b[1].prod.total - a[1].prod.total)
-      .map(([id, r]) => [areaLabel(id), String(r.files), formatNumber(r.prod.code), formatNumber(r.prod.total), pct(r.prod.total, production.total)]),
+      .map(([id, r]) => [areaLabel(id), String(r.files), formatNumber(r.prod.code), formatNumber(r.prod.total + r.test.total), pct(r.prod.code, production.code)]),
     ['l', 'r', 'r', 'r', 'r'],
   ))
 
@@ -1119,8 +1216,13 @@ async function main() {
   }
 
   if (process.argv.includes('--json')) {
+    const { sources: _sources, ...repository } = inventory
+    void _sources
     const json = {
-      meta: { date: new Date().toISOString(), branch, head, scanBasis: 'git working tree (tracked + untracked non-ignored)' },
+      meta: { date: new Date().toISOString(), branch, head, scanBasis, root, includeUntracked,
+        lineCounting: 'LF physical lines; includes final unterminated line; nonblank includes comments',
+        breakdown: 'heuristic lexical classification; test marker counts are not executed test counts' },
+      repository,
       production: { ...production, files: prodFileCount, byLang: Object.fromEntries([...prodByLang].map(([l, v]) => [l, v.stat])) },
       test: {
         ...test,
