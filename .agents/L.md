@@ -5,3 +5,4 @@
 
 - [Codex] #593 TS6 迁移：隔离工作树 `C:/Users/AlchemistCxC/.codex/worktrees/typescript6-migration/prism-desktop`，分支 `codex/typescript6-migration`；范围依赖/tsconfig、必要类型修正、构建脚本、说明书与独立记录；避让共享树 #515 文档。
 - [Codex] #600 code-stats 准确性修复：scripts/code-stats*.mts、code-stats SKILL.md 与独立记录；隔离树 code-stats-accuracy，避让共享树 #515 文档。
+- [DeepSeek] #602 Rust CI 门禁漏报（退出码被后续 build 覆盖）——一并修被其掩盖的 #601/#603/#617。文件域：`.github/workflows/ci.yml`、`src-tauri/pylon-foundations/src/{workspace,child_command}.rs`、`src-tauri/src/{runtime,test_utils}.rs`；本 spec 与对应 record。避让 TS 侧 #593/#600。

@@ -247,7 +247,12 @@ impl AgentRuntime {
     /// #549：安装新客户端（替换赋值是本单元唯一的写窗口）。
     /// 生产替换不经本方法——`lib.rs::replace_agent_client` 需要「检查→退役→
     /// 暴露」整窗写锁（含旧进程 kill），语义比单点赋值宽；故本助手仅测试域使用。
-    #[cfg(test)]
+    ///
+    /// #601：门控必须与 `lib.rs` 的 `test_harness`/`test_utils` 一致（`any(test,
+    /// feature = "test-agent")`）。集成测试编译 lib 时 `cfg(test)` 不成立而 feature
+    /// 成立，只写 `cfg(test)` 会让 `test_utils::test_state_with_acp` 撞 E0599。
+    /// 默认生产构建（无 feature）仍不暴露本入口。
+    #[cfg(any(test, feature = "test-agent"))]
     pub fn install_acp(&self, client: AcpClient) {
         *self
             .acp
