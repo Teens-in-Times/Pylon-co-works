@@ -311,8 +311,14 @@ jobs:
       # crate 的 bin（#382 迁出主 crate），先构建再跑测试——测试进程经 current_exe
       # 祖先目录定位该 bin。
       # #184：本 job 拆自原单 rust job；shadow parity / clippy 并行见独立 job。
+      # #602：必须显式声明 shell。Windows runner 的默认 shell 是 pwsh，多行脚本
+      # 不逐条中断，step 退出码只取最后一条命令——`cargo build` 一成功，前面任何
+      # 失败都被吞掉（实测：2 条单测失败 + 1 条集成测试编译失败仍报 success）。
+      # 本文件其余多命令 step 均已 `set -euo pipefail`，此处对齐。
       - name: Rust 测试与构建
+        shell: bash
         run: |
+          set -euo pipefail
           cd src-tauri
           cargo build -p pylon-fake-agent --features test-agent
           cargo test --workspace --lib --features test-agent

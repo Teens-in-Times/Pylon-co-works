@@ -10,7 +10,6 @@
 //! `--trace-file/--trace-mode all` + `--barrier-ready/--barrier-release`。
 
 use prism_desktop_lib::test_harness::{HarnessConfig, SetModelApiView, TestHarness};
-use std::time::Duration;
 
 /// trace 中 (method, params) 序列（wire 断言用）。
 fn read_trace_methods(trace: &std::path::Path) -> Vec<(String, serde_json::Value)> {

@@ -2,7 +2,9 @@
 //!
 //! 消除 acp.rs 测试（14 块 AgentDef 字面量）与 lib.rs 集成测试（auto_reconnect /
 //! b11 inject / gateway 平台测试）之间的重复构造；AppState 字面量（10 处）与
-//! build_state_with 包装（4 份）收敛到 TestStateBuilder。仅 cfg(test) 编译。
+//! build_state_with 包装（4 份）收敛到 TestStateBuilder。门控与 `lib.rs` 的模块
+//! 声明一致：`cfg(any(test, feature = "test-agent"))`——集成测试编译 lib 时 `cfg(test)`
+//! 不成立，靠 feature 进来（#601）。
 //!
 //! #106 P1：fake agent 一律为 `pylon-fake-agent` member crate 的 bin（feature
 //! `test-agent`；#382 起独立成 crate，见其 manifest），内嵌 Python 脚本与解释器
