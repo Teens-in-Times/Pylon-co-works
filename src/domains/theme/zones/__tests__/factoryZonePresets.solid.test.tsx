@@ -34,6 +34,7 @@ import { mountSettingsSheet } from '../../../../test/settingsSheetHarness.solid'
 import { resetStores } from '../../../../test/resetStores.ts'
 import {
   FACTORY_ZONE_PRESET_ENTRIES,
+  FACTORY_PROFILE_ZONE_PRESET_ENTRIES,
   ZONE_PRESET_POOL,
   assembleFactoryZonePresetPool,
   effectivePresetTheme,
@@ -160,9 +161,11 @@ describe('B3 出厂条目不进 zonePresetEntries（结构性闸门）', () => {
     const factoryIds = new Set(FACTORY_ZONE_PRESET_ENTRIES.map(entry => entry.id))
     expect(factoryIds.size, '出厂条目 id 去重后 = 10 套预设名').toBe(10)
 
+    const profileFactoryIds = new Set(FACTORY_PROFILE_ZONE_PRESET_ENTRIES.map(entry => entry.id))
     const assertNoFactoryIds = (stage: string) => {
       for (const entry of useCustomPresetStore.getState().zonePresetEntries) {
         expect(factoryIds.has(entry.id), `${stage}：出厂条目 ${entry.id} 混进了用户条目数组`).toBe(false)
+        expect(profileFactoryIds.has(entry.id), `${stage}：档案出厂条目 ${entry.id} 混进了用户条目数组`).toBe(false)
       }
     }
 

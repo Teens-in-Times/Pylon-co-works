@@ -248,7 +248,7 @@ export interface DefaultPreset extends GlobalPreset {
   theme: Partial<ThemeSettings>
 }
 
-export const DEFAULT_PRESETS: Readonly<Record<PresetInterfaceMode, DefaultPreset>> = Object.freeze({
+export const DEFAULT_PRESETS: Readonly<Record<'gui' | 'terminal', DefaultPreset> & Partial<Record<Exclude<PresetInterfaceMode, 'gui' | 'terminal'>, DefaultPreset>>> = Object.freeze({
   gui: Object.freeze({
     name: 'gui-default',
     label: 'GUI-默认预设',

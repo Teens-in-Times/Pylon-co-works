@@ -3,9 +3,11 @@
 export { pickZoneFields } from './pickZoneFields.ts'
 export { effectivePresetTheme, type ZoneRefBackedPreset } from './effectivePresetTheme.ts'
 export { FACTORY_ZONE_PRESET_ENTRIES } from './factory/index.ts'
+export { FACTORY_PROFILE_ZONE_PRESET_ENTRIES } from './factory/profileEntries.ts'
 export {
   ZONE_PRESET_POOL,
   assembleFactoryZonePresetPool,
+  chatPresetsForAxis,
   cleanupZonePresetEntries,
   createZonePresetEntryId,
   isCustomZonePresetEntry,
@@ -15,4 +17,4 @@ export {
   resolveZonePresetEntryTheme,
   zonePresetsFor,
 } from './zonePresetPool.ts'
-export type { ZonePresetEntry, ZonePresetOrigin, ZonePresetPool, ZonePresetRemovalPatch, ZonePresetRemovalState } from './zonePresetPool.ts'
+export type { ChatPresetAxis, ZonePresetSource, ZonePresetEntry, ZonePresetOrigin, ZonePresetPool, ZonePresetRemovalPatch, ZonePresetRemovalState } from './zonePresetPool.ts'

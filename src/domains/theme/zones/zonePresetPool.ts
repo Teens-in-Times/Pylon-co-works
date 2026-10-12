@@ -37,28 +37,37 @@ import { FACTORY_ZONE_PRESET_ENTRIES } from './factory/index.ts'
  */
 export type ZonePresetOrigin = 'factory' | 'custom'
 
-export interface ZonePresetEntry {
+export type ChatPresetAxis = 'style' | 'color'
+export type ZonePresetSource =
+  | { presetName: string; profileId?: never }
+  | { profileId: string; presetName?: never }
+
+interface ZonePresetEntryBase {
   id: string
   mode: PresetInterfaceMode
-  zone: ZoneName
   /** 出厂条目 = 来源预设 label；自定义条目 = 用户命名。 */
   label: string
   /** 刀2（#223）：条目来源。缺省 = 自定义（历史持久化条目与调用方直造的条目都没有该字段）。 */
   origin?: ZonePresetOrigin
   /** 该区域的字段值：出厂条目 = 落盘数据；自定义条目 = 用户存下的快照。 */
   values: Partial<ThemeSettings>
-  /** 仅出厂条目：这批值切自哪套预设（= 引用表里的 id，可追溯）。 */
-  source?: { presetName: string }
+  /** 仅出厂条目：来源预设或呈现档案，不混用两种身份。 */
+  source?: ZonePresetSource
   /**
    * 派生标记（不落盘）：Q8 清理后该条目**已无有效字段键** ⇒ 行内占位、不可应用。
    */
   stale?: boolean
 }
 
-/** 池 = 模式桶 → 区域 → 条目。 */
+export type ZonePresetEntry = ZonePresetEntryBase & (
+  | { zone: 'chat'; axis?: ChatPresetAxis }
+  | { zone: Exclude<ZoneName, 'chat'>; axis?: never }
+)
+
+/** 池 = 模式桶 → 区域 → 条目；仅 chat 条目可声明样式/配色轴。 */
 export type ZonePresetPool = Record<PresetInterfaceMode, Record<PresetZone, ZonePresetEntry[]>>
 
-const PRESET_INTERFACE_MODES = ['gui', 'terminal'] as const satisfies readonly PresetInterfaceMode[]
+const PRESET_INTERFACE_MODES = ['gui', 'terminal', 'tactical'] as const satisfies readonly PresetInterfaceMode[]
 
 // ── 出厂数据 → 池（刀2 的生产读路径） ───────────────────────────────
 
@@ -77,6 +86,9 @@ export function assembleFactoryZonePresetPool(entries: readonly ZonePresetEntry[
     for (const zone of PRESET_ZONES) {
       const cell = entries.filter(entry => entry.mode === mode && entry.zone === zone)
       for (const entry of cell) {
+        if (entry.axis !== undefined && (zone !== 'chat' || !['style', 'color'].includes(entry.axis))) {
+          throw new Error(`出厂区域预设 ${mode}/${zone}/${entry.id}：非法 chat 轴 ${entry.axis}`)
+        }
         assertZoneSliceOwnership(zone, entry.values, `出厂区域预设 ${mode}/${zone}/${entry.id}`)
       }
       zones[zone] = Object.freeze(cell.map(entry => Object.freeze(entry))) as ZonePresetEntry[]
@@ -84,6 +96,15 @@ export function assembleFactoryZonePresetPool(entries: readonly ZonePresetEntry[
     pool[mode] = Object.freeze(zones)
   }
   return Object.freeze(pool)
+}
+
+/** 显式查询传入池的 chat 轴；未标轴的旧条目按配色解释，不改写条目。 */
+export function chatPresetsForAxis(
+  pool: ZonePresetPool,
+  mode: PresetInterfaceMode,
+  axis: ChatPresetAxis,
+): ZonePresetEntry[] {
+  return pool[mode].chat.filter(entry => (entry.axis ?? 'color') === axis)
 }
 
 /** 构建时装配的出厂池（刀2：来源 = 落盘数据表；内容只随数据文件变化）。 */

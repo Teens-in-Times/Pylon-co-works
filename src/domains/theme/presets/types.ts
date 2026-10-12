@@ -49,4 +49,5 @@ export interface GlobalPreset {
   zoneRefs?: Readonly<Record<PresetZone, string>>
 }
 
-export type PresetInterfaceMode = 'gui' | 'terminal'
+/** tactical 桶先用于独立数据装配，生产界面模式映射另行接入。 */
+export type PresetInterfaceMode = 'gui' | 'terminal' | 'tactical'

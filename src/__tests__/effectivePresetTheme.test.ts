@@ -16,6 +16,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PRESETS, GLOBAL_PRESETS } from '../domains/theme/presets/index.ts'
+import type { PresetInterfaceMode } from '../domains/theme/presets/index.ts'
 import { PRESET_ZONES } from '../domains/theme/presetReducer.ts'
 import { THEME_SETTING_KEYS, ZONE_FIELDS, THEME_FIELD_DEFS, ZONES } from '../domains/theme/themeFieldDefs.ts'
 import { effectivePresetTheme, pickZoneFields, ZONE_PRESET_POOL } from '../domains/theme/zones/index.ts'
@@ -103,7 +104,7 @@ const BASELINE_FIELD_COUNTS: Record<string, number> = {
 }
 
 /** 该预设的有效值 —— 用测试侧独立算法（直接并池里的 5 个切面），不复用被测函数。 */
-function unionOfZoneSlices(presetName: string, mode: 'gui' | 'terminal'): Record<string, unknown> {
+function unionOfZoneSlices(presetName: string, mode: PresetInterfaceMode): Record<string, unknown> {
   const merged: Record<string, unknown> = {}
   for (const zone of PRESET_ZONES) {
     const entry = ZONE_PRESET_POOL[mode][zone].find(candidate => candidate.id === presetName)
