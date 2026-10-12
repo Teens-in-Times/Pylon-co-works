@@ -11,7 +11,7 @@
  * 事件目标可注入 ⇒ 单测可喂合成事件（见 `__tests__/createCcDragController.test.ts`）。
  * 生命周期：构造即挂事件监听，`dispose()` 统一摘除（组件侧 onCleanup 调用）。
  */
-import { CC_FLOATING_WIDGET_IDS, CC_REGISTERED_SLOT_IDS, CC_WIDGET_IDS } from '../../../domains/cc/widgetDefinitions.ts'
+import { CC_FLOATING_WIDGET_IDS } from '../../../domains/cc/widgetDefinitions.ts'
 import type { CcLayoutWidgetId, CcWidgetPlacement } from '../../../domains/cc/ccLayoutState.ts'
 import { parseTranslateOffset, resolveAllowedOffset, shouldBypassCollisionConstraint, type CcOffsetPair, type CcRectLike } from './ccPlacementCollision.ts'
 
@@ -20,17 +20,6 @@ import { parseTranslateOffset, resolveAllowedOffset, shouldBypassCollisionConstr
  * 3px 的依据：见 `.agents/records/266-cc-visibility-drag-threshold.md`（翻译定值；实机手感复核）。
  */
 export const CC_DRAG_THRESHOLD_PX = 3
-
-/**
- * 编辑态可编辑控件 = 内置轨 ∪ 注册轨中**占槽位**的控件（刀4 的「内置轨 ∪ 注册轨」）——
- * 两者都由定义表（`domains/cc/widgetDefinitions.ts`）派生。
- * 「基础」`cc-surface` 不参与排布、无 order/offset/显隐，故不进工具栏。
- * 它同时是拖拽守卫的**障碍集全集**（悬浮件由算法侧豁免）。
- */
-export const CC_EDIT_TOOLBAR_IDS: readonly CcLayoutWidgetId[] = [
-  ...CC_WIDGET_IDS,
-  ...CC_REGISTERED_SLOT_IDS,
-]
 
 /** 直线距离是否越过拖拽阈值（≥ 阈值即进拖拽，不是等 pointerup 才判）。 */
 export function exceedsDragThreshold(
@@ -47,6 +36,14 @@ export function exceedsDragThreshold(
 export interface CcDragPorts {
   /** 编辑态是否开启（关闭时拖拽/键盘全部短路）。 */
   isEditMode(): boolean
+  /**
+   * ★ #266 CC-13 刀3：**可拖件 id 序**（内置表序在前、插件登记序在后）——
+   * 拖拽守卫的**障碍集全集**由它来（悬浮件由算法侧豁免）。
+   * ★ 它取代了原来的编译期常量 `CC_EDIT_TOOLBAR_IDS`（该常量已退场）：插件件不在编译期名单里，
+   *   任何"再平行维护一份名单"的写法都会把它们漏掉。由组件侧传
+   *   `domains/cc/ccWidgetRoster.resolveCcDraggableWidgetIds`（活名单派生）。
+   */
+  draggableIds(): readonly string[]
   /** 布局快照里的当前 placement（拖拽起点与守卫的回退值）。 */
   placementOf(id: CcLayoutWidgetId): CcWidgetPlacement
   /** 背景板当前高度（高度拖把的起点）。 */
@@ -123,8 +120,9 @@ export function createCcDragController(
       offsetY: partial.offsetY ?? current.offsetY,
     }
     // 障碍集 = 其他可拖元件里**不在悬浮名单**的（悬浮件既不当障碍也不受约束）。
+    // ★ 名单来自组件侧（活名单派生，含插件件，见 `CcDragPorts.draggableIds`）。
     // ★ 每次调用重新测量：拖动中其它元件可能换落脚处/被声明脱离（rect 因此变）。
-    const obstacles = CC_EDIT_TOOLBAR_IDS
+    const obstacles = ports.draggableIds()
       .filter(other => other !== id && !CC_FLOATING_WIDGET_IDS.includes(other))
       .map(other => measureWidgetBox(other)?.rect)
       .filter((rect): rect is CcRectLike => rect !== undefined)

@@ -169,6 +169,31 @@ describe('agentWorkbenchSession batch 展开（#81 L1 → #226）', () => {
 })
 
 describe('agentWorkbenchSession turn.unit 展开（#81 L2）', () => {
+  it.each(['goal_snapshot', 'turn_committed', 'state_snapshot'])('#563：turn.unit 的静默 %s 段与逐行 journal 同判', async eventType => {
+    const perRows = chunkRows([
+      rawUser('new prompt'), rawText('answer'),
+      { update: { sessionUpdate: 'peri/agent_event', eventJson: JSON.stringify({ type: eventType, value: {} }) } },
+      rawDone(),
+    ])
+    const unitRow: CanonicalConversationEvent = {
+      ...perRows[0], sequence: 5, eventId: `${ownerKey}#5`, eventType: 'turn.unit',
+      typedPayload: {
+        aggregateKind: 'turn-rollup', seqStart: 1, seqEnd: 4, foldedCount: 4,
+        foldScheme: 'adjacent-delta-fold-v1', contentSha256: 'deadbeef',
+        terminal: { eventType: 'turn.completed', occurredAt: perRows[3].occurredAt },
+        segments: perRows.map(event => ({ kind: 'event', event })),
+      },
+      rawPayload: { kind: 'turn-unit' },
+    }
+    const fromRows = await bindWith(perRows)
+    const fromUnit = await bindWith([unitRow])
+    for (const snapshot of [fromRows, fromUnit]) {
+      expect(snapshot).toMatchObject({ status: 'ready', error: null })
+      expect(snapshot.document?.diagnostics).toEqual([])
+      expect(snapshot.document?.messages.map(item => item.content)).toEqual(['new prompt', 'answer'])
+    }
+  })
+
   it('compact 读（单元 + 未覆盖行）与逐行存储投影出相同消息内容与 appliedRanges', async () => {
     // 逐行存储：user(1) + text.delta(2,3) + turn.completed(4)
     const perRows = chunkRows([rawUser('问题'), rawText('答'), rawText('案'), rawDone()])

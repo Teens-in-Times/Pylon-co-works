@@ -1,7 +1,7 @@
 /**
  * chatClient — 聊天域 typed client（报告阶段 4 / FE-AUD-008）。
  *
- * send_message / approve_tool_call / set_config_option / set_mode 的
+ * send_message / set_config_option / set_mode 的
  * command/payload 收口；不吞业务错误。
  */
 import { ClientTransport } from './agentClient'
@@ -51,7 +51,6 @@ export function createChatClient(transport: ClientTransport) {
     sendMessageStreaming: (payload: SendMessagePayload, onUpdate: Channel<StreamFrame>): Promise<unknown> =>
       transport.invoke('send_message_streaming', { ...payload, onUpdate }),
     cancelPrompt: (payload: CancelPromptPayload): Promise<unknown> => transport.invoke('cancel_prompt', payload),
-    approveToolCall: (payload: Record<string, unknown>): Promise<unknown> => transport.invoke('approve_tool_call', payload),
     setConfigOption: (payload: SetConfigOptionPayload): Promise<unknown> => transport.invoke('set_config_option', payload),
     setMode: (payload: SetModePayload): Promise<unknown> => transport.invoke('set_mode', payload),
   }

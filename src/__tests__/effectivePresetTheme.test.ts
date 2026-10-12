@@ -90,10 +90,16 @@ const REPO_ROOT = resolve(__dirname, '..', '..')
  * `.term-user-tag`，删除前即无渲染效果）⇒ 基线第八次按**真值**重算：**10 套各 -1**
  * （chat 区切面均含 userTagText）：6 套完整快照型 `176 → 175`、`glass 64 → 63`、
  * `agent-command` / `agent-map` / `focus-flow` `37 → 36`。真值逐套实测 `Object.keys(effectivePresetTheme(p)).length`。
+ *
+ * ★ #266 CC-13 刀4（插件元件属性值）：新增 `ccPluginProps` ⇒ 基线第九次按**真值**重算：
+ * **10 套各 +1**（`zones/factory/{gui,terminal}-cc.ts` 的五条出厂 cc 条目各补一份 `{}` ——
+ * 语义 = 预设不携带插件参数、切预设即清空；与 `ccHiddenEmpty` 同为"载体字段随预设走"）。
+ * 6 套完整快照型 `175 → 176`、`glass 63 → 64`、`agent-command` / `agent-map` / `focus-flow` `36 → 37`。
+ * 真值由 `.agents/spec/266-probe-preset-counts.mts` 实测（沿用同一支探针，非手推）。
  */
 const BASELINE_FIELD_COUNTS: Record<string, number> = {
-  claude: 175, glass: 63, nord: 175, tokyo: 175, solarized: 175,
-  amber: 175, matrix: 175, 'agent-command': 36, 'agent-map': 36, 'focus-flow': 36,
+  claude: 176, glass: 64, nord: 176, tokyo: 176, solarized: 176,
+  amber: 176, matrix: 176, 'agent-command': 37, 'agent-map': 37, 'focus-flow': 37,
 }
 
 /** 该预设的有效值 —— 用测试侧独立算法（直接并池里的 5 个切面），不复用被测函数。 */
@@ -123,7 +129,9 @@ describe('B1 有效值等价（视图 == 五区切面之并集）', () => {
       const padded = Object.keys(view).filter(key => !(key in unionOfZoneSlices(preset.name, preset.interfaceMode)))
       expect(padded, `${preset.name} 不得多出并集以外的键（"先铺默认值"会多出这些）`).toEqual([])
       for (const key of Object.keys(view)) {
-        expect(key in THEME_DEFAULTS || key === 'ccHidden' || key === 'ccLayout' || key === 'ccHiddenEmpty',
+        // 白名单 = 「有标量默认值的字段」+ 对象型结构载体（THEME_DEFAULTS 只收标量，
+        // 载体字段的基准在 themeDefaults.ts 里显式给）。
+        expect(key in THEME_DEFAULTS || key === 'ccHidden' || key === 'ccLayout' || key === 'ccHiddenEmpty' || key === 'ccPluginProps',
           `${preset.name}/${key} 应是主题字段`).toBe(true)
       }
     }

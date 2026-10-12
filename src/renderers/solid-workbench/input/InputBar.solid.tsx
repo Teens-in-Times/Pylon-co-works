@@ -12,6 +12,7 @@ import { ASSIST_PREDICTION_CONSUMED_KEY } from '../../../domains/workbench/sessi
 import { createCommandPaletteModel, resolvePaletteKeyAction } from './createCommandPaletteModel.solid.tsx'
 import { createInputPredictionController } from './createInputPredictionController.solid.tsx'
 import type { InputPredictionProvider } from '../../../infrastructure/prediction/inputPredictionProvider.ts'
+import { getFontContributionRegistry } from '../../../plugin-runtime/runtimeServices.ts'
 
 export interface QueuedWorkbenchMessage {
   id: number
@@ -52,7 +53,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
   const [attachments, setAttachments] = createSessionUiSignal<readonly WorkbenchAttachment[]>(workbench.sessionUi, sessionId, 'attachments', [])
   const [sendError, setSendError] = createSessionUiSignal(workbench.sessionUi, sessionId, 'input-error', '')
   const [queueSendingSessions, setQueueSendingSessions] = createSignal<ReadonlySet<string>>(new Set())
-  // #394：原生预测的消费标记（per-session）——接受/拒绝后 ghost 与卡片同时收敛。
+  // #394：原生预测的消费标记（per-session）——接受/拒绝后输入框 ghost 收敛。
   const [consumedPrediction, setConsumedPrediction] = createSessionUiSignal(workbench.sessionUi, sessionId, ASSIST_PREDICTION_CONSUMED_KEY, '')
   let textarea: HTMLTextAreaElement | undefined
   let inputBar: HTMLDivElement | undefined
@@ -91,14 +92,38 @@ export function SolidInputBar(props: SolidInputBarProps) {
     const inputHeight = appearance().inputHeight
     const inputFontSize = appearance().inputFontSize
     const inputLineHeight = appearance().inputLineHeight
+    // CC-21：输入栏字体（独立选择，或跟随态下消息字体的连带变化）改变字宽 ⇒ 立即重测高度。
+    const inputFontFamily = appearance().inputFontFamily
     const currentDraft = draft()
     void inputHeight
     void inputFontSize
     void inputLineHeight
+    void inputFontFamily
     void currentDraft
     queueMicrotask(resizeInput)
   })
   onMount(() => queueMicrotask(resizeInput))
+
+  // CC-21：字体资源与贡献变化会在字段值不变时改变字宽（插件字体加载完成/贡献撤下/恢复）
+  // ⇒ 订阅字体注册表与 document.fonts，变化后重测。监听只在挂载时注册一次（不随输入字符
+  // 重注册）；resizeInput 只写内联样式、不回头触发字体事件，无空转环。卸载即解订，
+  // 迟到的 fonts.ready 不再触碰已卸载节点。
+  onMount(() => {
+    const remeasure = () => queueMicrotask(resizeInput)
+    const registry = getFontContributionRegistry()
+    const unsubscribeRegistry = registry.subscribe(remeasure)
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    fonts?.addEventListener('loadingdone', remeasure)
+    fonts?.addEventListener('loadingerror', remeasure)
+    let disposed = false
+    void fonts?.ready.then(() => { if (!disposed) remeasure() })
+    onCleanup(() => {
+      disposed = true
+      unsubscribeRegistry()
+      fonts?.removeEventListener('loadingdone', remeasure)
+      fonts?.removeEventListener('loadingerror', remeasure)
+    })
+  })
 
   // ── 命令面板模型（#520 拆出：过滤/分层/环选/键位判定，见 createCommandPaletteModel.solid.tsx）──
   const [commandRevision, setCommandRevision] = createSignal(0)
@@ -407,7 +432,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
     if (currentPrediction && (event.key === 'Tab' || (event.key === 'ArrowRight' && atEnd))) {
       event.preventDefault()
       setDraft(currentPrediction.text)
-      // #394：接受＝消费该预测实例（卡片与 ghost 同时收敛，不再横在会话流里）。
+      // #394：接受＝消费该预测实例；新实例仍可进入输入框 ghost。
       if (currentPrediction.instanceKey) setConsumedPrediction(currentPrediction.instanceKey)
       predictionController.clearDismissed()
       setHistoryIndex(-1)

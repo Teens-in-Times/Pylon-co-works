@@ -173,6 +173,13 @@ pub fn canonical_owner_key(
     serde_json::to_string(&[profile_id, agent_id, local_session_id])
 }
 
+/// #364：外部 CLI 历史导入会话的 profile 保留字。journal 的 owner 三元组要求
+/// 三段非空，而导入会话没有 GUI Profile（「平台自动会话 profile=None」的既有
+/// 纪律是 None ⇒ 不入 journal，不适用）——故引入保留字占位。与 provenance
+/// origin `external-import` 同名同义（2026-10-05 用户裁决）；真实 Profile 的
+/// id 空间不得使用该值（对应 provenance 组合恒 unverified，永不为 authoritative）。
+pub const EXTERNAL_IMPORT_PROFILE_ID: &str = "external-import";
+
 /// 事件唯一标识：`ownerKey#sequence`（确定性推导，与内容无关，禁 content 哈希）。
 pub fn canonical_event_id(owner_key: &str, sequence: i64) -> String {
     format!("{owner_key}#{sequence}")

@@ -442,7 +442,7 @@ jobs:
           cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets --message-format=json > artifacts/clippy-workspace.json 2> artifacts/clippy-workspace.err
           failed=0
           # #247：pylon-acp / pylon-session 零警告新立，纳入同份基线门禁循环。
-          for spec in "pylon" "pylon-core" "pylon-acp" "pylon-session" "pylon-foundations" "pet-core"; do
+          for spec in "pylon" "pylon-core" "pylon-acp" "pylon-session" "pylon-foundations" "pet-core" "pylon-agent-history"; do
             node scripts/check-clippy-baseline.mjs artifacts/clippy-workspace.json artifacts/clippy-baseline.json --crate="$spec" --crate-dir=src-tauri --package="$spec" || failed=1
           done
           # #488 批②：await-holding 豁免对账（禁裸 allow + HeldAcrossAwait 清单；

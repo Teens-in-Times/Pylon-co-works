@@ -10,7 +10,7 @@ import {
   THEME_SETTING_KEYS,
   type ThemeFieldKey,
 } from '../theme/themeFieldDefs.ts'
-import { resolveFontToken } from '../theme/themeCssSnapshot.ts'
+import { resolveFontToken, resolveInputFontToken } from '../theme/fontTokens.ts'
 import type { ThemeSettings } from '../theme/themeStore.ts'
 
 export const WORKBENCH_DATA_ATTRIBUTES = [
@@ -39,6 +39,7 @@ const WORKBENCH_DERIVED_CSS_VARIABLES = [
   '--mono',
   '--chat-font',
   '--msg-font',
+  '--cc-input-font-family',
   '--msg-text',
 ] as const
 
@@ -97,6 +98,7 @@ function resolveCssVariables(theme: ThemeSettings): Record<string, string> {
     '--mono': resolveFontToken(theme.codeFont ?? 'mono', 'code'),
     '--chat-font': resolveFontToken(theme.chatFont),
     '--msg-font': resolveFontToken(theme.msgFont),
+    '--cc-input-font-family': resolveInputFontToken(theme.inputFont, theme.msgFont),
     '--msg-text': theme.msgTextColor || 'var(--chat-text-color,var(--text))',
   }
 
@@ -151,7 +153,7 @@ function boundaryValue(key: ThemeFieldKey, edge: 'min' | 'max'): unknown {
   if (definition.type === 'color') return edge === 'min' ? '' : '#abcdef'
   if (key === 'ccLayout') return cloneCcLayout(DEFAULTS.ccLayout)
   // ★ #266 刀2：显隐的两份切面同形（常态 / 空态）⇒ 边界夹具一视同仁给 id 名单
-  if (key === 'ccHidden' || key === 'ccHiddenEmpty') return edge === 'min' ? [] : ['ekg', 'tasks']
+  if (key === 'ccHidden' || key === 'ccHiddenEmpty') return edge === 'min' ? [] : ['model', 'tokens']
   return edge === 'min' ? '' : `fixture-${key}`
 }
 
@@ -187,7 +189,7 @@ function createDirtyTheme(): ThemeSettings {
     messageLayout: 'bubble',
     assistantDot: true,
     assistantDotGlyph: '✦',
-    ccHidden: ['ekg'],
+    ccHidden: ['model'],
   })
 }
 

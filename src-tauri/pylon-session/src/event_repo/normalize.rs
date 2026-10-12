@@ -314,7 +314,10 @@ pub(super) fn normalize_kernel_event(
         remote_session_id: input.remote_session_id,
         client_generation: input.client_generation,
         sequence,
-        occurred_at: input.received_at.clone(),
+        occurred_at: input
+            .occurred_at
+            .clone()
+            .unwrap_or_else(|| input.received_at.clone()),
         received_at: input.received_at,
         event_type: event_type.to_string(),
         payload_version: 1,
@@ -327,20 +330,29 @@ pub(super) fn normalize_kernel_event(
         raw_payload_json,
         created_at: now_millis(),
         schema_version: 1,
-        provenance_origin: if input.recovery_import {
-            "recovery-import"
-        } else {
-            "local-observed"
+        provenance_origin: match input.import_origin {
+            super::row::EventImportOrigin::Live => "local-observed",
+            super::row::EventImportOrigin::RecoveryImport => "recovery-import",
+            super::row::EventImportOrigin::ExternalImport => "external-import",
         }
         .to_string(),
-        provenance_trust: if input.recovery_import {
+        provenance_trust: if matches!(
+            input.import_origin,
+            super::row::EventImportOrigin::RecoveryImport
+                | super::row::EventImportOrigin::ExternalImport
+        ) {
             "unverified"
         } else {
             "authoritative"
         }
         .to_string(),
         provenance_provider: Some(provenance_provider),
-        provenance_import_id: input.recovery_import.then_some(provenance_import_id),
+        provenance_import_id: matches!(
+            input.import_origin,
+            super::row::EventImportOrigin::RecoveryImport
+                | super::row::EventImportOrigin::ExternalImport
+        )
+        .then_some(provenance_import_id),
         raw_truncated,
         raw_original_bytes,
         raw_retained_bytes,
@@ -428,7 +440,12 @@ pub fn parse_canonical_event(value: &serde_json::Value) -> Result<CanonicalEvent
     }
     if !matches!(
         provenance_origin,
-        "local-observed" | "optimistic-local" | "recovery-import" | "migration" | "plugin"
+        "local-observed"
+            | "optimistic-local"
+            | "recovery-import"
+            | "migration"
+            | "plugin"
+            | "external-import"
     ) {
         problems.push("provenance.origin 非法".into());
     }

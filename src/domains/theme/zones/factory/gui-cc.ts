@@ -5,8 +5,10 @@
  *   它是**唯一真值**：10 套出厂预设的有效值由它算出（`effectivePresetTheme`）——
  *   改这里的任何一个值，等于改掉所有引用它的预设。历史来源见 `.agents/records/issue-223-factory-zone-presets-as-data.md`。
  * 值 = 生成时刻的 `pickZoneFields(GLOBAL_PRESETS[来源].theme, 'cc')`，逐字段照抄
- * （含终端补全烘入的默认值；cc 区含 ccLayout / ccHidden / ccHiddenEmpty 三个名单字段 ——
- *   `ccHidden` = 主管表、`ccHiddenEmpty` = 空态再藏，语义见 #266 刀4 与 `resolveCcHiddenWidgetIds`）。
+ * （含终端补全烘入的默认值；cc 区含 ccLayout / ccHidden / ccHiddenEmpty **名单字段**与
+ *   ccPluginProps **插件属性值**—— `ccHidden` = 主管表、`ccHiddenEmpty` = 空态再藏，语义见 #266 刀4 与
+ *   `resolveCcHiddenWidgetIds`；`ccPluginProps` 出厂一律 `{}`：预设不携带插件参数，切预设即清空
+ *   （与「参数随预设走」同一条规矩，语义见 `domains/cc/ccPluginProps.ts`）。
  */
 import type { ZonePresetEntry } from '../zonePresetPool.ts'
 
@@ -21,6 +23,7 @@ export const FACTORY_GUI_CC: readonly ZonePresetEntry[] = [
     values: {
       ccHeight: 96,
       ccBg: "rgba(255,255,255,0.20)",
+      ccPluginProps: {},
       ccHidden: [
         "cc-send-button"
       ],
@@ -101,6 +104,7 @@ export const FACTORY_GUI_CC: readonly ZonePresetEntry[] = [
           }
         }
       },
+      ccPluginProps: {},
       ccHidden: [
         "cc-send-button"
       ],
@@ -182,6 +186,7 @@ export const FACTORY_GUI_CC: readonly ZonePresetEntry[] = [
     values: {
       ccHeight: 96,
       ccBg: "#0d192b",
+      ccPluginProps: {},
       ccHiddenEmpty: [
         "model",
         "reasoning",
@@ -206,6 +211,7 @@ export const FACTORY_GUI_CC: readonly ZonePresetEntry[] = [
     values: {
       ccHeight: 96,
       ccBg: "#1a172b",
+      ccPluginProps: {},
       ccHiddenEmpty: [
         "model",
         "reasoning",
@@ -230,6 +236,7 @@ export const FACTORY_GUI_CC: readonly ZonePresetEntry[] = [
     values: {
       ccHeight: 88,
       ccBg: "#201e19",
+      ccPluginProps: {},
       ccHiddenEmpty: [
         "model",
         "reasoning",
@@ -246,5 +253,6 @@ export const FACTORY_GUI_CC: readonly ZonePresetEntry[] = [
   },
 ]
 
-// 本文件 5 条 / 105 个字段值（★ #266 CC-32：solarized 桶内 inputBorderColor 搬去 gui-global.ts；
-//   旧计数 127 在更早的字段删除中未同步、早已过时，本次按实际重数 106 − 1 = 105）
+// 本文件 5 条 / 110 个字段值（★ #266 CC-32：solarized 桶内 inputBorderColor 搬去 gui-global.ts；
+//   旧计数 127 在更早的字段删除中未同步、早已过时，本次按实际重数 106 − 1 = 105；
+//   ★ CC-13 刀4：五条各补 ccPluginProps ⇒ 105 + 5 = 110）

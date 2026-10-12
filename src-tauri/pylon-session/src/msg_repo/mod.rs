@@ -123,9 +123,10 @@ CREATE TABLE IF NOT EXISTS retention_policy (
 -- UNIQUE(owner_key,sequence) 自动索引 + idx_session_seq 三棵重复 btree）。
 -- 派生列契约（读侧 `derive` 不落库，wire 28 字段形状不变）：
 --   event_id = owner_key#sequence（rule 1 确定性推导）；profile/agent/local_session_id =
---   解析 owner_key；schema_version 恒 1；provenance 列是 (origin,trust) 五组合的整数编码
+--   解析 owner_key；schema_version 恒 1；provenance 列是 (origin,trust) 六组合的整数编码
 --   （0=local-observed/authoritative，1=recovery-import/unverified，2=optimistic-local，
---   3=migration，4=plugin；provider=agent_id[0/1]，import_id=local_session_id[1]）；
+--   3=migration，4=plugin，5=external-import/unverified（#364 外部 CLI 历史导入，
+--   永不为 authoritative）；provider=agent_id[0/1/5]，import_id=local_session_id[1/5]）；
 --   raw_* 截断计数由 raw_payload 文本自描述重算（截断 stub 自带 _pylonTruncated/
 --   originalBytes）。本表不设 FK（事件流独立于会话行；删除语义由 DEL-02 tombstone 承担）。
 CREATE TABLE IF NOT EXISTS canonical_events (

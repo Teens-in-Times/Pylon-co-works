@@ -8,8 +8,9 @@ use super::draft::{DraftCommitChunk, DraftFragment, DraftFragmentInput};
 use super::normalize::{mark_replay_import, normalize_kernel_event, parse_canonical_event};
 use super::repo::{EventRepo, RollupTrimReport};
 use super::row::{
-    CanonicalEventRawExport, CanonicalEventRow, CompactEventPage, EventAppendResult, EventPage,
-    EventSearchHit, KernelEventInput, ReplayJournalIngestResult,
+    CanonicalEventRawExport, CanonicalEventRow, CompactEventPage, EventAppendResult,
+    EventImportOrigin, EventPage, EventSearchHit, ExternalHistoryImportResult, KernelEventInput,
+    ReplayJournalIngestResult,
 };
 use super::EventError;
 use crate::owner::DurableSessionOwner;
@@ -91,8 +92,9 @@ impl EventService {
                 remote_session_id: remote_session_id.clone(),
                 client_generation,
                 received_at: chunk.received_at,
+                occurred_at: None,
                 raw_payload: chunk.raw_payload,
-                recovery_import: false,
+                import_origin: EventImportOrigin::Live,
             })
             .collect();
         let repo = self.repo.clone();
@@ -244,8 +246,9 @@ impl EventService {
                 client_generation,
                 received_at: chrono::Utc::now()
                     .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                occurred_at: None,
                 raw_payload,
-                recovery_import: false,
+                import_origin: EventImportOrigin::Live,
             })
             .collect();
         let repo = self.repo.clone();
@@ -308,9 +311,10 @@ impl EventService {
                         remote_session_id: remote_session_id.clone(),
                         client_generation,
                         received_at: received_at.clone(),
+                        occurred_at: None,
                         // 回放导入为冷路径，共享包装仅为对齐 KernelEventInput 契约。
                         raw_payload: std::sync::Arc::new(raw_payload),
-                        recovery_import: true,
+                        import_origin: EventImportOrigin::RecoveryImport,
                     },
                     i64::try_from(index + 1).map_err(|_| {
                         EventError::Invalid("replay event count exceeds i64".into())
@@ -341,6 +345,80 @@ impl EventService {
         .await
         .map_err(|error| {
             EventError::Unavailable(format!("replay event ingest task failed: {error}"))
+        })?
+    }
+
+    /// #364：外部 CLI 原生历史导入（Claude Code 等的 transcript 快照）。
+    ///
+    /// 与 `ingest_complete_replay` 同为快照式冷导入，差异在 owner 与幂等键：
+    /// owner 是保留字三元组（`profile_id="external-import"`），幂等键 =
+    /// `(agent_id, remote_session_id)`（remote id 即原生会话 id）——已导入且未
+    /// force 时 0 写入返回 `already-imported`。force 分叉（issue #364 裁决）：
+    /// 调用方先生成带 `#N` 后缀的新 local_session_id（新 owner_key ⇒ 空
+    /// journal），传 `force=true` 跳过幂等探针后照常落库——原快照封存不动。
+    /// 事件 payload 是 `session/update` 线形状（与 live/replay 同一 normalize
+    /// 管道），`occurred_at` 取源文件时间戳而非导入时刻。封存快照纪律：
+    /// 导入后不 live 重解析源文件。
+    pub async fn ingest_external_history(
+        &self,
+        owner: DurableSessionOwner,
+        remote_session_id: String,
+        force: bool,
+        events: Vec<(String, std::sync::Arc<serde_json::Value>)>,
+    ) -> Result<ExternalHistoryImportResult, EventError> {
+        let client_generation = 0i64;
+        let received_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let repo = self.repo.clone();
+        tokio::task::spawn_blocking(move || {
+            if !force && repo.has_external_import(&owner.agent_id, &remote_session_id)? {
+                return Ok(ExternalHistoryImportResult {
+                    events: Vec::new(),
+                    revision: 0,
+                    status: "already-imported",
+                });
+            }
+            let mut rows = Vec::with_capacity(events.len());
+            let mut owner_key = String::new();
+            for (index, (occurred_at, raw_payload)) in events.into_iter().enumerate() {
+                let row = normalize_kernel_event(
+                    KernelEventInput {
+                        owner: owner.clone(),
+                        remote_session_id: Some(remote_session_id.clone()),
+                        client_generation,
+                        received_at: received_at.clone(),
+                        occurred_at: Some(occurred_at),
+                        raw_payload,
+                        import_origin: EventImportOrigin::ExternalImport,
+                    },
+                    i64::try_from(index + 1).map_err(|_| {
+                        EventError::Invalid("external history event count exceeds i64".into())
+                    })?,
+                )?;
+                owner_key = row.owner_key.clone();
+                rows.push(row);
+            }
+            match repo.append_events(&rows, Some(0)) {
+                Ok(result) => Ok(ExternalHistoryImportResult {
+                    events: result.events,
+                    revision: result.revision,
+                    status: "imported",
+                }),
+                // 并发双击同一会话：后到者撞空 journal 预期即幂等跳过。
+                Err(EventError::RevisionConflict { .. }) => Ok(ExternalHistoryImportResult {
+                    events: Vec::new(),
+                    revision: if owner_key.is_empty() {
+                        0
+                    } else {
+                        repo.revision(&owner_key)?
+                    },
+                    status: "already-imported",
+                }),
+                Err(error) => Err(error),
+            }
+        })
+        .await
+        .map_err(|error| {
+            EventError::Unavailable(format!("external history ingest task failed: {error}"))
         })?
     }
 

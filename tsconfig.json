@@ -4,6 +4,7 @@
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
+    "types": ["node", "vite/client"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
@@ -17,15 +18,13 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
     "paths": {
-      "@pylon/plugin-sdk": ["src/sdk/index.ts"],
-      "@pylon/plugin-sdk/testing": ["src/sdk/testing.ts"]
+      "@pylon/plugin-sdk": ["./src/sdk/index.ts"],
+      "@pylon/plugin-sdk/testing": ["./src/sdk/testing.ts"]
     }
   },
   "include": ["src"],
   "exclude": [
-    "#515 批7：React 类型图排除全部 .solid 文件（编译面由 tsconfig.solid.json 按 src/** 收纳）",
     "src/**/*.solid.tsx",
     "src/**/*.solid.test.tsx",
     "src/wasm"

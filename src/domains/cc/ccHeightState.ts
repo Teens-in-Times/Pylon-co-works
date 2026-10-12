@@ -105,6 +105,47 @@ const VERTICAL_EDGE_FIELD: Readonly<Record<string, CcMinHeightScalarKey | undefi
   bottom: 'ccMarginBottom',
 }
 
+/**
+ * ★★ CC-13 刀5 接续：**每个落脚处在定义表里声明的「到所贴边的距离」**（静态派生，**与"谁在场"无关**）。
+ *
+ * - 竖向 = **字段名**（值仍要到主题数字表里取）：按该落脚处的 `layout.y.side` 查 `VERTICAL_EDGE_FIELD`；
+ * - 横向 = **字面值**：该落脚处各行 `layout.x.gap` 的最大值（今天全行缺省 ⇒ 0）。
+ *
+ * ★ 为什么要有这张表：边距是**落脚处**的属性，不是"在场那几件"的属性。插件件把某个落脚处的内置件
+ *   全挤走（例如空态默认：内置状态件全藏在 `ccHiddenEmpty`、只剩插件件）时，该落脚处仍贴同一条边
+ *   ⇒ 新建组 / 队列的 `edgeGap` 必须取这里的声明值，而不是 0（否则下界少算一个边距，
+ *   实机读数 120 而正确值 135）。修正前的写法是"从在场行里取"，于是"谁在场"决定了边距 —— 已改。
+ *
+ * ★ 等价性（内置读数逐位不变）：落脚处键本身就是 `y.anchor:y.side` ⇒ 同一落脚处的行**同 side**
+ *   （竖向取到同一个字段）且 `layout.x.gap` 的声明相同 ⇒ 本表取到的值与"在内置行里取 max"逐位相等；
+ *   仅当该落脚处**无任何内置件在场**时两者才分道（正是本接续要修的那一处）。
+ */
+const LANDING_EDGE_FIELDS: Readonly<Record<string, { verticalField?: CcMinHeightScalarKey; horizontalGap: number }>> =
+  (() => {
+    const fields: Record<string, { verticalField?: CcMinHeightScalarKey; horizontalGap: number }> = {}
+    for (const row of CC_WIDGET_GROUPS) {
+      if (row.type !== 'widget' || !row.draggable || !row.layout) continue
+      const landing = ccWidgetLanding(row.id) ?? row.id
+      fields[landing] = {
+        verticalField: VERTICAL_EDGE_FIELD[row.layout.y.side],
+        horizontalGap: Math.max(fields[landing]?.horizontalGap ?? 0, row.layout.x.gap ?? 0),
+      }
+    }
+    return fields
+  })()
+
+/** 该落脚处声明的竖向边距（px）：字段值取不到 / 非有限 ⇒ 0（"缺项按 0"的既有纪律）。 */
+function declaredVerticalEdgeGap(landing: string, scalars: CcMinHeightScalars): number {
+  const field = LANDING_EDGE_FIELDS[landing]?.verticalField
+  const value = field ? scalars[field] : undefined
+  return Math.max(0, typeof value === 'number' && Number.isFinite(value) ? value : 0)
+}
+
+/** 该落脚处声明的横向边距（px）：无声明 ⇒ 0（今天全行缺省 ⇒ 恒 0）。 */
+function declaredHorizontalEdgeGap(landing: string): number {
+  return Math.max(0, LANDING_EDGE_FIELDS[landing]?.horizontalGap ?? 0)
+}
+
 /** 竖向上参与「最小高」竞争的一个**组**（与最小宽那套同构，取法相反：高度取 max、宽度取 sum）。 */
 export interface CcMinHeightGroup {
   /** 组的标识（诊断/读数用）：`landing:<落脚处>`（落脚处 = `y.anchor:y.side`） */
@@ -128,16 +169,51 @@ export type CcMinHeightScalarKey = CcNumberPropertyKey | 'ccMarginBottom'
 export type CcMinHeightScalars = Partial<Record<CcMinHeightScalarKey, number>>
 
 /**
+ * ★★ #266 CC-13 刀5：参与「最小高 / 最小宽 / 显示前校验」算式的**插件件**。
+ *
+ * - 两维都可选（px）：报了 ⇒ 计入；**不报 / 非有限 / ≤0 ⇒ 该维按 0 计**（= 内置「内容撑」件同待遇，
+ *   结果是**下界**）。定形与校验在 `ccWidgetRoster.resolvePluginWidgetSizing`（非法 ⇒ 忽略该维度 + 诊断）。
+ * - 插件件一律按「落点 = **状态区**（`ccWidgetLanding('model')`，与渲染同源）、可拖、不悬浮、
+ *   无 `detachX`、无 `gap`」参与：高并入状态组**取 max**、宽并入状态队列**求和不带间距**
+ *   （声明式口径：不去实测渲染尺寸，避免渲染 ↔ 算式回环）。
+ * - **在场判据** = `isWidgetVisible(id, { hidden })` —— 由算式按**切面**逐条过滤（与渲染同一谓词），
+ *   所以隐藏的插件件不计数；调用方递进来的应当是**全量**插件件（不要先自己筛一遍，
+ *   否则两态/改后态各算一遍时会把"换个态就看不见的件"算进去）。
+ */
+export interface CcPluginWidgetSizing {
+  readonly id: string
+  readonly width?: number
+  readonly height?: number
+}
+
+/**
+ * 插件件的落脚处 = **状态区**（与渲染、`ccWidgetRoster.STATUS_LANDING` 同源派生）。
+ * 状态区那一行的行高/宽本来就由此落脚处成组（`model` / `reasoning` / `mode` / `tokens` / `cc-command-hint`）。
+ */
+const PLUGIN_WIDGET_LANDING = ccWidgetLanding('model') ?? 'model'
+
+/**
+ * 该维的**声明值**（px）：只有**有限且 > 0** 的数才算报过；其余（缺省 / 非数 / ≤0 / 非有限）
+ * 一律 `undefined` ⇒ 调用方按 0 计（下界）。定形处已拦过一遍，这里是算式的**自身防线**。
+ */
+function declaredDimension(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+/**
  * 最小高算式的输入。
  *
  * - `hiddenSlices` = **两态各自生效的隐藏名单**（常态 `ccHidden` / 空态 `ccHiddenEmpty`）；算式对每一态各算一遍、
  *   取 **max**（理由见 `resolveCcMinHeight` 的"两态取 max"）；
  * - `scalars` = 主题的数字字段表（**结构性类型** ⇒ `ThemeSettings` / `Partial<ThemeSettings>`
  *   可直接传）。算式只按定义表的 `heightField` 声明取用，**缺项按 0 计**（= 内容撑 ⇒ 结果是下界）。
+ * - ★ 刀5：`pluginWidgets` = 插件件及其自报尺寸（缺省 `[]` ⇒ 与改造前**逐位相同**）；
+ *   在场判据按每一态各自的名单在算式内过滤（见 `CcPluginWidgetSizing`）。
  */
 export interface CcMinHeightInput {
   readonly hiddenSlices: readonly (readonly string[])[]
   readonly scalars: CcMinHeightScalars
+  readonly pluginWidgets?: readonly CcPluginWidgetSizing[]
 }
 
 /**
@@ -156,16 +232,18 @@ export interface CcMinHeightInput {
  *   探针实测（主管表藏掉 `input`、输入栏高 120）：并集口径下界 = **64**，旧口径 = **130**（偏高 66px）
  *   —— 用户可见后果是「藏了输入栏容器降不下来」。出厂数据"再藏 ⊇ 主管"掩盖了它，
  *   只有主管表藏了"再藏表里没有的件"（`input` 恰是其一）时才暴露。
+ * ★ 刀5：`pluginWidgets` 由调用方（渲染层）递进 —— 它不属主题，故不进泛型约束；缺省 `[]` ⇒ 逐位不变。
  */
 export function ccMinHeightInputOf<T extends {
   readonly ccHidden?: readonly string[]
   readonly ccHiddenEmpty?: readonly string[]
-}>(theme: T): CcMinHeightInput {
+}>(theme: T, pluginWidgets: readonly CcPluginWidgetSizing[] = []): CcMinHeightInput {
   const normal = theme.ccHidden ?? []
   const emptyState = Array.from(new Set([...normal, ...(theme.ccHiddenEmpty ?? [])]))
   return {
     hiddenSlices: [normal, emptyState],
     scalars: theme as unknown as CcMinHeightScalars,
+    pluginWidgets,
   }
 }
 
@@ -206,14 +284,18 @@ export function ccMinHeightInputOf<T extends {
 export function resolveCcMinHeight(input: CcMinHeightInput): number {
   const slices = input.hiddenSlices.length > 0 ? input.hiddenSlices : [[]]
   return slices.reduce(
-    (max, hiddenIds) => Math.max(max, sliceHeightRequirement(hiddenIds, input.scalars)),
+    (max, hiddenIds) => Math.max(max, sliceHeightRequirement(hiddenIds, input.scalars, input.pluginWidgets ?? [])),
     BASE_MIN_HEIGHT,
   )
 }
 
 /** 单态的"按边算"需求（`max over 该态各组 ( 组高 + 到边距离 )`；**不含** `BASE_MIN_HEIGHT`）。 */
-function sliceHeightRequirement(hiddenIds: readonly string[], scalars: CcMinHeightScalars): number {
-  return resolveCcHeightGroups(hiddenIds, scalars)
+function sliceHeightRequirement(
+  hiddenIds: readonly string[],
+  scalars: CcMinHeightScalars,
+  pluginWidgets: readonly CcPluginWidgetSizing[],
+): number {
+  return resolveCcHeightGroups(hiddenIds, scalars, pluginWidgets)
     .reduce((max, group) => Math.max(max, group.height + group.edgeGap), 0)
 }
 
@@ -227,11 +309,16 @@ function sliceHeightRequirement(hiddenIds: readonly string[], scalars: CcMinHeig
  *   件高取自该行声明的 `heightField`（缺省 / 缺值 ⇒ 0）；组内件都算不出高时取行高兜底 `ROW_MIN_HEIGHT`；
  * - **悬浮件**（发送按钮）不占流 ⇒ 不参与（它骑在输入栏上，高度跟 `--cc-send-size` 走）；
  * - **不在场的件不计入**（"谁在场" = 谓词，与渲染同源 ⇒ 与"计数多算一个不渲染的件"是同一道防线）；
- * - 组级 `edgeGap` 按所贴竖边取字段（上 = `inputOffsetTop`、下 = `ccMarginBottom`）。
+ * - 组级 `edgeGap` 按所贴竖边取字段（上 = `inputOffsetTop`、下 = `ccMarginBottom`）；
+ * - ★ 刀5：**插件件**并入状态区组（`PLUGIN_WIDGET_LANDING`）**取 max**（并排语义）——
+ *   只有"报了 height"的件才建组/抬值（不报按 0 计 ⇒ 不许凭空建出一个 28 的行兜底组）；
+ *   组已存在时不动它的 `edgeGap`，由插件件**新建**该组时按该落脚处**在定义表里声明的边距**给初值
+ *   （★ 刀5 接续：边距属**落脚处**、不属"在场的那几件" ⇒ 插件件独占总也照算 `ccMarginBottom`）。
  */
 export function resolveCcHeightGroups(
   hiddenIds: readonly string[],
   scalars: CcMinHeightScalars,
+  pluginWidgets: readonly CcPluginWidgetSizing[] = [],
 ): CcMinHeightGroup[] {
   const groups = new Map<string, { height: number; edgeGap: number }>()
   for (const row of CC_WIDGET_GROUPS) {
@@ -239,7 +326,7 @@ export function resolveCcHeightGroups(
     if (CC_FLOATING_WIDGET_IDS.includes(row.id)) continue
     if (!isWidgetVisible(row.id, { hidden: hiddenIds })) continue
     const landing = coerceInputLanding(row.id, ccWidgetLanding(row.id)) ?? row.id
-    const group = groups.get(landing) ?? { height: 0, edgeGap: 0 }
+    const group = groups.get(landing) ?? { height: 0, edgeGap: declaredVerticalEdgeGap(landing, scalars) }
     const declared = row.heightField ? scalars[row.heightField] : undefined
     // 件并排 ⇒ 组高取**最大**（不是求和；宽度那边同组的件也是并排，但算的是宽之和）
     group.height = Math.max(group.height, typeof declared === 'number' && Number.isFinite(declared) ? declared : 0)
@@ -247,6 +334,15 @@ export function resolveCcHeightGroups(
     const edgeValue = edgeField ? scalars[edgeField] : undefined
     group.edgeGap = Math.max(group.edgeGap, typeof edgeValue === 'number' && Number.isFinite(edgeValue) ? edgeValue : 0)
     groups.set(landing, group)
+  }
+  for (const widget of pluginWidgets) {
+    if (!isWidgetVisible(widget.id, { hidden: hiddenIds })) continue
+    const declared = declaredDimension(widget.height)
+    if (declared === undefined) continue
+    const group = groups.get(PLUGIN_WIDGET_LANDING)
+      ?? { height: 0, edgeGap: declaredVerticalEdgeGap(PLUGIN_WIDGET_LANDING, scalars) }
+    group.height = Math.max(group.height, declared)
+    groups.set(PLUGIN_WIDGET_LANDING, group)
   }
   return [...groups].map(([landing, group]) => ({
     id: `landing:${landing}`,
@@ -311,15 +407,20 @@ export type CcWidgetWidthIndex = Readonly<Record<string, number | undefined>>
  * - **声明了 `detachX` 的件不排队** ⇒ 它**自成一"组"**（宽 = 自己，`edgeGap` = 到所贴边的距离），
  *   而**不**计入队列之和 —— 这正是"允许重叠"在算式里的体现：两者取 max，**不是相加**；
  * - **悬浮件**（发送按钮）不进任何落脚处 ⇒ 不参与（宽度由 `--cc-send-size` 自算）；
- * - 不在场的件不计入（"谁在场"由谓词定，与渲染同源）。
+ * - 不在场的件不计入（"谁在场"由谓词定，与渲染同源）；
+ * - ★ 刀5：**插件件**并入状态区队列（`queue:<状态区>`）**求宽之和**（件并排）——
+ *   只有"报了 width"的件才建队列/加值（不报按 0 计）；插件件没有行级 `gap` 声明 ⇒ **件间**间距按 **0**；
+ *   队列由插件件**新建**时，队列级 `edgeGap` 按该落脚处**在定义表里声明的横向边距**给初值
+ *   （★ 刀5 接续：与竖向同一口径；今天全行缺省 `layout.x.gap` ⇒ 读数为 0，与修正前逐位相同）。
  *
  * ★ 组级 `edgeGap` 取组内**最大**声明（今天全部缺省 = 0）；`layout.x.gap` 是"贴边间距"，
  *   现状没有一行声明它 —— 所以本算式目前给出的是**声明口径的下界**：
- *   渲染侧的内缩（`.cc-body` 的横内边距、行内边距）与行内 flex 间距不在声明里，不计入。
+ *   渲染侧的内缩（`.cc-body` 的横内边距、行内内边距）与行内 flex 间距不在声明里，不计入。
  */
 export function resolveCcWidthGroups(
   hiddenIds: readonly string[],
   widths: CcWidgetWidthIndex,
+  pluginWidgets: readonly CcPluginWidgetSizing[] = [],
 ): CcMinWidthGroup[] {
   const queues = new Map<string, { width: number; edgeGap: number }>()
   const detached: CcMinWidthGroup[] = []
@@ -332,10 +433,19 @@ export function resolveCcWidthGroups(
       continue
     }
     const landing = coerceInputLanding(row.id, ccWidgetLanding(row.id)) ?? row.id
-    const queue = queues.get(landing) ?? { width: 0, edgeGap: 0 }
+    const queue = queues.get(landing) ?? { width: 0, edgeGap: declaredHorizontalEdgeGap(landing) }
     queue.width += (widths[row.id] ?? 0) + (row.gap ?? 0)
     queue.edgeGap = Math.max(queue.edgeGap, row.layout.x.gap ?? 0)
     queues.set(landing, queue)
+  }
+  for (const widget of pluginWidgets) {
+    if (!isWidgetVisible(widget.id, { hidden: hiddenIds })) continue
+    const declared = declaredDimension(widget.width)
+    if (declared === undefined) continue
+    const queue = queues.get(PLUGIN_WIDGET_LANDING)
+      ?? { width: 0, edgeGap: declaredHorizontalEdgeGap(PLUGIN_WIDGET_LANDING) }
+    queue.width += declared
+    queues.set(PLUGIN_WIDGET_LANDING, queue)
   }
   return [
     ...[...queues].map(([landing, queue]) => ({ id: `queue:${landing}`, ...queue })),

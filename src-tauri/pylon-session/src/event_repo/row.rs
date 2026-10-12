@@ -103,6 +103,29 @@ pub struct ReplayJournalIngestResult {
     pub status: &'static str,
 }
 
+/// #364 外部 CLI 历史导入结果。status 词表（前端按此分支，不得改拼写）：
+/// `imported`（本批已落库）/ `already-imported`（同 (agent_id, remote_session_id)
+/// 已存在且未 force，0 写入）。force 分叉由调用方先行生成新 local_session_id，
+/// 对本层只是普通导入。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalHistoryImportResult {
+    pub events: Vec<CanonicalEventRow>,
+    pub revision: i64,
+    pub status: &'static str,
+}
+
+/// 事件写入来源的三值判别（#364 前是 `recovery_import: bool`）：决定
+/// `normalize_kernel_event` 落的 provenance 组合——`Live` 是 kernel 单写者的
+/// local-observed/authoritative；两个导入变体恒 unverified（`external-import`
+/// 永不为 authoritative，见 provenance 编码表）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EventImportOrigin {
+    Live,
+    RecoveryImport,
+    ExternalImport,
+}
+
 /// Kernel ingest 输入。owner 来自已证明的 runtime session 绑定；remote id 仅是
 /// 当前 binding，raw payload 永久保留。sequence 由 EventRepo 事务内分配。
 #[derive(Debug, Clone)]
@@ -111,11 +134,15 @@ pub(super) struct KernelEventInput {
     pub(super) remote_session_id: Option<String>,
     pub(super) client_generation: i64,
     pub(super) received_at: String,
+    /// 事件真实发生时间（RFC3339）。live/replay 路径恒 None（＝ received_at，
+    /// 内核观察时刻）；#364 外部导入给源文件时间戳——occurred_at 保留原生会话
+    /// 的时序事实，received_at 才是「何时导入」。
+    pub(super) occurred_at: Option<String>,
     /// #334/P2：dispatcher 逐帧热路径把同一份 payload 以 `Arc<Value>` 共享给
     /// ingest 与 publish（ingest 先行、publish 随后取回唯一引用），故此处共享
     /// 传入而非消费式拥有；normalize 取 redact 所有权时才解包（计数非 1 再克隆）。
     pub(super) raw_payload: std::sync::Arc<serde_json::Value>,
-    pub(super) recovery_import: bool,
+    pub(super) import_origin: EventImportOrigin,
 }
 
 /// 事件页（游标分页，升序）：事件 + 下一页游标（None = 已到最早，无更旧事件）。

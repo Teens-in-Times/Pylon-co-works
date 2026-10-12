@@ -77,6 +77,13 @@ pub(crate) fn resolve_data_dirs() -> Result<DataDirs, String> {
     resolve_data_dirs_for(&exe_dir()?)
 }
 
+/// WebView2 用户数据目录（CC-14：localStorage / EBWebView 真身的落点）。
+/// 跟包语义：随程序目录走，删程序文件夹 = 前端持久化一起没。
+/// **纯路径、不触盘**（目录由 WebView2 运行时按需创建）。
+pub(crate) fn webview_user_data_dir(dirs: &DataDirs) -> PathBuf {
+    dirs.data_root.join("webview-cache")
+}
+
 pub(crate) fn message_db_path(dirs: &DataDirs) -> PathBuf {
     dirs.data_root.join("pylon-data-v1.sqlite3")
 }
@@ -228,6 +235,20 @@ mod tests {
         assert!(first.is_dir(), "选中的目录必须真的建好");
         assert!(!second.exists(), "落选候选不该被创建");
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn webview_user_data_dir_is_data_root_webview_cache() {
+        // CC-14：WebView2 用户数据目录 = data_root/webview-cache（跟包语义）。
+        // 只跟 data_root——webview 缓存是数据不是配置，config_root 不参与。
+        let dirs = DataDirs {
+            data_root: PathBuf::from("D:/pylon-data"),
+            config_root: PathBuf::from("C:/pylon-config"),
+        };
+        assert_eq!(
+            webview_user_data_dir(&dirs),
+            PathBuf::from("D:/pylon-data/webview-cache")
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "pylon"
-version = "0.4.1-XFN"
+version = "0.4.2-SYN"
 edition = "2021"
 description = "Prism Desktop - AI Agent GUI"
 default-run = "pylon"
@@ -25,6 +25,7 @@ members = [
     "pylon-canonical-types",
     "pylon-compute",
     "pylon-markdown",
+    "pylon-agent-history",
     # #382：测试夹具独立成 crate——依赖只有 serde_json。留在主 crate 里当 [[bin]]
     # 会被 Cargo 的「包内 bin 隐式链接本包 lib」规则拖去编译整棵 Tauri 依赖树
     # （CI 实测 405 crate / 5m26s，而夹具源码只 use serde_json + std）。
@@ -56,7 +57,8 @@ FileDescription = "Prism Desktop"
 tauri = { version = "2", features = ["unstable", "protocol-asset"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
+# Keep the plugin on the same minor as the JS dependency; Tauri rejects mismatches.
+tauri-plugin-fs = "~2.5.2"
 serde = { version = "1", features = ["derive"] }
 pylon-pet-core = { path = "pet-core" }
 serde_json = "1"
@@ -104,6 +106,7 @@ pylon-acp = { path = "pylon-acp" }
 pylon-core = { path = "pylon-core" }
 pylon-foundations = { path = "pylon-foundations" }
 pylon-session = { path = "pylon-session" }
+pylon-agent-history = { path = "pylon-agent-history" }
 # #220 WP1：canonical 事件 wire 契约的单源。写入侧（session/event_repo.rs）与
 # WASM 计算核（pylon-compute）共用同一份词表与 identity 推导纪律。
 pylon-canonical-types = { path = "pylon-canonical-types" }

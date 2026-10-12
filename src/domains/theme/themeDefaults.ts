@@ -25,6 +25,10 @@ export const DEFAULTS: ThemeSettings = {
   //     预览基线锁定的「04b 空态极简」，该预览 harness 已随 #520 死代码二批退役）。
   ccHiddenEmpty: ['model', 'reasoning', 'mode', 'tokens', 'cc-send-button', 'cc-command-hint'],
   ccLayout: cloneCcLayout(DEFAULT_CC_LAYOUT),
+  // ★ #266 CC-13 刀4：插件元件属性值的**基准**（空表 = 谁都没改过参数）。
+  //   与 ccLayout 同款：它是**内部对象字段**，不进 THEME_DEFAULTS（标量派生），必须在这里显式给值 ——
+  //   漏了它 `themeDefaults` 的完整性断言当场红（对象字段没有标量默认可兜）。
+  ccPluginProps: {},
   ccEditMode: false,
   // appliedPreset/custom 键集由 PRESET_ZONES 派生（单一真值，不平行维护）
   appliedPreset: Object.fromEntries(PRESET_ZONES.map(zone => [zone, ''])) as Record<string, string>,

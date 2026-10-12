@@ -27,11 +27,20 @@ describe('Solid 工作台壳层样式契约', () => {
     expect(mount, 'mount 层未撑满（缺 display:flex 与 flex:1）').toContain('flex')
   })
 
-  it('solid-agent-workbench 是纵向 flex 容器且消息流可伸缩', () => {
+  it('solid-agent-workbench 是两列 grid 且左内容列与消息流可伸缩', () => {
     const block = extractBlock(chromeCss, '.solid-agent-workbench')
-    expect(block).toContain('display:flex')
-    expect(block).toContain('flex-direction:column')
+    expect(block).toContain('display:grid')
+    expect(block).toContain('grid-template-columns:minmax(0,1fr)var(--scroll-action-rail-width)')
+    expect(block).toContain('grid-template-rows:minmax(0,1fr)')
+    expect(block).toContain('flex:1')
+    expect(block).toContain('min-width:0')
     expect(block).toContain('min-height:0')
+    expect(block).toContain('padding-right:var(--right-panel-inset,0px)')
+    const column = extractBlock(chromeCss, '.solid-workbench-content-column')
+    for (const declaration of ['grid-column:1', 'grid-row:1', 'position:relative', 'display:flex', 'flex-direction:column', 'min-width:0', 'min-height:0']) {
+      expect(column).toContain(declaration)
+    }
+    expect(extractBlock(chromeCss, '.solid-workbench-chat-shell')).toContain('flex:11auto')
   })
 
   it('生产中控槽位复用 control-center 几何：底部停靠且不参与消息流伸缩', () => {
@@ -203,6 +212,77 @@ describe('#266 刀5 · 空态只隐藏背景板与高度手柄，不隐藏编辑
       expect(selector, `空态不得隐藏编辑 UI：${selector}`)
         .not.toMatch(/cc-edit-column|cc-edit-row|cc-edit-warning|cc-edit-toolbar|cc-prop-panel/)
     }
+  })
+})
+
+/**
+ * ★★ #266 CC-18 接续 · 空态与有会话**只认一个右侧原点**（CSS 侧守卫）。
+ *
+ * 为什么要有它：空态外框曾用 `margin:0` 把共享的 `margin-left/right` 整组清掉、又用 `width:100%`
+ * 撑满容器 ⇒ 它的右缘落点**不是**「滚动条左缘」（有会话时才是），等于悄悄立了第二套横向原点。
+ * 这类"覆盖式失效"没有任何一层能看见：lint / tsc / check:solid / 其它测试都不验真实布局，
+ * jsdom 不加载样式表，`getComputedStyle` 拿不到真相（前件就是靠实机读数才发现）。
+ * 判据：空态只清**纵向**边距，横向一律继承 `ControlCenter.css` 的共享算式
+ * （边距仅 ccMarginX，原点来自左内容列）；空态不得另设右距或轨宽副本。
+ * ★ 将来真要改回去，**改这条测试就是一个显式动作**（口径同上面 `.cc-command-hint` 那条）。
+ */
+describe('#266 CC-18 接续 · 空态与有会话统一右侧原点（CSS 侧守卫）', () => {
+  const EMPTY_SLOT = '.solid-workbench-control-center-slot.is-empty'
+
+  it('空态只清纵向边距：外框宽由共享横向边距推出，不再强制全宽、不再自设横向原点', () => {
+    // 该选择器的**全部**声明块（不只第一块），且先剥注释——注释会提到被删掉的属性
+    const block = allDeclarations(chromeCss.replaceAll(/\/\*[\s\S]*?\*\//g, ''), EMPTY_SLOT)
+    expect(allDeclarations(chromeCss, '.solid-workbench-content-column')).toContain('position:relative')
+    expect(block, '空态外框不再是绝对定位').toContain('position:absolute')
+    expect(block, '空态外框不再靠两侧定位推出宽度').toContain('inset-inline:0')
+    expect(block, '空态外框又被强制全宽了（宽度应交由共享横向边距推出）').toContain('width:auto')
+    expect(block, '空态外框不再只清纵向边距').toContain('margin-block:0')
+    // 禁：横向边距覆盖（含 margin 简写）/ 强制全宽 / 第二套原点（复制轨宽或再叠一层）
+    for (const banned of ['margin:', 'margin-inline:', 'margin-inline-start:', 'margin-inline-end:', 'margin-left:', 'margin-right:', 'width:100%', '--scroll-action-rail-width']) {
+      expect(block, `${EMPTY_SLOT} 又在自设横向原点（${banned}）`).not.toContain(banned)
+    }
+    expect(block).not.toMatch(/(?:^|;)(?:left|right|inset|inset-inline-start|inset-inline-end):/)
+    expect([...block.matchAll(/(?:^|;)inset-inline:([^;]+)/g)].map(match => match[1])).toEqual(['0'])
+    expect([...block.matchAll(/(?:^|;)width:([^;]+)/g)].map(match => match[1])).toEqual(['auto'])
+  })
+
+  it('轨宽只在共同两列布局消费，中控 margin 仅 M；空态内容轨道与纵向规则保留', () => {
+    const shared = allDeclarations(controlCenterCss, '.control-center')
+    expect(shared).toContain('margin-inline:var(--cc-margin-x,20px)')
+    expect(controlCenterCss).not.toContain('--scroll-action-rail-width')
+    const root = allDeclarations(chromeCss, '.solid-agent-workbench')
+    expect(root).toContain('grid-template-columns:minmax(0,1fr)var(--scroll-action-rail-width)')
+    const rail = allDeclarations(chromeCss, '.solid-workbench-scroll-rail')
+    for (const declaration of ['grid-column:2', 'grid-row:1', 'position:relative', 'align-self:stretch', 'min-height:0', '--scroll-action-end-size:16px']) {
+      expect(rail).toContain(declaration)
+    }
+    expect(rail).not.toMatch(/(?:^|;)inset:/)
+    expect(allDeclarations(chromeCss, '.solid-workbench-chat-shell')).not.toContain('--scroll-action')
+    expect(allDeclarations(chromeCss, '.solid-workbench-creation-overlay-host')).toContain('inset:0;')
+    expect(chromeCss.replaceAll(/\/\*[\s\S]*?\*\//g, '')).not.toContain('--creation-overlay-right-inset')
+
+    // 轨宽整张表只有 `:root` 两处**声明**（宽窗 12 / 窄屏 14）——空态不得再抄一份
+    const stripped = chromeCss.replaceAll(/\/\*[\s\S]*?\*\//g, '')
+    expect([...stripped.matchAll(/--scroll-action-rail-width:([^;}]+)/g)].map(m => m[1].replaceAll(/\s+/g, '')))
+      .toEqual(['12px', '14px'])
+    expect(stripped).toMatch(/:root\s*\{\s*--scroll-action-rail-width:\s*12px/)
+    expect(stripped).toMatch(/:root\s*\{\s*--scroll-action-rail-width:\s*14px/)
+    // 空态作用域下**没有任何**规则再消费轨宽（"第二套右距 / 原点"的结构性排除）
+    expect(
+      [...stripped.matchAll(/([^{}]*\.is-empty[^{}]*)\{([^{}]*)\}/g)]
+        .filter(match => match[2].includes('--scroll-action-rail-width'))
+        .map(match => match[1].trim()),
+    ).toEqual([])
+
+    // 空态保留项：纵向居中 + 内容上限 720 / 32 留白 + 内容居中（都按**新外框**可用宽度求值）
+    const slot = allDeclarations(chromeCss, EMPTY_SLOT)
+    expect(slot).toContain('top:50%')
+    expect(slot).toContain('transform:translateY(-50%)')
+    expect(slot).toContain('--cc-empty-content-width:min(720px,calc(100%-32px))')
+    const body = allDeclarations(chromeCss, `${EMPTY_SLOT} .cc-body`)
+    expect(body).toContain('width:var(--cc-empty-content-width)')
+    expect(body).toContain('max-width:calc(100%-24px)')
+    expect(body).toContain('margin-inline:auto')
   })
 })
 

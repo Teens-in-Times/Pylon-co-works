@@ -24,6 +24,7 @@ import { createPermissionController, registerPermissionController } from './infr
 import { createInteractionRejectionController } from './infrastructure/acp/interactionRejectionController.ts'
 import './app/bootstrap/identityCrossDomainWiring'
 import './app/bootstrap/workspaceControllerWiring'
+import './app/bootstrap/workspaceSheetCloseWiring'
 import { runAppBootstrapTransaction } from './app/bootstrap/appBootstrapTransaction.solid'
 import { useHydrationStore } from './app/bootstrap/hydrationState'
 import { useModalOverlayStore } from './app/modalOverlayStore'

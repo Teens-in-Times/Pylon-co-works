@@ -64,9 +64,13 @@ describe('Control Center layout v9（刀4 名单换代）', () => {
     expect(normalized.placements.tokens).toMatchObject({ order: 1, offsetX: -2, offsetY: 4 })
     // legacy `send` 键名换、位置不动
     expect(normalized.placements['cc-send-button']).toMatchObject({ order: 4, offsetX: 8, offsetY: -1 })
-    // 已删 id 自然丢弃
-    expect(Object.keys(normalized.placements)).not.toContain('session')
-    expect(Object.keys(normalized.placements)).not.toContain('ekg')
+    // ★ #266 CC-13 刀3：归一化语义改（「多余项忽略」→「未知键保留」）——
+    //   已退场的 id（session / ekg）**留在数据里**（没有任何消费者 ⇒ 界面不可见；
+    //   历史键的显式清理归 `domains/theme/migration.ts`，不在这条归一化里做）。
+    expect(normalized.placements.session).toMatchObject({ order: 6, offsetX: 0, offsetY: 0 })
+    expect(normalized.placements.ekg).toMatchObject({ order: 2, offsetX: 3, offsetY: 1 })
+    // 唯一例外：legacy `send` 按别名并入真名，**不以 `send` 为键残留**
+    expect(Object.keys(normalized.placements)).not.toContain('send')
   })
 
   // ★ #238 刀2 逐条点名：本用例的**样本一字未动**（版本 2 + 用户拖过的 model 位置），

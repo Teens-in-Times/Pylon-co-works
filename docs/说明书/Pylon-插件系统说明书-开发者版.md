@@ -602,6 +602,8 @@ context.fonts.registerFont({
 
 `roles` 可为 `interface`、`content`、`code`。注册后字体会出现在对应的设置选择器中；用户选择保存稳定 id，插件停用时界面安全回退到系统字体。插件应通过自己的样式资源声明随包字体的 `@font-face`，宿主不会代插件下载远程字体。
 
+中控设置的「输入栏字体」复用同一个 `content` 字体池与选择器。默认 `follow-message`（跟随消息字体），选择具体稳定 id 后独立生效，不另设启用开关或字体角色。主输入、淡色预测文字及待发送队列编辑框使用该字体，其它提示与消息正文不受影响。自建预设按中控区域保存该选择；缺少字段的旧主题/模板采用跟随。普通设置预览跟随当前设置，模板卡片的跟随项则读取该模板自己的消息字体，独立项不受全局输入/消息字体变化影响。插件字体停用时保留所选 id、沿既有内容字体规则安全回退系统字体并显示已不可用；贡献恢复后沿同一变量投影重新生效。
+
 插件自定义 UI 应优先消费 SDK 导出的 `VISUAL_SEMANTIC_TOKENS` 对应 CSS 变量，例如 `--surface-raised`、`--state-selected-bg`、`--state-focus-ring`、`--state-danger-surface` 与 `--motion-standard`，不要复制宿主的透明度、阴影或动画毫秒值。
 
 ### 6.4.3 会话创建贡献、首轮指令与 preflight
@@ -992,6 +994,7 @@ import {
 
 - 类型一律 `export type` re-export（`PluginActivationContext`、`CommandDefinition`、`HookDefinition`、`PluginUiSurface`、`WorkspaceTypeDefinition`、renderer/settings/presentation/sessionCreation/process/scope 等），编译期消失；
 - 运行时值仅限常量表与纯函数，禁止 import 宿主运行时模块——SDK 可安全内联进插件 bundle，不会泄漏宿主代码。
+- SDK 声明与示例插件使用仓库同源的 TypeScript 6.0.x 验证。SDK 别名通过相对 `paths` 映射，不使用已弃用的 `baseUrl`；仓内示例的 `rootDir` 覆盖 SDK 所在的仓库根。发行开发套件的两个 TS starter 都携带同源 TypeScript 版本约束与 `npm run typecheck` 入口，其路径映射指向套件内声明树。
 
 **契约类型出口覆盖 API 1.0–1.3 / 2.0–2.4 的全部 context 面**（application/workspace/renderer/commands/hooks/sessions/turns/process/ui/services/sidebar/fileWorkbench/contextPanel/presentation/settings/fonts/sessionCreation/interfaceModes/shellRecipes/titlebar/storage/ccWidget/presets/management），以及按域分组的贡献类型（2.0 region 左栏模块、2.1 `CommandTitlebarContribution` app-menu、cc-widget placement、preset 注册、1.2 管理面投影类型、Renderer Suite/Slot 贡献类型 `RendererSuiteContribution` / `RendererSlotContribution`（#520 补齐）等）。**隔离面 wire 协议**也是 SDK 出口：左栏模块与右栏面板的 `renderKind: 'isolated-surface'` 形态，宿主经 `host:input` 推送的输入类型（`AgentSidebarSurfaceInput` / `ContextPanelSurfaceInput`）与可回传事件词表（`SIDEBAR_SURFACE_EVENTS` / `CONTEXT_PANEL_SURFACE_EVENTS`）——写隔离面插件不必再反推宿主桥接协议。
 

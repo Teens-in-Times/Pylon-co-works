@@ -55,7 +55,7 @@ export interface CanonicalConversationEvent {
   /** Versioned journal envelope metadata (A03); absent only on pre-A03 rows. */
   schemaVersion?: number
   provenance?: {
-    origin: 'local-observed' | 'optimistic-local' | 'recovery-import' | 'migration' | 'plugin'
+    origin: 'local-observed' | 'optimistic-local' | 'recovery-import' | 'migration' | 'plugin' | 'external-import'
     trust: 'authoritative' | 'unverified'
     provider?: string
     importId?: string

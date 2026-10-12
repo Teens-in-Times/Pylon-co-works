@@ -1,0 +1,102 @@
+[
+  {
+    "events": [
+      {
+        "occurredAt": "2026-09-30T09:10:00.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "把 README 的标题改成 Pylon"
+            },
+            "sessionUpdate": "user_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:10:03.000Z",
+        "payload": {
+          "update": {
+            "kind": "call",
+            "rawInput": {
+              "file_path": "README.md",
+              "new_string": "# Pylon",
+              "old_string": "# Old Title"
+            },
+            "sessionUpdate": "tool_call",
+            "title": "Edit",
+            "toolCallId": "toolu_2001"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:10:03.000Z",
+        "payload": {
+          "update": {
+            "model": "claude-sonnet-4-5",
+            "sessionUpdate": "done",
+            "stopReason": "tool_use",
+            "usage": {
+              "cacheReadTokens": 10,
+              "cacheWriteTokens": 0,
+              "inputTokens": 200,
+              "outputTokens": 18
+            }
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:10:04.000Z",
+        "payload": {
+          "update": {
+            "rawOutput": [
+              {
+                "text": "The file README.md has been updated.",
+                "type": "text"
+              }
+            ],
+            "sessionUpdate": "tool_call_update",
+            "status": "completed",
+            "toolCallId": "toolu_2001"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:10:06.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "已改好。"
+            },
+            "sessionUpdate": "agent_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:10:06.000Z",
+        "payload": {
+          "update": {
+            "model": "claude-sonnet-4-5",
+            "sessionUpdate": "done",
+            "stopReason": "end_turn",
+            "usage": {
+              "cacheReadTokens": 180,
+              "cacheWriteTokens": 0,
+              "inputTokens": 240,
+              "outputTokens": 6
+            }
+          }
+        }
+      }
+    ],
+    "summary": {
+      "agentId": "claude-code",
+      "eventCount": 6,
+      "externalId": "22222222-2222-4222-8222-222222222222",
+      "lastActivityAt": "2026-09-30T09:10:06.000Z",
+      "skippedLineCount": 0,
+      "sourcePath": "<redacted>",
+      "startedAt": "2026-09-30T09:10:00.000Z",
+      "title": "把 README 的标题改成 Pylon"
+    }
+  }
+]

@@ -4,10 +4,21 @@
 > 产出路径：`.agents/decisions/NNNN-<slug>.md`
 
 - **日期**：2026-09-27
-- **状态**：已采用
+- **状态**：已采用（2026-10-05 修订 1：预测仅在输入框呈现）
 - **相关**：#394 / #395 / #405，#315（peri 扩展通道）、ADR-0030（标题分口径）
 
-## 背景与约束
+## 修订 1（2026-10-05，当前决策）
+
+用户确认最新构建的输入框已能显示原生预测灰字，但聊天区仍有「输入预测」卡；明确选择「只显示输入框灰字」，并要求「不保留接受和忽略卡片按钮，但保留行为，比如tab接受」。
+
+1. 内置工作台不挂载预测卡及接受/忽略按钮；输入框是预测的唯一默认呈现面。
+2. 保留既有输入框行为：Tab / 右箭头接受，空草稿 Enter 接受并发送，Esc / 空草稿退格 / 输入分歧拒绝；仍按实例身份消费预测。
+3. 原生源优先级、source 身份判据与持久化事实不变。排队命令、文件建议继续独立显示；排队命令沿用既有 assist.prediction slot 的兼容出口，但 payload 仅含排队命令事实，不携带预测文本或按钮。
+4. 本修订替代下方原「决策」第 2/3 条中卡片与 ghost 共用、卡片为次要面的呈现约定，以及「后果」中未消费预测同时出现在两处的描述。下方原文保留为 2026-09-27 决策历史。第三方 Suite 主动渲染该 slot 的能力不退役。
+
+证据：`WorkbenchDocumentSurface.solid.tsx` 的 queued-only 呈现、`mountSolidWorkbench.solid.test.tsx` 的整工作台灰字/Tab/Esc 与混合排队命令行为用例；原有 InputBar 接受/拒绝用例继续验证。
+
+## 原背景与约束（2026-09-27）
 
 - **官方 ACP 没有聊天输入预测**：唯一的 prediction 是 NES（`nes/suggest` 要 `uri/version/position`，面向文档与代码编辑，挂 `unstable_nes`，Peri 与 Hermes 均不支持）。因此聊天预测只有两条来源：**Agent 私有推送**（Peri `peri/prediction_ready`，caps 门控）与**本地 provider**（设置里的 OpenAI 兼容服务 / ACP fork）。
 - 本地预测系统已经存在：设置（`domains/inputPrediction/inputPredictionSettings.ts` 的 mode/参数）→ router（`fork`/`standalone`/`auto`）→ scheduler（去抖/限流/可取消）→ 输入框 ghost（`InputBar.solid.tsx`）。

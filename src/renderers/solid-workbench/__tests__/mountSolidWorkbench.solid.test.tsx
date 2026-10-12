@@ -54,7 +54,7 @@ function streamInto(
 }
 
 
-function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { reducedMotion?: boolean } = {}) {
+function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { reducedMotion?: boolean; preview?: boolean } = {}) {
   const host = document.createElement('div')
   document.body.append(host)
   hosts.push(host)
@@ -73,7 +73,7 @@ function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { red
     input: {
       sheetId: 'sheet-a',
       sessionId: 'preview-session',
-      preview: true,
+      preview: options.preview ?? true,
       rightInset: 24,
       reducedMotion: options.reducedMotion ?? true,
     },
@@ -82,6 +82,23 @@ function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { red
   })
   return { host, services, lifecycle }
 }
+
+it('#566 keeps messages, activities and session cards in one stable reading column', () => {
+  const { host, services, lifecycle } = mountPreview()
+  const column = host.querySelector<HTMLElement>('.solid-workbench-reading-column')
+  expect(column).not.toBeNull()
+  expect(column!.style.maxWidth).toBe('960px')
+  expect(column!.querySelector('.plain-message-list')).not.toBeNull()
+  expect(column!.querySelector('.term-tool')).not.toBeNull()
+  expect(column!.querySelector('.plan-goal-content')).not.toBeNull()
+  const connectors = host.querySelector('.term-tool-connector-layer')
+  expect(connectors?.parentElement).toBe(column!.parentElement)
+  const base = services.runtime.getSnapshot().document!
+  services.runtime.replaceDocument({ ...base, messages: [] }, { ownerKey: 'owner-preview', generation: 1 })
+  expect(host.querySelector('.solid-workbench-reading-column')).toBe(column)
+  expect(column!.style.maxWidth).toBe('960px')
+  lifecycle.destroy()
+})
 
 /**
  * P57 S1.0 测试基建：可变滚动模型。scrollTop/scrollHeight/clientHeight 以
@@ -1309,6 +1326,115 @@ describe('mountSolidWorkbench', () => {
     expect(third.host.querySelector<HTMLElement>('.control-center')!.style.getPropertyValue('--cc-min-width')).toBe('384px')
   })
 
+  it('滚动条在共同外层右列且唯一，不在消息壳内；中控与消息在左列', async () => {
+    const { host, lifecycle } = mountPreview()
+    const workbench = host.querySelector('.solid-agent-workbench')!
+    const column = host.querySelector('.solid-workbench-content-column')!
+    expect(column.parentElement).toBe(workbench)
+    const assertSession = () => {
+      const rail = host.querySelector('.solid-workbench-scroll-rail')!
+      expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(1)
+      expect(rail.parentElement).toBe(workbench)
+      expect(rail.closest('.solid-workbench-chat-shell')).toBeNull()
+      expect(host.querySelector('.solid-workbench-chat-shell')?.parentElement).toBe(column)
+      expect(host.querySelector('.chat-view')?.closest('.solid-workbench-content-column')).toBe(column)
+    }
+    assertSession()
+    expect(host.querySelector('.control-center')?.parentElement).toBe(column)
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: null, preview: true })
+    await screen.findByRole('region', { name: 'Agent 工作台空态' })
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(0)
+    expect(host.querySelector('.solid-workbench-empty-chat-shell')?.parentElement).toBe(column)
+    expect(host.querySelector('.control-center')?.parentElement).toBe(column)
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: 'preview-session', preview: true, replayReadonly: true })
+    await screen.findByText('历史回放 · 只读')
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelector('.solid-workbench-replay-overlay')?.parentElement).toBe(column)
+    expect(host.querySelector('.control-center')).toBeNull()
+    assertSession()
+    lifecycle.destroy()
+  })
+
+  it('全高轨道仍驱动消息viewport，不驱动中控', async () => {
+    const pump = createFramePump()
+    try {
+      const { host, lifecycle } = mountPreview()
+      const viewport = host.querySelector<HTMLElement>('.chat-view')!
+      const center = host.querySelector<HTMLElement>('.control-center')!
+      const centerModel = createScrollModel(center, { top: 17 })
+      const model = createScrollModel(viewport, { top: 0, height: 2_000, clientHeight: 400 })
+      installInstantScrollToSink(viewport, model, pump)
+      const track = host.querySelector<HTMLElement>('.solid-workbench-scroll-track')!
+      const thumb = host.querySelector<HTMLElement>('.solid-workbench-scroll-thumb')!
+      let trackHeight = 800
+      Object.defineProperty(track, 'getBoundingClientRect', { configurable: true, value: () => ({ top: 60, height: trackHeight }) })
+      fireEvent.scroll(viewport)
+      expect(thumb.style.height).toBe('160px')
+      fireEvent.click(host.querySelector('[data-scroll-action="top"]')!)
+      expect(model.top).toBe(0)
+      fireEvent.click(track, { clientY: 460 })
+      expect(model.top).toBeCloseTo(800)
+      expect(thumb.style.transform).toBe('translateY(320px)')
+      fireEvent.keyDown(track, { key: 'PageDown' })
+      expect(model.top).toBeCloseTo(1_160)
+      fireEvent.keyDown(track, { key: 'Home' })
+      expect(model.top).toBe(0)
+      fireEvent.click(host.querySelector('[data-scroll-action="bottom"]')!)
+      expect(model.top).toBe(1_600)
+      fireEvent.keyDown(track, { key: 'Home' })
+      trackHeight = 1_000
+      window.dispatchEvent(new Event('resize'))
+      expect(thumb.style.height).toBe('200px')
+      Object.defineProperty(thumb, 'getBoundingClientRect', { configurable: true, value: () => ({ height: 200 }) })
+      fireEvent.pointerDown(thumb, { clientY: 100, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientY: 500, pointerId: 1 })
+      expect(model.top).toBeCloseTo(800)
+      expect(thumb.style.transform).toBe('translateY(400px)')
+      fireEvent.pointerUp(window, { pointerId: 1 })
+      expect(thumb).not.toHaveAttribute('data-dragging')
+      expect(centerModel.top).toBe(17)
+      lifecycle.destroy()
+    } finally {
+      pump.dispose()
+    }
+  })
+
+  it('创建中与进入状态不换两列布局', async () => {
+    let finishCreation: ((value: { sessionId: string }) => void) | undefined
+    const { host, services, lifecycle } = mountPreview()
+    const workbench = host.querySelector('.solid-agent-workbench')!
+    const column = host.querySelector('.solid-workbench-content-column')!
+    services.commands.setHandler('createSession', vi.fn(() => new Promise<{ sessionId: string }>(resolve => { finishCreation = resolve })))
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: null, preview: true })
+    const prompt = await screen.findByRole('textbox', { name: '消息输入' })
+    const emptyViewport = host.querySelector('.chat-view')!
+    fireEvent.input(prompt, { target: { value: '受控创建测试，不发送给真实 Agent' } })
+    fireEvent.keyDown(prompt, { key: 'Enter', code: 'Enter', shiftKey: false })
+    await waitFor(() => expect(host.querySelector('.control-center')).toHaveAttribute('data-creation-state', 'creating'))
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelector('.control-center')?.parentElement).toBe(column)
+    expect(host.querySelector('.control-center')).toHaveClass('is-session-creating')
+    expect(host.querySelector('.control-center')).toHaveAttribute('aria-busy', 'true')
+    expect(prompt).toBeDisabled()
+    expect(host.querySelector('[data-creation-progress]')?.closest('.solid-workbench-chat-shell')?.parentElement).toBe(column)
+    expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(0)
+    finishCreation?.({ sessionId: 'created-session' })
+    await waitFor(() => expect(host.querySelector('[data-creation-progress]')).toBeNull())
+    lifecycle.update({ sheetId: 'sheet-a', sessionId: 'created-session', preview: true })
+    await waitFor(() => expect(host.querySelector('.control-center')).toHaveClass('is-session-entering'))
+    expect(host.querySelector('.solid-workbench-content-column')).toBe(column)
+    expect(host.querySelectorAll('.solid-workbench-scroll-rail')).toHaveLength(1)
+    expect(host.querySelector('.solid-workbench-scroll-rail')?.parentElement).toBe(workbench)
+    const sessionViewport = host.querySelector<HTMLElement>('.chat-view')!
+    expect(sessionViewport).not.toBe(emptyViewport)
+    const model = createScrollModel(sessionViewport, { height: 1_400, clientHeight: 400 })
+    Object.defineProperty(sessionViewport, 'scrollTo', { configurable: true, value: (options: ScrollToOptions) => { model.top = options.top ?? 0 } })
+    fireEvent.click(host.querySelector('[data-scroll-action="bottom"]')!)
+    expect(model.top).toBe(1_000)
+    lifecycle.destroy()
+  })
+
   it('update 不重挂 root，并切换 replay/Session 输入', async () => {
     const { host, lifecycle } = mountPreview()
     const root = host.firstElementChild
@@ -1828,8 +1954,10 @@ describe('mountSolidWorkbench', () => {
     services.appearance.setTheme(theme)
 
     await waitFor(() => expect(host.querySelector('.input-textarea')).toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: '停止生成' })).toBeNull()
-    expect(host.querySelector('.cc-send-icon, .cc-send-square, .cc-send-minimal')).toBeNull()
+    // ★ CC-13 刀2（回单点名：断言旧行为的用例按新行为改）：**预览/测试环境的发送按钮从
+    //   "整块不渲染"变成"渲染"**（`cc-send-button` 的注册在场门退役；生产本就渲染，不变）。
+    //   `inline` 档 ⇒ 按钮挂在输入栏内（`data-mode="inline"`）；legacy 输入栏按钮仍不渲染。
+    expect(host.querySelector('.cc-send-button[data-mode="inline"]')).toBeInTheDocument()
     expect(host.querySelector('.input-btn.send, .input-btn.stop')).toBeNull()
 
     theme.inputSubmitButtonMode = 'external'
@@ -1982,10 +2110,11 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
   })
 
   it('#238 刀4 · 占区相交的非悬浮件被挡（与悬浮豁免互为对照）', async () => {
-    // 说明：**预览环境里发送按钮不渲染**（cc 元件注册表为空 ⇒ `ccSendButtonRegistered()` 为假），
-    // 所以"悬浮件放行"这一半没法在这里端到端测 —— 它由 `shouldBypassCollisionConstraint` 的
-    // 纯函数单测（`ccPlacementCollision.test.ts`）与实机数值证据承担。
-    // 这里钉住对照面：同一布局下，非悬浮件（model 与输入栏相交）的微调会被挡住。
+    // 说明：本用例钉住**非悬浮件**被挡这一半；「悬浮件放行」那一半由
+    // `shouldBypassCollisionConstraint` 的纯函数单测（`ccPlacementCollision.test.ts`）与实机数值证据承担
+    // —— 要在这里端到端测它得另造一份"拖悬浮件进占区"的几何夹具，那不是本用例的对照面。
+    // ★ CC-13 刀2 起：预览/测试环境的发送按钮**已经在场**（注册在场门退役）
+    //   ⇒ 旧注释「预览不渲染发送按钮」已作废；本用例仍只做非悬浮件的对照。
     const fake = installFakeLayout({
       input: { left: 0, top: 100, width: 900, height: 60 },
       model: { left: 0, top: 150, width: 100, height: 28 },
@@ -2346,7 +2475,7 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     expect(screen.queryByLabelText('会话预算')).toBeNull()
     expect(screen.getByLabelText('编辑 Model')).toHaveValue('gpt-5')
     expect(screen.getByLabelText('会话命令')).toHaveTextContent('/review')
-    expect(screen.getByLabelText('输入预测')).toHaveTextContent('继续审计')
+    expect(screen.queryByLabelText('输入预测')).toBeNull()
     expect(screen.getByLabelText('文件建议')).toHaveTextContent('src/a.ts')
     expect(host.textContent).not.toContain('↓ 8 tokens')
     // S11：用量控件常态显示为按钮型胶囊，但旧的 usage surface（会话用量标签 / ↓ N tokens）仍未回归；
@@ -2362,10 +2491,8 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     expect(screen.getByText('canonical warning')).toBeInTheDocument()
   })
 
-  // #394：预测卡的呈现判据与输入框 ghost 同一条口径——空文本帧不渲卡（Peri 用
-  // `prediction_ready` 的 set_title 动作发会话标题，此前渲成一张「只有标题 + 两个按钮」的空卡）；
-  // 消费过的实例也不渲卡（接受/拒绝后卡片与 ghost 同时收敛）。
-  it('#394 预测卡：空文本不渲染，消费后的实例不渲染', async () => {
+  // #394（2026-10-05 修订）：预测仅在输入框呈现，排队命令仍独立显示。
+  it('#394：预测卡不再挂载，空文本与已消费实例同判，排队命令保留', async () => {
     const envelope = (sequence: number, event: WorkbenchEventEnvelope['event']): WorkbenchEventEnvelope => createWorkbenchEnvelope({
       sessionId: 'preview-session', recordedAt: `2026-08-21T00:00:0${sequence}.000Z`, sequence,
       source: { provider: 'peri', sourceId: `solid-${sequence}` }, provenance: { origin: 'local-observed', trust: 'authoritative' }, event,
@@ -2380,7 +2507,7 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     await waitFor(() => expect(textless.services.runtime.getSnapshot().document?.assist.prediction).toBeDefined())
     expect(textless.host.querySelector('[data-content-kind="assist.prediction"]')).toBeNull()
 
-    // ② 有文本但已消费：先渲卡，写消费标记后消失（与输入框 ghost 同一标记）。
+    // ② 有文本的预测仅在输入框呈现；消费后也不挂载聊天卡。
     const consumed = mountPreview()
     const projected = projectWorkbench([
       envelope(1, { type: 'assist.prediction', placeholder: '继续审计', actions: [] }),
@@ -2388,7 +2515,10 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     const eventId = projected.assist.prediction?.eventId
     expect(eventId).toBeTruthy()
     consumed.services.runtime.replaceDocument(projected, { ownerKey: 'owner-preview', generation: 1 })
-    expect(await screen.findByLabelText('输入预测')).toHaveTextContent('继续审计')
+    await waitFor(() => expect(consumed.host.querySelector('.input-ghost-suggestion')).toHaveTextContent('继续审计'))
+    expect(consumed.host.querySelector('[data-content-kind="assist.prediction"]')).toBeNull()
+    expect(consumed.host.querySelector('[aria-label="接受输入建议"]')).toBeNull()
+    expect(consumed.host.querySelector('[aria-label="忽略输入建议"]')).toBeNull()
 
     consumed.services.sessionUi.set('preview-session', 'assist-prediction-consumed', eventId!)
     await waitFor(() => expect(consumed.host.querySelector('[data-content-kind="assist.prediction"]')).toBeNull())
@@ -2398,7 +2528,51 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     queued.services.runtime.replaceDocument(projectWorkbench([
       envelope(1, { type: 'assist.queued-command', command: '/compact' }),
     ]).document, { ownerKey: 'owner-preview', generation: 1 })
-    expect(await screen.findByLabelText('输入预测')).toHaveTextContent('排队命令：/compact')
+    expect(await screen.findByLabelText('排队命令')).toHaveTextContent('排队命令：/compact')
+  })
+
+  it('#394：灰字 Tab 接受、Esc 忽略继续消费原生预测，混合排队命令不带预测按钮', async () => {
+    // 预览模式故意禁用输入；验证键位须使用正常工作台模式。
+    const { host, services } = mountPreview(undefined, { preview: false })
+    const prediction = (sequence: number) => createWorkbenchEnvelope({
+      sessionId: 'preview-session', sequence, recordedAt: '2026-10-05T12:00:00.000Z',
+      source: { provider: 'peri', sourceId: `prediction-${sequence}` },
+      provenance: { origin: 'local-observed', trust: 'authoritative' },
+      event: { type: 'assist.prediction', placeholder: '继续审计', actions: [] },
+    })
+    const projected = projectWorkbench([prediction(1)]).document
+    services.runtime.replaceDocument(projected, { ownerKey: 'owner-preview', generation: 1 })
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toHaveTextContent('继续审计'))
+    expect(host.querySelector('[aria-label="输入预测"]')).toBeNull()
+    expect(host.querySelector('[aria-label="接受输入建议"]')).toBeNull()
+    expect(host.querySelector('[aria-label="忽略输入建议"]')).toBeNull()
+    const textarea = host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!
+    fireEvent.keyDown(textarea, { key: 'Tab' })
+    await waitFor(() => expect(textarea).toHaveValue('继续审计'))
+    expect(services.sessionUi.get('preview-session', 'assist-prediction-consumed', '')).toBe(projected.assist.prediction?.eventId)
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toBeNull())
+
+    fireEvent.input(textarea, { target: { value: '' } })
+    const next = projectWorkbench([prediction(2)]).document
+    services.runtime.replaceDocument(next, { ownerKey: 'owner-preview', generation: 1 })
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toHaveTextContent('继续审计'))
+    fireEvent.keyDown(textarea, { key: 'Escape' })
+    expect(textarea).toHaveValue('')
+    expect(services.sessionUi.get('preview-session', 'assist-prediction-consumed', '')).toBe(next.assist.prediction?.eventId)
+    await waitFor(() => expect(host.querySelector('.input-ghost-suggestion')).toBeNull())
+
+    services.runtime.replaceDocument(projectWorkbench([
+      prediction(3), createWorkbenchEnvelope({
+        sessionId: 'preview-session', sequence: 4, recordedAt: '2026-10-05T12:00:00.000Z',
+        source: { provider: 'peri', sourceId: 'queue-4' },
+        provenance: { origin: 'local-observed', trust: 'authoritative' },
+        event: { type: 'assist.queued-command', command: '/compact' },
+      }),
+    ]).document, { ownerKey: 'owner-preview', generation: 1 })
+    await waitFor(() => expect(host.querySelector('[aria-label="排队命令"]')).toHaveTextContent('/compact'))
+    const card = host.querySelector('[aria-label="排队命令"]')!
+    expect(card).not.toHaveTextContent('继续审计')
+    expect(card.querySelector('button')).toBeNull()
   })
 
   it('同一 error 事实只渲染一个可见错误 surface', async () => {

@@ -6,6 +6,7 @@
  */
 import { normalizeCustomPresetId } from './customPresets.ts'
 import { normalizeCcLayout, type CcLayoutV3 } from '../cc/ccLayoutState.ts'
+import { normalizeCcPluginProps } from '../cc/ccPluginProps.ts'
 import { clampCcHeight, ccMinHeightInputOf } from '../cc/ccHeightState.ts'
 import { normalizeThemeState } from './themeFieldDefs.ts'
 import { PRESET_ZONES } from './presetReducer.ts'
@@ -70,6 +71,34 @@ const REMOVED_CC_THEME_KEYS = [
   'ccStyle', 'ekgWidth', 'ekgGreen', 'ekgYellow', 'ekgRed',
   'barTrackColor', 'barFillColor', 'barFillFollow', 'barHeight',
 ] as const
+
+/**
+ * ★★ #266 CC-13 刀4（小活③ · 数据卫生）：**历史废弃的 placement id 显式删键**。
+ *
+ * 来由：刀3 把布局键空间放开后，`normalizeCcLayout` 从「多余项忽略」改成「未知键保留」
+ * （读盘发生在插件登记**之前** ⇒ 读盘丢会每次重启误删插件位置）。代价是**已退场的内置 id
+ * 也随之留在数据里**（无消费者 ⇒ 界面不可见，但白占存储、也让"归一化后还剩什么"说不清）。
+ * 补法就在这里：**点名**一个白名单显式删掉它们 —— 白名单之外（含插件 id）一律不动。
+ *
+ * - `pct`：v10 并入「用量」`tokens`；
+ * - `session` / `workspace` / `activity` / `ekg` / `tasks`：v11 名单换代删掉的五个 id。
+ *
+ * ★ 落点在结构对齐路径（每次读盘无条件跑）⇒ 老数据在下一次读盘就清干净、且**幂等**；
+ *   不碰 `ccHidden` / `ccHiddenEmpty`（那两份表的退役 id 无消费者、不占渲染面，本刀不动它们）。
+ */
+const REMOVED_CC_PLACEMENT_IDS = ['pct', 'session', 'workspace', 'activity', 'ekg', 'tasks'] as const
+
+/** 删掉白名单里的 placement 键；一个都没删到 ⇒ 原样返回同一个对象（不产无谓的新对象）。 */
+function pruneRetiredCcPlacements(layout: CcLayoutV3): CcLayoutV3 {
+  const placements = { ...layout.placements }
+  let removed = false
+  for (const id of REMOVED_CC_PLACEMENT_IDS) {
+    if (!(id in placements)) continue
+    delete placements[id]
+    removed = true
+  }
+  return removed ? { ...layout, placements } : layout
+}
 
 /** v11（刀4）：legacy `send` → 注册轨 id（槽位事实的继任者）。 */
 const LEGACY_CC_KEY_RENAMES: Readonly<Record<string, string>> = Object.freeze({ send: 'cc-send-button' })
@@ -149,9 +178,12 @@ export function normalizeThemeMigrationState(
       if (state[key] === undefined) normalized[key] = state.toolIndicator
     }
   }
-  normalized.ccLayout = normalizeCcLayout(
+  normalized.ccLayout = pruneRetiredCcPlacements(normalizeCcLayout(
     state.ccLayout as Partial<CcLayoutV3> | undefined,
-  )
+  ))
+  // ★ #266 CC-13 刀4：插件元件属性值（与 ccLayout 同款：非对象/坏值逐层兜底、保留未知键）。
+  //   顶层是白名单式写盘（`partialize`）⇒ 值必须住在**已声明字段**里，故这里无条件给一份合法表。
+  normalized.ccPluginProps = normalizeCcPluginProps(state.ccPluginProps)
   normalized.ccEditMode = false
 
   // A1 迁移：旧 activePreset/dirty 键 → appliedPreset/custom；旧 'custom' 值（基准丢失）
@@ -253,7 +285,9 @@ function normalizeThemeValues(state: Record<string, unknown>, base: object): Rec
  * 以前它只挂在 migrate 钩子里，而 migrate 只在持久化版本变化时触发 ⇒ 忘 bump 即静默坏。
  *
  * - **缺项补默认**（`normalizeCcLayout` 按当前控件全集逐 id 合并）；
- * - **多余项忽略**（不在全集里的旧 id 自然丢弃）；
+ * - **未知键保留**（★ CC-13 刀3 起的口径，取代原先那句"多余项忽略"）：不在当前全集里的 id
+ *   —— 插件件 id（读盘发生在**插件登记之前**）与白名单外的历史 id —— **原样留下**并逐键 clamp；
+ *   历史废弃 id 的显式清理另由本文件的 `REMOVED_CC_PLACEMENT_IDS` **点名**完成（刀4，幂等）；
  * - **用户手调值一律保留**：`offsetX` / `offsetY` / `order` 与所有已设字段值
  *   （既定口径：「布局归一化不是把用户排布拍平」）；
  * - **幂等**：连续跑两次结果相同（`__tests__/structuralAlignment.test.ts` 钉住）。

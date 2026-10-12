@@ -14,6 +14,7 @@ import { resolvePluginSettingOptions } from '../../plugin-runtime/settings/plugi
 import type { PluginSettingOption, PluginSettingOptionsContribution } from '../../plugin-runtime/settings/pluginSettingsTypes.ts'
 import type { RegistryEntry } from '../../plugin-runtime/registry/types.ts'
 import { resolveToolIndicatorAsset, toolIndicatorOptions } from '../../domains/chat/toolIndicatorAssets.ts'
+import { resolveFontToken } from '../../domains/theme/fontTokens.ts'
 import { lastSettingWriter, SETTING_WRITE_SOURCE_LABELS } from '../../domains/theme/settingProvenance.ts'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
@@ -192,7 +193,16 @@ function FieldControl(props: { def: ThemeFieldDef; ctx: RenderCtx; keyName: Them
   }
 
   if (def.control === 'fontPicker' && def.fontRole) {
-    return <FontContributionPicker ariaLabel={def.label} value={String(value() ?? '')} role={def.fontRole} settingTarget={`theme.${keyName}`} optionContributions={props.ctx.settingOptionEntries} onChange={v => emitKey(v)} />
+    // CC-21：输入栏字体的菜单首项是「跟随消息字体」哨兵，示例实时读当前消息字体的
+    // 解析值；其它字体字段不传跟随项，选项/回退/展示行为不变。
+    const followOption = keyName === 'inputFont'
+      ? {
+          label: def.optionLabels?.['follow-message'] ?? '跟随消息字体',
+          value: 'follow-message',
+          previewFamily: () => resolveFontToken(props.ctx.t.msgFont),
+        }
+      : undefined
+    return <FontContributionPicker ariaLabel={def.label} value={String(value() ?? '')} role={def.fontRole} settingTarget={`theme.${keyName}`} optionContributions={props.ctx.settingOptionEntries} followOption={followOption} onChange={v => emitKey(v)} />
   }
 
   if (def.control === 'toolIndicator') {

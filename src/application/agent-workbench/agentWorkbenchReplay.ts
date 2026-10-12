@@ -23,7 +23,7 @@ import { resolveRuntimeErrors } from '../../app/runtimeError.ts'
 import {
   canonicalDurationFromRows,
   canonicalLatestBoundaryFromRows,
-  toWorkbenchEnvelopes,
+  readWorkbenchRow,
   withJournalDiagnostic,
 } from './agentWorkbenchProjection.ts'
 import type { LatestTurnBoundary } from '../../domains/events/canonicalTurnDuration.ts'
@@ -91,7 +91,7 @@ export interface FoldedDocumentInput {
 export interface AgentWorkbenchReplayDeps {
   runtime: WorkbenchRuntime
   binding: AgentWorkbenchBindingState
-  /** 宿主侧 overlay 计数（journal 迁移失败诊断）；bind 与事件通道负责重置。 */
+  /** 宿主侧 overlay 计数（journal 解析失败诊断）；bind 与事件通道负责重置。 */
   fold: { journalDiagnosticCount: number }
   sessionUi: ReturnType<typeof createSessionUiStore>
   clock: AgentWorkbenchTurnClock
@@ -116,7 +116,7 @@ export interface AgentWorkbenchReplay {
   foldEvent(envelope: WorkbenchEventEnvelope, base?: WorkbenchDocument): WorkbenchDocument
   publishCanonicalRead(input: CanonicalReadInput): void
   publishFoldedDocument(input: FoldedDocumentInput): void
-  /** 行 → 信封（#205：按序直接收集，不先 concat 再 flatMap）；不可迁移的行计入 malformed。 */
+  /** 行 → 信封（#205：按序直接收集）；读取失败计入 malformed，成功空投影不计。 */
   collectRowsInto(target: WorkbenchEventEnvelope[], rows: readonly unknown[]): void
   maxRowSequence(rows: readonly unknown[]): number
   refresh(
@@ -222,12 +222,12 @@ export function createAgentWorkbenchReplay(deps: AgentWorkbenchReplayDeps): Agen
    */
   const collectRowsInto = (target: WorkbenchEventEnvelope[], rows: readonly unknown[]): void => {
     for (const row of rows) {
-      const migrated = toWorkbenchEnvelopes(row)
-      if (migrated.length === 0) {
+      const read = readWorkbenchRow(row)
+      if (!read.ok) {
         binding.malformedCount += 1
         continue
       }
-      for (const envelope of migrated) target.push(envelope)
+      for (const envelope of read.envelopes) target.push(envelope)
     }
   }
 
@@ -272,7 +272,7 @@ export function createAgentWorkbenchReplay(deps: AgentWorkbenchReplayDeps): Agen
       livenessGenerating: readLiveness.generating,
     })
     if (input.malformedCount > 0) {
-      updateRuntimeState({ status: 'degraded', error: `canonical journal 有 ${input.malformedCount} 条事件无法迁移` })
+      updateRuntimeState({ status: 'degraded', error: `canonical journal 有 ${input.malformedCount} 条事件无法解析` })
     } else {
       updateRuntimeState({ status: 'ready', error: null })
       // A successful canonical refresh is authoritative evidence that any
@@ -402,8 +402,8 @@ export function createAgentWorkbenchReplay(deps: AgentWorkbenchReplayDeps): Agen
 
         let refreshMalformedCount = 0
         const envelopes = rows.flatMap(row => {
-          const migrated = toWorkbenchEnvelopes(row)
-          if (migrated.length > 0) return migrated
+          const read = readWorkbenchRow(row)
+          if (read.ok) return read.envelopes
           refreshMalformedCount += 1
           return []
         })

@@ -39,6 +39,12 @@ function dispatchAppearanceCommand(command: AppearanceCommand): void {
     case 'update-cc-placement':
       state.updateCcPlacement(command.id, command.placement)
       break
+    case 'set-cc-plugin-prop':
+      state.setCcPluginProp(command.id, command.key, command.value)
+      break
+    case 'clear-cc-widget-data':
+      state.clearCcWidgetData(command.id)
+      break
     case 'set-cc-property':
       if (typeof command.value !== 'number' || Number.isFinite(command.value)) {
         state.setZoneField('cc', { [command.key]: command.value })

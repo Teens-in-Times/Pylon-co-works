@@ -54,8 +54,9 @@ pub fn draft_candidate(owner: &DurableSessionOwner, raw: Arc<Value>) -> Option<D
             remote_session_id: None,
             client_generation: 0,
             received_at: String::new(),
+            occurred_at: None,
             raw_payload: raw,
-            recovery_import: false,
+            import_origin: super::row::EventImportOrigin::Live,
         },
         1,
     )
@@ -226,8 +227,9 @@ impl EventRepo {
                     remote_session_id: fragment.remote_session_id.clone(),
                     client_generation: fragment.client_generation,
                     received_at: fragment.first_received_at.clone(),
+                    occurred_at: None,
                     raw_payload: Arc::new(raw_payload),
-                    recovery_import: false,
+                    import_origin: super::row::EventImportOrigin::Live,
                 });
             }
         }
@@ -453,11 +455,12 @@ mod tests {
             remote_session_id: Some("remote-s".into()),
             client_generation: 2,
             received_at: "2026-09-25T00:00:00.000Z".into(),
+            occurred_at: None,
             raw_payload: Arc::new(serde_json::json!({
                 "update": {"sessionUpdate":"agent_message_chunk", "content":{"text":text}},
                 "secret": "must-not-persist"
             })),
-            recovery_import: false,
+            import_origin: crate::event_repo::row::EventImportOrigin::Live,
         }
     }
 

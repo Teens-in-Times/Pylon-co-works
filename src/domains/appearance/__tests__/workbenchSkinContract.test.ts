@@ -10,6 +10,24 @@ import {
 
 const FIXED_TIME = '2026-08-11T00:00:00.000Z'
 
+describe('CC-21 workbench input font contract', () => {
+  it('lists the input variable and resolves follow, independent and plugin fixtures without raw ids', () => {
+    expect(WORKBENCH_CSS_VARIABLES).toContain('--cc-input-font-family')
+    const set = createWorkbenchSkinFixtureSet([
+      { id: 'custom-follow', name: 'follow', theme: { msgFont: 'serif' }, createdAt: 1, updatedAt: 1 },
+      { id: 'custom-independent', name: 'independent', theme: { inputFont: 'mono', msgFont: 'serif' }, createdAt: 1, updatedAt: 1 },
+      { id: 'custom-plugin', name: 'plugin', theme: { inputFont: 'vendor.input', msgFont: 'mono' }, createdAt: 1, updatedAt: 1 },
+    ], FIXED_TIME)
+    const values = set.fixtures.filter(item => item.kind === 'custom').map(item => item.cssVariables['--cc-input-font-family'])
+    expect(values).toEqual([
+      'var(--font-serif-default, var(--serif))',
+      'var(--font-mono-default, var(--mono))',
+      'var(--pylon-font-vendor-input, var(--font-system, var(--font)))',
+    ])
+    expect(set.fixtures.find(item => item.id === 'custom-custom-follow')?.theme.inputFont).toBe('follow-message')
+  })
+})
+
 describe('Workbench 皮肤迁移 contract', () => {
   it('从源码动态枚举全部内置预设，不硬编码数量', () => {
     const fixtureSet = createWorkbenchSkinFixtureSet([], FIXED_TIME)

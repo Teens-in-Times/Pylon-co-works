@@ -1,0 +1,54 @@
+[
+  {
+    "events": [
+      {
+        "occurredAt": "2026-09-30T09:20:00.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "分析一下日志"
+            },
+            "sessionUpdate": "user_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:20:03.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "正在分析"
+            },
+            "sessionUpdate": "agent_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:20:03.000Z",
+        "payload": {
+          "update": {
+            "model": "claude-sonnet-4-5",
+            "sessionUpdate": "done",
+            "stopReason": "end_turn",
+            "usage": {
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "inputTokens": 50,
+              "outputTokens": 25
+            }
+          }
+        }
+      }
+    ],
+    "summary": {
+      "agentId": "claude-code",
+      "eventCount": 3,
+      "externalId": "33333333-3333-4333-8333-333333333333",
+      "lastActivityAt": "2026-09-30T09:20:03.000Z",
+      "skippedLineCount": 0,
+      "sourcePath": "<redacted>",
+      "startedAt": "2026-09-30T09:20:00.000Z",
+      "title": "分析一下日志"
+    }
+  }
+]

@@ -3,6 +3,9 @@ use agent_client_protocol_schema::v1::{CreateElicitationRequest, ElicitationScop
 use pylon_acp::{plan_policy, question_policy};
 use serde_json::Value;
 
+use crate::error::PylonError;
+use crate::permission::InteractionAnswerInput;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrivateBridge {
     GrokExtQuestions,
@@ -121,6 +124,82 @@ pub fn build_elicitation_response(action: &str, content: Option<&Value>) -> Resu
     }
 }
 
+/// #569：私有桥应答构造单点（原 inline 于 permission.rs `respond_interaction`
+/// 的 match 三臂，行为逐字保留）。kind 不参与构造——路由权威是账本按
+/// request_id 的登记（#436 裁决：kind 定位为诊断元数据，后端不复核）。入口是
+/// admit 已校验的登记形状：bridge + 原始 params + 已解析 question specs；
+/// 构造失败一律 Err，不伪造成功应答。
+pub(crate) fn build_interaction_response(
+    bridge: PrivateBridge,
+    params: &Value,
+    question_specs: Option<&[question_policy::QuestionSpec]>,
+    answer: &InteractionAnswerInput,
+) -> Result<Value, PylonError> {
+    match bridge {
+        PrivateBridge::GrokExtQuestions | PrivateBridge::PiSelectAsk => {
+            let questions = question_specs.ok_or_else(|| {
+                PylonError::Protocol("private question request lost validated specs".into())
+            })?;
+            let values = answer.values.clone().unwrap_or_default();
+            let answers = questions
+                .iter()
+                .filter_map(|spec| {
+                    values.get(&spec.id).map(|value| {
+                        let labels = match value {
+                            Value::String(label) => vec![label.clone()],
+                            Value::Array(items) => items
+                                .iter()
+                                .filter_map(|item| item.as_str().map(str::to_owned))
+                                .collect(),
+                            _ => Vec::new(),
+                        };
+                        question_policy::QuestionAnswerItem {
+                            question_id: spec.id.clone(),
+                            labels,
+                        }
+                    })
+                })
+                .collect();
+            let question_answer = question_policy::QuestionAnswer {
+                answers,
+                declined: answer.option_id.as_deref() == Some("declined"),
+            };
+            build_question_response(bridge, questions, &question_answer)
+                .map_err(PylonError::Protocol)
+        }
+        PrivateBridge::GrokExitPlan => {
+            let _ = parse_exit_plan(bridge, params).map_err(PylonError::Protocol)?;
+            Ok(plan_policy::approval_response(
+                answer.option_id.as_deref().unwrap_or("keep_planning"),
+                answer.text.as_deref().unwrap_or(""),
+            ))
+        }
+        PrivateBridge::Elicitation => {
+            // #98：elicitation 应答 = ESM 风格 action 三值。decline/cancel
+            // 由前端 optionId 表达；accept 携带 values/text 原样 content。
+            // P2-3（评审修复）：optionId 白名单 fail-closed——未知值显式
+            // 报错而非静默 accept（不伪造成功）。缺省 optionId + values/text
+            // = 自由作答（accept）。
+            let action = match answer.option_id.as_deref() {
+                None | Some("accept") => "accept",
+                Some("declined") => "decline",
+                Some("cancel") => "cancel",
+                Some(other) => {
+                    return Err(PylonError::Protocol(format!(
+                        "elicitation action unsupported: {other}"
+                    )))
+                }
+            };
+            let content = match (&answer.values, &answer.text) {
+                (Some(values), _) if values.is_object() => Some(values.clone()),
+                (None, Some(text)) if !text.is_empty() => Some(serde_json::json!({ "text": text })),
+                _ => None,
+            };
+            build_elicitation_response(action, content.as_ref()).map_err(PylonError::Protocol)
+        }
+    }
+}
+
 pub fn parse_questions(
     bridge: PrivateBridge,
     params: &Value,
@@ -213,6 +292,154 @@ mod tests {
             .1,
             "t"
         );
+    }
+
+    /// #569：应答构造单点（原 permission.rs inline 行为逐字钉住）——
+    /// ask-user 桥按 spec.id 提取 label(s)。
+    #[test]
+    fn build_interaction_response_routes_question_answers() {
+        let questions = parse_questions(
+            PrivateBridge::GrokExtQuestions,
+            &serde_json::json!({"questions":[{"question":"Pick","header":"Choice","options":[{"label":"A"},{"label":"B"}]}]}),
+        )
+        .unwrap();
+        let response = build_interaction_response(
+            PrivateBridge::GrokExtQuestions,
+            &serde_json::json!({}),
+            Some(&questions),
+            &InteractionAnswerInput {
+                option_id: None,
+                text: None,
+                values: Some(serde_json::json!({ (questions[0].id.clone()): "A" })),
+            },
+        )
+        .unwrap();
+        assert_eq!(response["outcome"], "accepted");
+        assert_eq!(response["answers"]["Pick"], "A");
+    }
+
+    /// #569：declined 走 skip_interview；登记丢失 specs 时 fail-closed 报错。
+    #[test]
+    fn build_interaction_response_question_declined_and_lost_specs() {
+        let declined = build_interaction_response(
+            PrivateBridge::GrokExtQuestions,
+            &serde_json::json!({}),
+            Some(&[]),
+            &InteractionAnswerInput {
+                option_id: Some("declined".into()),
+                text: None,
+                values: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(declined, serde_json::json!({"outcome":"skip_interview"}));
+        let lost = build_interaction_response(
+            PrivateBridge::GrokExtQuestions,
+            &serde_json::json!({}),
+            None,
+            &InteractionAnswerInput {
+                option_id: None,
+                text: None,
+                values: None,
+            },
+        )
+        .unwrap_err();
+        assert!(lost.to_string().contains("lost validated specs"));
+    }
+
+    /// #569：exit-plan 桥——缺省 keep_planning，optionId 覆盖 outcome，text 进 feedback。
+    #[test]
+    fn build_interaction_response_exit_plan_defaults_and_overrides() {
+        let params = serde_json::json!({"toolCallId":"t"});
+        let keep = build_interaction_response(
+            PrivateBridge::GrokExitPlan,
+            &params,
+            None,
+            &InteractionAnswerInput {
+                option_id: None,
+                text: Some("need more time".into()),
+                values: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            keep,
+            serde_json::json!({"outcome":"keep_planning","feedback":"need more time"})
+        );
+        let approved = build_interaction_response(
+            PrivateBridge::GrokExitPlan,
+            &params,
+            None,
+            &InteractionAnswerInput {
+                option_id: Some("approved".into()),
+                text: None,
+                values: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(approved["outcome"], "approved");
+    }
+
+    /// #569：elicitation 桥——自由作答 accept（values 表单 / text 自由文本）、
+    /// declined、optionId 白名单 fail-closed。
+    #[test]
+    fn build_interaction_response_elicitation_actions_and_whitelist() {
+        let form = build_interaction_response(
+            PrivateBridge::Elicitation,
+            &serde_json::json!({}),
+            None,
+            &InteractionAnswerInput {
+                option_id: None,
+                text: None,
+                values: Some(serde_json::json!({"answer": "detail"})),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            form,
+            serde_json::json!({"action": "accept", "content": {"answer": "detail"}})
+        );
+        let freeform = build_interaction_response(
+            PrivateBridge::Elicitation,
+            &serde_json::json!({}),
+            None,
+            &InteractionAnswerInput {
+                option_id: None,
+                text: Some("hello".into()),
+                values: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            freeform,
+            serde_json::json!({"action": "accept", "content": {"text": "hello"}})
+        );
+        let decline = build_interaction_response(
+            PrivateBridge::Elicitation,
+            &serde_json::json!({}),
+            None,
+            &InteractionAnswerInput {
+                option_id: Some("declined".into()),
+                text: None,
+                values: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(decline, serde_json::json!({"action": "decline"}));
+        let unknown = build_interaction_response(
+            PrivateBridge::Elicitation,
+            &serde_json::json!({}),
+            None,
+            &InteractionAnswerInput {
+                option_id: Some("invent".into()),
+                text: None,
+                values: None,
+            },
+        )
+        .unwrap_err();
+        assert!(unknown
+            .to_string()
+            .contains("elicitation action unsupported: invent"));
     }
 
     #[test]

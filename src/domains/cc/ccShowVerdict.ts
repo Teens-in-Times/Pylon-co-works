@@ -31,6 +31,7 @@ import {
   resolveCcMinWidth,
   resolveCcWidthGroups,
   type CcMinHeightScalars,
+  type CcPluginWidgetSizing,
   type CcWidgetWidthIndex,
 } from './ccHeightState.ts'
 
@@ -45,6 +46,12 @@ export interface CcShowVerdictInput {
   readonly scalars: CcMinHeightScalars
   /** 件 id → 宽度字段值（宽度算式输入；缺席 = 内容撑，按 0 计） */
   readonly widths: CcWidgetWidthIndex
+  /**
+   * ★ 刀5：插件件及其自报尺寸（缺省 `[]` ⇒ 与改造前逐位相同）。
+   * 递**全量**件即可 —— 在场判据由算式按**每一态各自的名单**过滤（与最小高下界同一处逻辑，
+   * 这样"改完之后"的那一态里插件件的在场与否才判得准）。
+   */
+  readonly pluginWidgets?: readonly CcPluginWidgetSizing[]
 }
 
 /** 背景板的**实际可用尺寸**（渲染侧实测：`.control-center` 的 `clientWidth` / `clientHeight`）。 */
@@ -68,14 +75,20 @@ export function resolveCcShowVerdict(
   const slices = input.hiddenSlices.length > 0 ? input.hiddenSlices : [[]]
 
   // 纵向：与最小高下界**同一个函数**（内含"逐态取大" + 下界 64）
-  const neededHeight = resolveCcMinHeight({ hiddenSlices: slices, scalars: input.scalars })
+  const neededHeight = resolveCcMinHeight({
+    hiddenSlices: slices,
+    scalars: input.scalars,
+    pluginWidgets: input.pluginWidgets ?? [],
+  })
   if (measurable(available.height) && neededHeight > available.height) {
     return { ok: false, axis: 'height', needed: neededHeight, available: available.height }
   }
 
   // 横向：逐态各算一遍取大（与纵向同口径；`resolveCcMinWidth` 只管一份名单，故这里自己取 max）
   const neededWidth = slices.reduce(
-    (max, slice) => Math.max(max, resolveCcMinWidth(resolveCcWidthGroups(slice, input.widths))),
+    (max, slice) => Math.max(max, resolveCcMinWidth(
+      resolveCcWidthGroups(slice, input.widths, input.pluginWidgets ?? []),
+    )),
     0,
   )
   if (measurable(available.width) && neededWidth > available.width) {

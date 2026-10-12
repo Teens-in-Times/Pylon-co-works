@@ -128,6 +128,8 @@ PERF_MEMORY_LEGACY=1 bun run perf-bench:memory   # 对照档：关掉 timeline �
 | `text-thinking-residency`（#449） | 增量 chunk 文本族（thinking 538k + text 8k，零工具拍）batch 折叠后的驻留比 | **判据挂起**（见下） |
 | text 拍数敏感性（#449） | 同一终值 thinking 下 chunk 5 → 40 的绝对驻留增长 | **≤ 1.5×** |
 | text 粒度对照（#449） | 同一份 50k 文本：batch 行 vs 逐 delta 行的驻留比（信息读数） | — |
+| `session-cold-load-residency`（#567） | **会话口径**：真实会话宿主（组合根工厂）经分页冷装载缝折完整份语料后，runtime 快照驻留 + 乐观 pending 模型 / Σ载荷 | **≤ 1.2×** |
+| 会话拍数敏感性（#567） | 会话口径下同终值 5 → 40 拍的绝对驻留增长（纯冷装载，不含 pending 常数项） | **≤ 1.5×** |
 
 **text 族判据为什么挂起（#449 实测）**：文本族驻留 ≈ 3S 是结构性的——`messages.content`（S）+
 `messages.parts` 合并串（S）+ `timeline[].data.parts`（S）；前两项是 WorkbenchMessage 双字段
@@ -142,12 +144,19 @@ batch 8 行 0.4 MB vs 逐 delta 2087 行 1.5 MB（**3.55×**）——这正是 m
 1. **这是估算，不是 V8 实测。** 字符串按 UTF-16 两字节 + 头，对象按头 + 每属性一个槽位。
    用途是**比值**与回归对照——同一把尺子前后比是可靠的，当绝对 MB 用则不可靠。
 2. **元数据快照那条只用「快照对象」做根。** session 族不收窄（#375-a 只收 tool/activity），`timeline[].data` 与信封 `event` 就是同一对象，唯一对象记账下就一份；每条目一个 timeline entry 的**外壳**是真事实（事件条数），不在判据里，也不该被「去重」。单份大小用**同一把尺子**量——拿 JSON 长度当分母会把 1.0× 读成 ~2.8×（对象头/属性槽的固定开销在短字符串上占比很大）。
-3. **本判据只量「文档」——不建模会话宿主。** #375 批次里 `fold.log`（reject 回滚用的整会话
-   信封日志，≈Σ载荷）曾是会话级驻留与拍数敏感性的唯一来源；**#380 起它整份删除**——回滚改走
-   canonical 重读（`reloadFromJournal` → `refresh(..., { rebuild: true })`），会话侧只剩
-   「文档 + 有界的乐观 pending（每条是短文本）」。故现在**会话口径 = 文档口径 + 有界项**，
-   但这条账仍是**结构性事实**（代码里不再持有信封集合，由源码守卫 + 回滚行为用例钉住），
-   不是本探针量出来的——写这条是防误读：`0.235×` 说的是文档，不是整个会话。
+3. **文档口径与会话口径是两根探针，读数分开报。** #375 批次里 `fold.log`（reject 回滚用的
+   整会话信封日志，≈Σ载荷）曾是会话级驻留与拍数敏感性的唯一来源；**#380 起它整份删除**——
+   回滚改走 canonical 重读（`reloadFromJournal` → `refresh(..., { rebuild: true })`）。
+   **#567 起会话口径有了自己的探针读数**：实例化真实会话宿主（`createAgentWorkbenchSessionRuntime`，
+   注入分页读走生产冷装载缝），量 runtime 快照驻留 + 乐观 pending 模型。若有人往会话宿主里
+   再加一份常驻载荷持有（fold.log 那样），这条比值会直接显形。口径边界（防误读）：
+   - 根 = `runtime.getSnapshot()`（文档 + 生成态）。宿主的其余闭包态（TurnClock/draft id/
+     sessionUi 注册表）要么是纯标量、要么冷装载后为空，静态可达图摸不到闭包——是**有界项**，
+     不是被测项；
+   - 乐观 pending（echo 的 `pendingOptimisticBySource`）同为闭包态，用**真实信封工厂**按
+     `echo.project` 同一构造形状建模，并发条数是声明的工作量假设（4 条 × 2 KiB）；
+   - `PERF_MEMORY_LEGACY` 对会话节**无效**：bind 按生产口径自行置位 timeline 收窄（杀停
+     开关读 DOM 属性，bun 下恒不生效），故会话节排在文档用例之后构建，两种模式下读数相同。
 4. **分子分母必须同一把尺子。** 语料的 `Σ逻辑载荷` 是**字符数**（ASCII ⇒ 1 字符 1 字节），故
    `retainedHeap` 对字符串按 V8 实际表示计（Latin1 1 字节/单位、含非 Latin1 码位 2 字节/单位）。
    早期版本一律按 UTF-16 两字节算分子，把比值抬高了约 2×（0.432× 其实相当于 ~0.22 份载荷，
@@ -163,6 +172,11 @@ batch 8 行 0.4 MB vs 逐 delta 2087 行 1.5 MB（**3.55×**）——这正是 m
 |---|---|---|---|
 | `PERF_MEMORY_LEGACY=1`（关 timeline 收窄） | 2.046× | 6.81× | 1.15× |
 | 默认（#375-a/c/d/e 生效） | **0.235×** | **1.34×** | **1.15×** |
+| 会话口径（#567，真实会话宿主，含 pending 模型） | **0.236×** | **1.34×** | —（文档判据） |
+
+会话口径那行是 #380 删 fold.log 后的**实测**：2026-09 评审轮的会话总量 ≈1.4×（文档 0.235× +
+fold.log ≈Σ载荷）已成历史——会话侧读数 ≈ 文档侧 + pending 模型（4 × 5.6 KB，0.001×）。
+`PERF_MEMORY_LEGACY` 档的会话节与默认档相同（见上「口径边界」第三条），不另列。
 
 元数据快照那条的 `PERF_MEMORY_LEGACY` 不适用（它关的是 timeline 收窄，与内容级 intern 无关）：
 把 `internMetadataSnapshotEvent` 那行注释掉重跑，该值立刻变成 **500.15×**（FAIL），接回去是

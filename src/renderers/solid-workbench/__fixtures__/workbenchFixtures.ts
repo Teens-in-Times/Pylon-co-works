@@ -150,7 +150,7 @@ export const WORKBENCH_CONTROL_CENTER_FIXTURE: WorkbenchControlCenterFixture = {
   model: 'deepseek-chat',
   mode: 'auto',
   hidden: ['attach'],
-  scale: { ekg: 90, model: 110 },
+  scale: { tokens: 90, model: 110 },
 }
 
 export const WORKBENCH_PET_FIXTURE: WorkbenchPetFixture = {

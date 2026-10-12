@@ -177,6 +177,7 @@ function AssistCard(props: { kind: 'assist.prediction' | 'assist.file-suggestion
   const canAccept = () => props.commands.canExecute?.('assist.accept') === true
   const canReject = () => props.commands.canExecute?.('assist.reject') === true
   const predictionSurface = () => props.kind === 'assist.prediction'
+  const label = () => predictionSurface() ? (prediction() ? '输入预测' : '排队命令') : '文件建议'
   const fileLimit = () => typeof props.appearance.fileSuggestionMaxCount === 'number'
     ? Math.max(0, Math.min(20, Math.floor(props.appearance.fileSuggestionMaxCount)))
     : 5
@@ -186,13 +187,13 @@ function AssistCard(props: { kind: 'assist.prediction' | 'assist.file-suggestion
   const accept = () => {
     if (canAccept()) void props.commands.execute({ type: 'assist.accept', payload: { text: text() } })
   }
-  return <section class="solid-session-surface solid-session-assist" role="status" aria-label={predictionSurface() ? '输入预测' : '文件建议'}
-    tabIndex={predictionSurface() ? 0 : undefined}
+  return <section class="solid-session-surface solid-session-assist" role="status" aria-label={label()}
+    tabIndex={predictionSurface() && prediction() ? 0 : undefined}
     onKeyDown={event => {
-      if (predictionSurface() && acceptKey() === event.key && canAccept()) { event.preventDefault(); accept() }
+      if (predictionSurface() && prediction() && acceptKey() === event.key && canAccept()) { event.preventDefault(); accept() }
     }}
     style={{ opacity: String(typeof props.appearance.opacity === 'number' ? props.appearance.opacity : 1) }}>
-    <strong>{predictionSurface() ? '输入预测' : '文件建议'}</strong>
+    <strong>{label()}</strong>
     <Show when={predictionSurface() && text()}><p>{text()}</p></Show>
     <Show when={!predictionSurface() && props.appearance.showFiles !== false && visibleFiles().length > 0}>
       <ul aria-label="建议文件列表"><For each={visibleFiles()}>{file => <li><code>{file}</code></li>}</For></ul>

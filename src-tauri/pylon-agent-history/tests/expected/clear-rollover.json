@@ -1,0 +1,106 @@
+[
+  {
+    "events": [
+      {
+        "occurredAt": "2026-09-30T09:30:00.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "第一个会话的问题"
+            },
+            "sessionUpdate": "user_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:30:01.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "回答一"
+            },
+            "sessionUpdate": "agent_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T09:30:01.000Z",
+        "payload": {
+          "update": {
+            "model": "claude-sonnet-4-5",
+            "sessionUpdate": "done",
+            "stopReason": "end_turn",
+            "usage": {
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "inputTokens": 10,
+              "outputTokens": 3
+            }
+          }
+        }
+      }
+    ],
+    "summary": {
+      "agentId": "claude-code",
+      "eventCount": 3,
+      "externalId": "aaaaaaaa-0000-4000-8000-000000000001",
+      "lastActivityAt": "2026-09-30T09:30:01.000Z",
+      "skippedLineCount": 0,
+      "sourcePath": "<redacted>",
+      "startedAt": "2026-09-30T09:30:00.000Z",
+      "title": "第一个会话的问题"
+    }
+  },
+  {
+    "events": [
+      {
+        "occurredAt": "2026-09-30T10:00:00.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "/clear 之后的新问题"
+            },
+            "sessionUpdate": "user_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T10:00:01.000Z",
+        "payload": {
+          "update": {
+            "content": {
+              "text": "回答二"
+            },
+            "sessionUpdate": "agent_message_chunk"
+          }
+        }
+      },
+      {
+        "occurredAt": "2026-09-30T10:00:01.000Z",
+        "payload": {
+          "update": {
+            "model": "claude-sonnet-4-5",
+            "sessionUpdate": "done",
+            "stopReason": "end_turn",
+            "usage": {
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "inputTokens": 12,
+              "outputTokens": 4
+            }
+          }
+        }
+      }
+    ],
+    "summary": {
+      "agentId": "claude-code",
+      "eventCount": 3,
+      "externalId": "bbbbbbbb-0000-4000-8000-000000000002",
+      "lastActivityAt": "2026-09-30T10:00:01.000Z",
+      "skippedLineCount": 0,
+      "sourcePath": "<redacted>",
+      "startedAt": "2026-09-30T10:00:00.000Z",
+      "title": "/clear 之后的新问题"
+    }
+  }
+]

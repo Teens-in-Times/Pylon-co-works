@@ -1,5 +1,4 @@
 import { CC_WIDGET_GROUPS } from './widgetDefinitions.ts'
-import type { CcRegisteredSlotId, CcWidgetId } from './widgetDefinitions.ts'
 
 export type { CcRegisteredSlotId, CcWidgetId } from './widgetDefinitions.ts'
 export { CC_REGISTERED_SLOT_IDS } from './widgetDefinitions.ts'
@@ -12,8 +11,17 @@ export { CC_REGISTERED_SLOT_IDS } from './widgetDefinitions.ts'
  * 详见 `domains/cc/widgetDefinitions.ts`。
  */
 
-/** 能落槽位的控件 id = 内置轨 ∪ 注册轨中占槽位者。 */
-export type CcLayoutWidgetId = CcWidgetId | CcRegisteredSlotId
+/**
+ * 位置表的键 = 元件 id。
+ *
+ * ★★ #266 CC-13 刀3：**键空间放开** —— 从「内置轨 ∪ 注册轨」的编译期字面量 union
+ * 降级为 `string`。为什么必须放开：插件元件的 id 在编译期不存在，原来的 union 会把
+ * 插件件的位置**挡在数据之外**（读盘丢、写不进）。键的合法性改由运行时承担：
+ * 写侧逐键 clamp（`normalizeCcLayout` / `updateCcPlacementState`）、读侧兜底
+ * （`ccWidgetRoster.resolveCcWidgetPlacements`）。
+ * ★ 保留这个名字（而不是全局改写成 `string`）是为了让「这是位置表的键」留在类型名里。
+ */
+export type CcLayoutWidgetId = string
 
 /**
  * 一个元件在**用户数据**里的位置：只存可变部分（组内序号 + 两个方向的微调）。
@@ -32,7 +40,12 @@ export interface CcWidgetPlacement {
 
 export interface CcLayoutV3 {
   version: number
-  placements: Record<CcLayoutWidgetId, CcWidgetPlacement>
+  /**
+   * ★ CC-13 刀3：键 = 元件 id（`string`：内置 **与插件** 同一空间），值 = 用户手调的可变量。
+   * 插件件的**默认值不写进这里** —— 默认由读取侧兜底算（`resolveCcWidgetPlacements`），
+   * 数据里只留"用户真的动过"的那些键。
+   */
+  placements: Record<string, CcWidgetPlacement>
 }
 
 // v7：新增会话、工作区与运行状态控件；旧布局按 ID 保留并补入新增默认位置。
@@ -52,15 +65,18 @@ export interface CcLayoutV3 {
 export const CC_LAYOUT_SCHEMA_VERSION = 9
 
 /**
- * 默认布局 —— 由定义表各行的 `layout.order` 派生（只取**可拖**的行：容器不占位、
- * 「命令行提示」结构步不可拖）。
+ * 默认布局 —— 由定义表各行的 `layout.order` 派生（只取**可拖**的行：容器不占位）。
  * 元件**贴哪一行/哪一侧**不在用户数据里（它由定义表声明），这里只存可变部分：
  * 组内序号 + 两个方向的微调（默认 0）。
+ *
+ * ★ CC-13 刀3：本常量**只含内置件**（它是"内置默认"的唯一来源）。插件件的默认位置
+ * 由读取侧算（`ccWidgetRoster.resolvePluginWidgetPlacement`：状态区末尾、按登记序连号），
+ * **不写进这里** —— 否则每登记一个插件就往"默认布局"里塞一条，内置真值会被污染。
  */
-const DEFAULT_PLACEMENTS = {} as Record<CcLayoutWidgetId, CcWidgetPlacement>
+const DEFAULT_PLACEMENTS: Record<string, CcWidgetPlacement> = {}
 for (const row of CC_WIDGET_GROUPS) {
   if (row.draggable && row.layout) {
-    DEFAULT_PLACEMENTS[row.id as CcLayoutWidgetId] = { order: row.layout.order, offsetX: 0, offsetY: 0 }
+    DEFAULT_PLACEMENTS[row.id] = { order: row.layout.order, offsetX: 0, offsetY: 0 }
   }
 }
 
@@ -72,17 +88,29 @@ export const DEFAULT_CC_LAYOUT: CcLayoutV3 = {
 // 非有限值落 0（persist 域语言：坏数值不抛，回中位安全值）——与 legacyKeyMigration 的 clampRound（先 round）语义不同，勿混用。
 const clampFinite = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Number.isFinite(value) ? value : 0))
 
+/** 逐键 clamp（`order` 0–99 / `offsetX` ±48 / `offsetY` ±16）——内置件与插件件同一套规则。 */
+function clampCcPlacement(candidate: Partial<CcWidgetPlacement>): CcWidgetPlacement {
+  return {
+    order: Math.round(clampFinite(candidate.order as number, 0, 99)),
+    offsetX: clampFinite(candidate.offsetX as number, -48, 48),
+    offsetY: clampFinite(candidate.offsetY as number, -16, 16),
+  }
+}
+
+/** legacy 键名别名（v9）：`send` → 注册轨 id `cc-send-button`（键名换、位置不动）。 */
+const LEGACY_CC_LAYOUT_KEY_ALIASES: Readonly<Record<string, string>> = Object.freeze({ send: 'cc-send-button' })
+
 export function cloneCcLayout(layout: CcLayoutV3): CcLayoutV3 {
   return {
     version: CC_LAYOUT_SCHEMA_VERSION,
     placements: Object.fromEntries(
       Object.entries(layout.placements).map(([id, placement]) => [id, { ...placement }]),
-    ) as Record<CcLayoutWidgetId, CcWidgetPlacement>,
+    ),
   }
 }
 
 /**
- * 布局归一化（**按 id 合并**）：缺项补默认、多余项忽略、用户手调值一律保留。
+ * 布局归一化（**按 id 合并 + 保留未知键**）：缺项补默认、逐键 clamp、用户手调值一律保留。
  *
  * ★ #238 刀2：**不再按版本号决定"要不要采用老数据"** —— 版本号与结构对齐无关。
  * 本函数由读盘路径**每次读盘无条件跑一次**（`store.ts` 的 persist `merge` →
@@ -90,39 +118,50 @@ export function cloneCcLayout(layout: CcLayoutV3): CcLayoutV3 {
  * 这类静默事故在结构上不可能再发生；磁盘上版本号是垃圾值/未来值也不会整份重置。
  *
  * ★ #238 刀3：**槽位判定已整段删除** —— 老数据里读到的 `slot` 字段**一律不读**（不写迁移、
- * 不做适配，用户口径）；`order` / `offsetX` / `offsetY` 原样保留。
+ * 不做适配，用户口径）；`order` / `offsetX` / `offsetY` 原样保留（键之外的字段照旧丢弃）。
  *
- * 保留的合并规则：
- * - 只遍历**当前可拖元件全集**（`DEFAULT_CC_LAYOUT` 的键）⇒ 缺项补默认、旧 id 自然丢弃；
- * - 已存在的项保留其 `order` / `offsetX` / `offsetY`（只做范围 clamp）；
- * - legacy `send` 键按别名读入（v9 键名迁移，与版本号无关、幂等）。
+ * ★★ #266 CC-13 刀3：**"多余项忽略"改成"未知键保留"**（本线的**唯一**一次数据格式放开）。
+ * 原因：读盘发生在**插件登记之前** —— 读盘时把"名单外的键"丢掉，等于**每次重启都误删插件位置**
+ * ⇒「重启后仍在」直接失效。所以本函数只做两件事：补内置默认 + 对**数据里出现的每一个键**
+ * 逐键 clamp，键本身（含插件件 id、历史遗留 id）一律原样保留。
+ * ★ 历史键的**显式清理**仍归 `domains/theme/migration.ts` 的迁移（本函数不动它）。
+ * ★ legacy `send` 是唯一的例外：它按别名并入 `cc-send-button`（真名在场则真名优先），
+ * 不再以 `send` 为键残留。
  */
 export function normalizeCcLayout(layout: Partial<CcLayoutV3> | null | undefined): CcLayoutV3 {
   const placements = cloneCcLayout(DEFAULT_CC_LAYOUT).placements
   if (!layout?.placements) return { version: CC_LAYOUT_SCHEMA_VERSION, placements }
 
-  const legacyPlacements = layout.placements as Record<string, Partial<CcWidgetPlacement> | undefined>
-  for (const id of Object.keys(placements) as CcLayoutWidgetId[]) {
-    // v9：legacy `send` 键 → 注册轨 id（槽位改名不改位置）
-    const candidate = legacyPlacements[id]
-      ?? (id === 'cc-send-button' ? legacyPlacements.send : undefined)
-    if (!candidate) continue
-    placements[id] = {
-      order: Math.round(clampFinite(candidate.order as number, 0, 99)),
-      offsetX: clampFinite(candidate.offsetX as number, -48, 48),
-      offsetY: clampFinite(candidate.offsetY as number, -16, 16),
-    }
+  const persisted = layout.placements as Record<string, Partial<CcWidgetPlacement> | undefined>
+  for (const [id, candidate] of Object.entries(persisted)) {
+    if (id in LEGACY_CC_LAYOUT_KEY_ALIASES) continue // 别名在下面单独处理（真名优先）
+    if (!candidate || typeof candidate !== 'object') continue
+    placements[id] = clampCcPlacement(candidate)
+  }
+  // v9 旧键名迁移：legacy `send` → `cc-send-button`，只补真名缺席的那条
+  for (const [alias, id] of Object.entries(LEGACY_CC_LAYOUT_KEY_ALIASES)) {
+    const candidate = persisted[alias]
+    if (!candidate || typeof candidate !== 'object') continue
+    if (persisted[id] && typeof persisted[id] === 'object') continue
+    placements[id] = clampCcPlacement(candidate)
   }
   return { version: CC_LAYOUT_SCHEMA_VERSION, placements }
 }
 
+/**
+ * 写一条位置（拖动 / 顺序输入 / 微调的唯一落点）。
+ *
+ * ★ CC-13 刀3：**"未知 id = no-op"这条守卫已撤** —— 键空间放开后，插件件 id 与错字在这一层
+ * 无法区分，而插件件的**首写**（数据里还没有它）必须落得下去。缺记录时的基准 = 调用方给的
+ * 完整值（渲染侧提交前先用 `resolveCcWidgetPlacements` 补齐），缺项按 0 兜底 ⇒ 不会写出 NaN。
+ * ★ 计算默认（状态区末尾）只在**读取侧**兜底，不写进数据（见 `DEFAULT_CC_LAYOUT` 头注）。
+ */
 export function updateCcPlacementState(
   layout: CcLayoutV3,
   id: string,
   partial: Partial<CcWidgetPlacement>,
 ): CcLayoutV3 {
-  const current = layout.placements[id as CcLayoutWidgetId]
-  if (!current) return layout
+  const current = layout.placements[id] ?? { order: 0, offsetX: 0, offsetY: 0 }
   const next: CcWidgetPlacement = {
     order: partial.order == null || !Number.isFinite(partial.order) ? current.order : Math.round(clampFinite(partial.order, 0, 99)),
     offsetX: partial.offsetX == null || !Number.isFinite(partial.offsetX) ? current.offsetX : clampFinite(partial.offsetX, -48, 48),
@@ -132,6 +171,21 @@ export function updateCcPlacementState(
     version: CC_LAYOUT_SCHEMA_VERSION,
     placements: { ...layout.placements, [id]: next },
   }
+}
+
+/**
+ * ★★ #266 CC-13 刀3：**删掉一条位置记录**（插件**撤下那一刻**由宿主派发 `clear-cc-placement`）。
+ *
+ * 为什么落点是"撤下时清"而不是"读盘顺手丢"：读盘发生在插件登记**之前** ⇒ 读盘丢会在
+ * 每次重启时误删插件位置（「重启后仍在」直接失效）。
+ * ★ 幂等：记录不存在 ⇒ **原样返回同一个对象**（不产生无谓的发布 / 重渲）。
+ * ★ 只删数据；"回到计算默认（状态区末尾）"由读取侧兜底实现 ⇒ 重装回来 = 新加入、排最后。
+ */
+export function clearCcPlacementState(layout: CcLayoutV3, id: string): CcLayoutV3 {
+  if (!layout.placements[id]) return layout
+  const placements = { ...layout.placements }
+  delete placements[id]
+  return { version: CC_LAYOUT_SCHEMA_VERSION, placements }
 }
 
 /**

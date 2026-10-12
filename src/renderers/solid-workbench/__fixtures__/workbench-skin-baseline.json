@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T11:38:02.129Z",
+  "generatedAt": "2026-10-11T13:17:31.095Z",
   "source": {
     "builtinPresetIds": [
       "claude",
@@ -14,8 +14,8 @@
       "focus-flow"
     ],
     "customPresetIds": [],
-    "themeSettingCount": 175,
-    "cssVariableCount": 87
+    "themeSettingCount": 177,
+    "cssVariableCount": 88
   },
   "fixtures": [
     {
@@ -157,6 +157,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -245,6 +246,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -268,6 +270,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--accent": "#3b82f6",
         "--global-font-size": "18px",
@@ -484,6 +487,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -574,6 +578,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -597,6 +602,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "#FFFFFF",
         "--accent": "#D77757",
         "--global-font-size": "15px",
@@ -819,6 +825,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -909,6 +916,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -932,6 +940,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-system, var(--font))",
         "--msg-font": "var(--font-system, var(--font))",
+        "--cc-input-font-family": "var(--font-system, var(--font))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--accent": "#6366f1",
         "--global-font-size": "17px",
@@ -1153,6 +1162,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -1243,6 +1253,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -1266,6 +1277,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--accent": "#88c0d0",
         "--global-font-size": "15px",
@@ -1491,6 +1503,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -1581,6 +1594,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -1604,6 +1618,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "#c0caf5",
         "--accent": "#7aa2f7",
         "--global-font-size": "15px",
@@ -1829,6 +1844,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -1919,6 +1935,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -1942,6 +1959,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "#657b83",
         "--accent": "#268bd2",
         "--global-font-size": "15px",
@@ -2164,6 +2182,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -2254,6 +2273,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -2277,6 +2297,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "#ffcc55",
         "--accent": "#ffb000",
         "--global-font-size": "15px",
@@ -2502,6 +2523,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -2592,6 +2614,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -2615,6 +2638,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "#b8ffb8",
         "--accent": "#39ff14",
         "--global-font-size": "15px",
@@ -2840,6 +2864,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -2928,6 +2953,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -2951,6 +2977,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--accent": "#38bdf8",
         "--global-font-size": "15px",
@@ -3169,6 +3196,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -3257,6 +3285,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -3280,6 +3309,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--accent": "#a78bfa",
         "--global-font-size": "15px",
@@ -3498,6 +3528,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -3586,6 +3617,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -3609,6 +3641,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--accent": "#d6a85f",
         "--global-font-size": "15px",
@@ -3827,6 +3860,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -3917,6 +3951,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -3940,6 +3975,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "#c0caf5",
         "--accent": "#6366f1",
         "--global-font-size": "17px",
@@ -4165,6 +4201,7 @@
         "inputBorderWidth": 1,
         "inputBorderOpacity": 0,
         "inputRadius": 20,
+        "inputFont": "follow-message",
         "inputFontSize": 15,
         "inputLineHeight": "1",
         "inputShowHistoryHint": true,
@@ -4205,7 +4242,7 @@
         "rightBlur": 0,
         "ccEditMode": false,
         "ccHidden": [
-          "ekg"
+          "model"
         ],
         "ccHiddenEmpty": [
           "model",
@@ -4255,6 +4292,7 @@
             }
           }
         },
+        "ccPluginProps": {},
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -4278,6 +4316,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--accent": "#3b82f6",
         "--global-font-size": "18px",
@@ -4494,6 +4533,7 @@
         "inputBorderWidth": 0,
         "inputBorderOpacity": 0,
         "inputRadius": 0,
+        "inputFont": "follow-message",
         "inputFontSize": 12,
         "inputLineHeight": "0.5",
         "inputShowHistoryHint": false,
@@ -4575,6 +4615,7 @@
             }
           }
         },
+        "ccPluginProps": "",
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -4598,6 +4639,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-mono-default, var(--mono))",
         "--msg-font": "var(--font-mono-default, var(--mono))",
+        "--cc-input-font-family": "var(--font-mono-default, var(--mono))",
         "--msg-text": "var(--chat-text-color,var(--text))",
         "--global-font-size": "12px",
         "--chat-transparency": "0",
@@ -4774,6 +4816,7 @@
         "inputBorderWidth": 8,
         "inputBorderOpacity": 1,
         "inputRadius": 28,
+        "inputFont": "serif",
         "inputFontSize": 22,
         "inputLineHeight": "1.5",
         "inputShowHistoryHint": true,
@@ -4814,12 +4857,12 @@
         "rightBlur": 40,
         "ccEditMode": false,
         "ccHidden": [
-          "ekg",
-          "tasks"
+          "model",
+          "tokens"
         ],
         "ccHiddenEmpty": [
-          "ekg",
-          "tasks"
+          "model",
+          "tokens"
         ],
         "ccLayout": {
           "version": 9,
@@ -4861,6 +4904,7 @@
             }
           }
         },
+        "ccPluginProps": "fixture-ccPluginProps",
         "appliedPreset": {
           "global": "",
           "sidebar": "",
@@ -4884,6 +4928,7 @@
         "--mono": "var(--font-mono-default, var(--mono))",
         "--chat-font": "var(--font-serif-default, var(--serif))",
         "--msg-font": "var(--font-serif-default, var(--serif))",
+        "--cc-input-font-family": "var(--font-serif-default, var(--serif))",
         "--msg-text": "#abcdef",
         "--accent": "#abcdef",
         "--global-font-size": "24px",

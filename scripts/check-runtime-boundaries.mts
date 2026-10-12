@@ -73,6 +73,9 @@ export const DIRECT_INVOKE_ALLOWLIST = new Set([
   'src/plugins/core/file/builtinFileWorkbench.ts',
   // #351 根目录归类：三件随代码迁移自 src 根（原条目路径见 git 历史），直发面不变。
   'src/infrastructure/persistence/retentionPolicyRepository.ts',
+  // #364 外部历史导入：persistence repository 直发两命令（external_history_scan/
+  // import），与 retentionPolicyRepository 同目录同形态的基础设施 IPC 缝。
+  'src/infrastructure/persistence/externalHistoryRepository.ts',
   'src/infrastructure/persistence/userDataRepository.ts',
   'src/domains/workspace/workspaceEntityStore.ts',    // #177 选择器空态探测：一次性 session client 读 Agent 广告的 configOptions 后即弃，
   // 与 agentWorkbenchSessionCreation.ts 同形态（UI 侧装配 session client 直发）。

@@ -13,6 +13,8 @@ pub(crate) mod resource;
 
 use serde::Serialize;
 use std::sync::Mutex;
+// Manager：open 经 `state::<AppState>()` 取 DataDirs（CC-14 子 WebView 挂跟包 UDF）。
+use tauri::Manager;
 
 pub(crate) const DOCS_WEBVIEW_LABEL: &str = "pylon-docs";
 /// 文档站入口。`scheme://localhost` 形态照 `pylon-plugin://` 前端先例；
@@ -124,12 +126,20 @@ impl DocsSheetManager {
             _ => return Err("docs sheet host 未注册（setup 未注入主窗口）".to_string()),
         };
         let bounds = inner.bounds.expect("刚写入，必然存在");
+        // CC-14：子 WebView 与主窗共用包内 WebView2 UDF（数据跟包语义）。
+        // 必须在 phase 置 Starting 之前取——取失败提前返回，不留悬挂 Starting 态。
+        let dirs = window
+            .app_handle()
+            .state::<crate::AppState>()
+            .data_dirs_cloned()
+            .map_err(|e| format!("docs sheet host 未初始化 data dirs: {e}"))?;
         inner.phase = DocsPhase::Starting;
         inner.error = None;
 
         let parsed = url::Url::parse(DOCS_INDEX_URL).map_err(|e| format!("入口 URL 非法: {e}"))?;
         let builder =
             tauri::WebviewBuilder::new(DOCS_WEBVIEW_LABEL, tauri::WebviewUrl::External(parsed))
+                .data_directory(crate::paths::webview_user_data_dir(&dirs))
                 .on_navigation(is_docs_url)
                 // 文档站内的 target=_blank（GitHub 链接等）一律拒绝弹新窗；
                 // on_navigation 已把同 WebView 内的外链导航取消，这里补弹窗路径。
@@ -138,7 +148,7 @@ impl DocsSheetManager {
         // 子 WebView 必须与宿主主 WebView 共用同一套 WebView2 环境参数（#308，
         // 详见 browser::open_tab_in 的注释）；本应用窗口固定带调试端口那一串。
         #[cfg(windows)]
-        let builder = match crate::browser::host_additional_browser_args(&window) {
+        let builder = match crate::browser::host_additional_browser_args() {
             Some(args) => builder.additional_browser_args(&args),
             None => builder,
         };

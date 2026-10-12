@@ -32,13 +32,14 @@ const defs = THEME_FIELD_DEFS as Record<string, ThemeFieldDef>
  * `cliOverflowMode` / `footerLayout` / `inputMinHeight`）⇒ **73 → 66**。
  * ★ #266 CC-32：`inputBorderColor`（实为 `stroke.default` 角色源、全应用通用边线色）搬去 global 区
  * ⇒ **66 → 65**（字段还在，只是不再属于 cc 区；它落进 `GROUP_ORDER.global` 的新「边线」组）。
+ * ★ #266 CC-21：`inputFont`（输入栏字体，跟随消息字体哨兵）进 cc 区「输入框本体」组 ⇒ **65 → 66**。
  * 注意「上下两条线」「输入框本体」「中控本体面」三个子部件**都还在** —— 它们名下还有别的字段。
  */
 const RENDERABLE_CC_FIELDS_BEFORE: readonly string[] = [
   'ccBg', 'ccBgImage', 'ccHeight', 'ccHintFontSize', 'ccMarginBottom', 'ccMarginX', 'ccRadius', 'ccSurfaceOpacity',
   'cliHintMode', 'cliLineColor', 'cliLineWidth', 'cliPromptColor', 'cliTextColor',
   'inputBg', 'inputBgImage', 'inputBorder', 'inputBorderOpacity', 'inputBorderWidth', 'inputFocusBorder',
-  'inputFocusRingColor', 'inputFocusRingEnabled', 'inputFontSize', 'inputHeight', 'inputHighlightOpacity', 'inputLineHeight', 'inputMarginX',
+  'inputFocusRingColor', 'inputFocusRingEnabled', 'inputFont', 'inputFontSize', 'inputHeight', 'inputHighlightOpacity', 'inputLineHeight', 'inputMarginX',
   'inputOffsetTop', 'inputPlaceholder', 'inputRadius', 'inputShadowEnabled', 'inputShowHistoryHint',
   'inputSubmitButtonMode', 'inputSurfaceBg', 'inputSurfaceOpacity', 'inputTextColor',
   'modeAutoColor', 'modeEditColor',
@@ -125,14 +126,15 @@ describe('#238 刀6 · 设置页中控区分组：字段集合不变量', () => 
     }
   })
 
-  it('★ 中控区没有"按输入模式判明"的项（可渲染 65 项，与模式无关）', () => {
+  it('★ 中控区没有"按输入模式判明"的项（可渲染 66 项，与模式无关）', () => {
     // #266（2026-09-23 用户口径「不要这个判明条件，常态显示」）：设置页侧的 cc 字段本来就没有
     // showIf，这条把"没有"钉住 —— 有人给中控字段挂条件即红（上一条冻结清单也会同步红）。
     // ★ #266 刀9：原先这个用例拿 `{ inputMode }` 当 showIf 的上下文去跑两遍；`inputMode`
     //   字段已删除、cc 区也早已没有任何 showIf ⇒ 改成**直接按冻结清单**断言项数（判据更直白：
     //   可渲染集合只由「zone/group/隐藏」决定，没有任何条件可言）。
+    // ★ #266 CC-21：`inputFont` 加入 ⇒ 65 → 66。
     const renderable = renderableCcFields()
-    expect(renderable, '中控区可渲染项数').toHaveLength(65)
+    expect(renderable, '中控区可渲染项数').toHaveLength(66)
     // 反向确认：cc 区任何字段都不该有 showIf（这条才是"没有判明条件"的真正守卫）
     expect(THEME_FIELD_KEYS.filter(key => defs[key].zone === 'cc' && defs[key].showIf)).toEqual([])
   })

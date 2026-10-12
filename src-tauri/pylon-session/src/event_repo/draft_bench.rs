@@ -40,8 +40,9 @@ fn input(owner: &DurableSessionOwner, raw_payload: serde_json::Value) -> KernelE
         remote_session_id: Some("remote-1".into()),
         client_generation: 5,
         received_at: "2026-09-25T00:00:00.000Z".into(),
+        occurred_at: None,
         raw_payload: Arc::new(raw_payload),
-        recovery_import: false,
+        import_origin: super::row::EventImportOrigin::Live,
     }
 }
 

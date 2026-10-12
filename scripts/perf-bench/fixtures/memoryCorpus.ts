@@ -131,8 +131,6 @@ export function buildMetadataSnapshotEnvelopes(count = 500): {
   // 把同一个对象引用传给 500 次调用，`envelopes.map(e => e.event)` 会天然去重成一个，
   // 判据无论 intern 在不在都 PASS（门禁成同义反复，评审 M1）。
   const envelopes = Array.from({ length: count }, (_, index) => createWorkbenchEnvelope({
-    provider: 'peri',
-    sourceId: `wire-${index}`,
     sessionId: 'metadata',
     sequence: index + 1,
     recordedAt: new Date(Date.UTC(2026, 8, 14, 0, 0, 0) + index * 10).toISOString(),

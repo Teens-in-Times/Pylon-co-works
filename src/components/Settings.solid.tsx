@@ -45,6 +45,7 @@ import TemplateLibrarySolid from './settings/TemplateLibrary.solid.tsx'
 import WindowPanelSolid from './settings/WindowPanel.solid.tsx'
 import ConfigBackupPanelSolid from './settings/ConfigBackupPanel.solid.tsx'
 import HistoryRetentionSolid from './settings/HistoryRetention.solid.tsx'
+import ExternalHistoryImportSolid from './settings/ExternalHistoryImport.solid.tsx'
 import GatewayRiskPanelSolid from './settings/GatewayRiskPanel.solid.tsx'
 import InputPredictionSettingsPanelSolid from './settings/InputPredictionSettingsPanel.solid.tsx'
 import HookDiagnosticsPanelSolid from './settings/HookDiagnosticsPanel.solid.tsx'
@@ -269,7 +270,12 @@ export default function Settings(props: SettingsProps) {
       case 'window':
         return <WindowPanelSolid />
       case 'history':
-        return <HistoryRetentionSolid />
+        return (
+          <>
+            <HistoryRetentionSolid />
+            <ExternalHistoryImportSolid />
+          </>
+        )
       case 'backup':
         return <ConfigBackupPanelSolid />
       case 'global':
