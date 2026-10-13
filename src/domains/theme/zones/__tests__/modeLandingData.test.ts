@@ -14,6 +14,7 @@ import {
   zonePresetsFor,
   type ZonePresetEntry,
 } from '../index.ts'
+import { LANDING_PRESET_ENTRIES } from '../factory/landingEntries.ts'
 
 const BUCKETS = ['gui', 'terminal', 'tactical'] as const
 const PROFILE_BUCKETS = { 'modern-gui': 'gui', 'terminal-like': 'terminal', 'tactical-blue': 'tactical' } as const
@@ -106,30 +107,38 @@ describe('#607 刀1 · 独立档案数据准备', () => {
     expect(FACTORY_ZONE_PRESET_ENTRIES.every(entry => entry.axis === undefined)).toBe(true)
   })
 
-  it('非chat轴与越区字段在装配时拒绝，不静默过滤', () => {
+  it('非chat轴与越区字段在装配时拒绝，不静默过滤（待迁边线是唯一例外）', () => {
     expect(() => assembleFactoryZonePresetPool([invalidCcAxis])).toThrow(/非法 chat 轴/)
     const badChatAxis = { ...invalidCcAxis, zone: 'chat', axis: 'invalid' } as unknown as ZonePresetEntry
     expect(() => assembleFactoryZonePresetPool([badChatAxis])).toThrow(/非法 chat 轴/)
-    const crossZone: ZonePresetEntry = { id: 'cross-zone', mode: 'tactical', zone: 'cc', label: '越区', values: { inputBorderColor: '#fff' } }
-    expect(() => assembleFactoryZonePresetPool([crossZone])).toThrow(/越区.*inputBorderColor/)
+    // ★ #607 刀3a：`inputBorderColor` 是**唯一**允许落在 cc 材料里的待迁边线（字段归属表里仍写 global）
+    const pendingBorder: ZonePresetEntry = { id: 'pending-border', mode: 'tactical', zone: 'cc', label: '待迁', values: { inputBorderColor: '#fff' } }
+    expect(() => assembleFactoryZonePresetPool([pendingBorder])).not.toThrow()
+    // 其余跨区键照旧报错（闸门没有被这条例外放宽）
+    const crossZone: ZonePresetEntry = { id: 'cross-zone', mode: 'tactical', zone: 'cc', label: '越区', values: { sidebarBg: '#fff' } }
+    expect(() => assembleFactoryZonePresetPool([crossZone])).toThrow(/越区.*sidebarBg/)
   })
 
-  it('旧50条10个id与生产候选隔离，蓝调空格和默认回落不变', () => {
+  it('工厂原材料原处不动，生产候选改由落点材料供给（蓝调桶以默认单出候选）', () => {
     expect(FACTORY_ZONE_PRESET_ENTRIES).toHaveLength(50)
     expect(new Set(FACTORY_ZONE_PRESET_ENTRIES.map(entry => entry.id)).size).toBe(10)
+    // ★ #607 刀3a：候选来源换成落点材料里的 `factory:*`（消息流按轴两条）
     for (const [interfaceMode, mode] of [['modern-gui', 'gui'], ['terminal-like', 'terminal']] as const) {
       for (const zone of PRESET_ZONES) {
-        const expected = FACTORY_ZONE_PRESET_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone)
+        const expected = LANDING_PRESET_ENTRIES.filter(entry =>
+          entry.id.startsWith('factory:') && entry.mode === mode && entry.zone === zone)
         expect(ZONE_PRESET_POOL[mode][zone]).toEqual(expected)
         expect(zonePresetsFor(interfaceMode, zone)).toEqual(expected)
-        for (const entry of zonePresetsFor(interfaceMode, zone)) expect(expected).toContain(entry)
       }
     }
+    // 蓝调：家族里只有隐藏默认一员 ⇒ 区域行以它出候选（否则该桶区域行整组不渲染）
     for (const zone of PRESET_ZONES) {
-      expect(ZONE_PRESET_POOL.tactical[zone]).toEqual([])
-      expect(zonePresetsFor('tactical-blue', zone)).toEqual([])
+      const expected = LANDING_PRESET_ENTRIES.filter(entry =>
+        entry.id.startsWith('default:tactical:') && entry.zone === zone)
+      expect(ZONE_PRESET_POOL.tactical[zone]).toEqual(expected)
+      expect(zonePresetsFor('tactical-blue', zone)).toEqual(expected)
     }
-    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBeUndefined()
+    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBe('tactical')
     expect(DEFAULT_PRESETS.tactical).toBeUndefined()
     expect(defaultPresetForInterfaceMode('tactical-blue')).toBeUndefined()
     expect(defaultPresetForInterfaceMode('modern-gui')).toBe(DEFAULT_PRESETS.gui)

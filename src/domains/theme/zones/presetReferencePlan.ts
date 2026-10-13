@@ -1,14 +1,17 @@
 /** 独立引用合同与纯解析；待迁字段只允许 inputBorderColor 从 global 移至 cc。 */
-import { PRESET_ZONES, type PresetZone, type GlobalPresetZoneSlice } from '../presetReducer.ts'
+import { PRESET_ZONES, requireZoneRefs, type PresetZone, type GlobalPresetZoneSlice, type ZoneRefMap } from '../presetReducer.ts'
 import { THEME_PRESET_KEYS, ZONE_FIELDS } from '../themeFieldDefs.ts'
 import type { ThemeSettings } from '../themeTypes.ts'
 import type { PresetInterfaceMode } from '../presets/types.ts'
 import type { ChatPresetAxis, ZonePresetEntry } from './zonePresetPool.ts'
 import { chatPresetAxisForField } from './chatPresetAxes.ts'
 
-export type ModePresetRefs = Readonly<Record<Exclude<PresetZone, 'chat'>, string> & {
-  chat: Readonly<Record<ChatPresetAxis, string>>
-}>
+/**
+ * 引用表形状 = `presetReducer` 的 `ZoneRefMap`（#607 刀3a 起消息流是双引用）。
+ * 两者是**同一份合同**、两个使用场景：预设侧（`GlobalPreset.zoneRefs`）与隐藏默认侧
+ * （`ModePresetDefinition.refs`）——校验只有一份实现（`requireZoneRefs`）。
+ */
+export type ModePresetRefs = ZoneRefMap
 
 export interface ModePresetDefinition {
   readonly name: string
@@ -40,17 +43,7 @@ function requireId(value: unknown, context: string): string {
 }
 
 export function requireModePresetRefs(value: unknown): ModePresetRefs {
-  const refs = recordOf(value, '区域引用表')
-  requireKeys(refs, PRESET_ZONES, '区域引用表')
-  const chat = recordOf(refs.chat, '消息流双引用')
-  requireKeys(chat, ['style', 'color'], '消息流双引用')
-  return {
-    global: requireId(refs.global, 'global'),
-    sidebar: requireId(refs.sidebar, 'sidebar'),
-    chat: { style: requireId(chat.style, 'chat/style'), color: requireId(chat.color, 'chat/color') },
-    cc: requireId(refs.cc, 'cc'),
-    right: requireId(refs.right, 'right'),
-  }
+  return requireZoneRefs(value, '区域引用表')
 }
 
 export function assertLandingEntry(entry: LandingPresetEntry): void {

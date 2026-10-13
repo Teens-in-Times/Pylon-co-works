@@ -1,9 +1,9 @@
 /** 预设层 · 类型定义：PresetName / GlobalPreset。 */
 
 import type { ThemeSettings } from '../themeStore.ts'
-// 区域清单的唯一真值是 PRESET_ZONES（domains/theme/presetReducer.ts）；`import type` 类型擦除、
-// 零运行时依赖 ⇒ 不构成模块环，也不在这里另立第二份区域清单。
-import type { PresetZone } from '../presetReducer.ts'
+// 引用表形状的唯一真值是 `ZoneRefMap`（domains/theme/presetReducer.ts）；`import type`
+// 类型擦除、零运行时依赖 ⇒ 不构成模块环，也不在这里另立第二份形状定义。
+import type { ZoneRefMap } from '../presetReducer.ts'
 
 // ── 预设定义 ─────────────────────────────────────────────────────
 
@@ -42,11 +42,14 @@ export interface GlobalPreset {
    * 刀1（#223 · 预设组装）：**区域引用表**——5 个区域各指向一条区域预设 id。
    * 有则「应用整套预设」走**逐区域装配**；无则回落现在的「整份 `theme`」路径。
    *
-   * 现在不变量（由 `requireZoneRefs` 在消费点强制）：**5 项必须齐**，缺项 = 非法（抛错，不静默回落）。
+   * ★ #607 刀3a：引用指向的不再是「预设名」，而是**落点材料 id**（`factory:*` / `preset:*`），
+   * 消息流区从单引用变**双引用** `{ style, color }`（两张单：样式单 + 配色单）。
+   * 现在不变量（由 `requireZoneRefs` 在消费点强制）：**5 项必须齐 + 消息流两轴齐**，
+   * 缺项 = 非法（抛错，不静默回落）。
    * 两条默认预设（`DEFAULT_PRESETS`）刀1 不写它：终端默认是 `glass` 的**拷贝**而非引用，
    * 且引 `glass` 会成跨桶引用。
    */
-  zoneRefs?: Readonly<Record<PresetZone, string>>
+  zoneRefs?: ZoneRefMap
 }
 
 /** tactical 桶先用于独立数据装配，生产界面模式映射另行接入。 */

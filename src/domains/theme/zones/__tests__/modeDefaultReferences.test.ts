@@ -66,9 +66,11 @@ describe('#607 完整默认准备', () => {
     const profileChat = LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('profile:') && entry.zone === 'chat')
     const profileCc = LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('profile:') && entry.zone === 'cc')
     const defaults = LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('default:'))
-    expect([oldChat.length, profileChat.length, profileCc.length, defaults.length]).toEqual([20, 18, 9, 18])
-    expect(LANDING_PRESET_ENTRIES).toHaveLength(105)
-    expect(new Set(LANDING_PRESET_ENTRIES.map(entry => JSON.stringify([entry.mode, entry.zone, entry.axis, entry.id]))).size).toBe(105)
+    // #607 刀3a：+ 三张 Agent 卡的合并落点家族（chat 样式/配色各 3 + cc 3 = 9）
+    const merged = LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('preset:'))
+    expect([oldChat.length, profileChat.length, profileCc.length, defaults.length, merged.length]).toEqual([20, 18, 9, 18, 9])
+    expect(LANDING_PRESET_ENTRIES).toHaveLength(114)
+    expect(new Set(LANDING_PRESET_ENTRIES.map(entry => JSON.stringify([entry.mode, entry.zone, entry.axis, entry.id]))).size).toBe(114)
     expect(deeplyFrozen(LANDING_PRESET_ENTRIES)).toBe(true)
     for (const entry of LANDING_PRESET_ENTRIES) {
       expect(entry.values).not.toHaveProperty('rightWidth')
@@ -82,6 +84,28 @@ describe('#607 完整默认准备', () => {
       const entry = profileCc.find(item => item.source?.profileId === profile.id)
       expect(entry?.values.inputBorderColor).toBe(profile.tokens?.inputBorderColor)
       expect(profileChat.find(item => item.axis === 'style' && item.source?.profileId === profile.id)?.styleMaterial).toEqual({ profileId: profile.id })
+    }
+    // ★ #607 刀3a：`preset:` 家族（三张 Agent 卡）——样式单带身份、cc 单选边线、来源可追溯。
+    for (const [presetName, profileId] of [
+      ['agent-command', 'builtin.presentation.agent-command'],
+      ['agent-map', 'builtin.presentation.agent-map'],
+      ['focus-flow', 'builtin.presentation.focus-flow'],
+    ] as const) {
+      const style = merged.find(entry => entry.id === `preset:${presetName}:chat:style`)
+      const color = merged.find(entry => entry.id === `preset:${presetName}:chat:color`)
+      const cc = merged.find(entry => entry.id === `preset:${presetName}:cc`)
+      expect(style?.styleMaterial, presetName).toEqual({ profileId })
+      expect(color?.styleMaterial, presetName).toBeUndefined()
+      expect(style?.axis).toBe('style')
+      expect(color?.axis).toBe('color')
+      expect(cc?.axis).toBeUndefined()
+      for (const entry of [style, color, cc]) {
+        expect(entry?.mode, presetName).toBe('gui')
+        expect(entry?.origin).toBe('factory')
+        expect(entry?.source).toEqual({ presetName })
+      }
+      expect(cc?.values.inputBorderColor, presetName)
+        .toBe(BUILTIN_PRESENTATION_PROFILES.find(item => item.id === profileId)?.tokens?.inputBorderColor)
     }
     console.info('[#607 材料计数]', JSON.stringify({ factoryChat: oldChat.length, profileChat: profileChat.length, profileCc: profileCc.length, defaults: defaults.length, otherFactory: 40, total: LANDING_PRESET_ENTRIES.length }))
     console.info('[#607 旧默认过滤移除]', JSON.stringify(Object.entries(DEFAULT_PRESETS).map(([mode, item]) => ({ mode, removed: Object.keys(item.theme).filter(key => !Object.hasOwn(filterPresetTheme(item.theme), key)).map(key => ({ key, owner: THEME_FIELD_OWNERS[key as keyof typeof THEME_FIELD_OWNERS].owner })) }))))
@@ -118,9 +142,14 @@ describe('#607 完整默认准备', () => {
       expect(fallbackPresetChip(item.name, [])?.label).toBe('未知预设')
     }
     for (const [interfaceMode, mode] of modes) for (const zone of PRESET_ZONES) {
-      expect(zonePresetsFor(interfaceMode, zone)).toEqual(FACTORY_ZONE_PRESET_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone))
+      // ★ #607 刀3a：池的来源换成落点材料 ⇒ 候选 = 材料里该桶该区的条目
+      //   （gui / terminal = `factory:*`；tactical 家族只有默认一员 ⇒ 就是那条默认单）。
+      const expected = LANDING_PRESET_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone
+        && entry.id.startsWith(mode === 'tactical' ? 'default:' : 'factory:'))
+      expect(zonePresetsFor(interfaceMode, zone)).toEqual(expected)
     }
-    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBeUndefined()
+    // ★ #607 刀3a：蓝调补入桶表（规范 §三）⇒ 该模式有桶、区域行可见
+    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBe('tactical')
     expect(defaultPresetForInterfaceMode('tactical-blue')).toBeUndefined()
     // 来源与显式入参不变守卫：快照只比对内存对象，不读 git 跟踪状态或历史存档。
     const sources = {

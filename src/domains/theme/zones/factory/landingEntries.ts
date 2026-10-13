@@ -109,8 +109,70 @@ function buildLandingEntries(): LandingPresetEntry[] {
       } else entries.push(base)
     }
   }
+  entries.push(...mergedPresetLandingEntries(entries))
   for (const entry of entries) assertLandingEntry(entry)
   return entries
+}
+
+/**
+ * 三张 Agent 卡的**合并落点材料**（`preset:<预设名>:<区>`，#607 刀3a）。
+ *
+ * 它们是「本单之前那条档案叠加链」的**等价物**：那时的有效外观 = 工厂数据 **⊕** 绑定档案
+ * 的 tokens（档案值覆盖同键）。刀3a 把这份叠加结果**预先写成材料**，应用时不再现场叠档案。
+ *
+ * 绑定关系在这里以本地真值表达（与 `presets/builtin.ts` 的 `presentationProfileId` 同指一份
+ * 档案）——生产路径从此**不读** `presentationProfileId`。
+ *
+ * 待迁边线 `inputBorderColor` 按默认条目同款处理：cc 材料收键（值取 `PROFILE_INPUT_BORDERS`）。
+ * 合并方向：**档案值覆盖工厂值**（写反了对拍必红）。
+ */
+const AGENT_CARD_PROFILES: Readonly<Record<string, string>> = Object.freeze({
+  'agent-command': 'builtin.presentation.agent-command',
+  'agent-map': 'builtin.presentation.agent-map',
+  'focus-flow': 'builtin.presentation.focus-flow',
+})
+
+function mergedPresetLandingEntries(entries: readonly LandingPresetEntry[]): LandingPresetEntry[] {
+  const byId = new Map(entries.map(entry => [entry.id, entry]))
+  const need = (id: string): LandingPresetEntry => {
+    const entry = byId.get(id)
+    if (!entry) throw new Error(`缺少合并落点来源材料：${id}`)
+    return entry
+  }
+  const merged: LandingPresetEntry[] = []
+  for (const [presetName, profileId] of Object.entries(AGENT_CARD_PROFILES)) {
+    // 消息流：两张单各自合并。工厂与档案材料都按轴拆过（档案的 `message*Bg` 等颜色字段
+    // 落在配色单里）⇒ **两轴都要并**，否则档案的配色货物会静默丢掉。
+    const chatValues = {
+      ...need(`factory:${presetName}:chat:style`).values, ...need(`factory:${presetName}:chat:color`).values,
+      ...structuredClone(need(`profile:${profileId}:chat:style`).values),
+      ...structuredClone(need(`profile:${profileId}:chat:color`).values),
+    }
+    const axes = splitChatPresetValues(chatValues)
+    // 中控：工厂 + 档案（档案覆盖同键），待迁边线归 cc。
+    const factoryCc = need(`factory:${presetName}:cc`)
+    const ccValues = {
+      ...need(`factory:${presetName}:cc`).values,
+      ...structuredClone(need(`profile:${profileId}:cc`).values),
+      inputBorderColor: profileBorder(profileId),
+    }
+    const label = factoryCc.label
+    merged.push(
+      {
+        id: `preset:${presetName}:chat:style`, label, mode: 'gui', zone: 'chat', axis: 'style',
+        origin: 'factory', source: { presetName }, values: axes.style, styleMaterial: { profileId },
+      },
+      {
+        id: `preset:${presetName}:chat:color`, label, mode: 'gui', zone: 'chat', axis: 'color',
+        origin: 'factory', source: { presetName }, values: axes.color,
+      },
+      {
+        id: `preset:${presetName}:cc`, label, mode: 'gui', zone: 'cc',
+        origin: 'factory', source: { presetName }, values: ccValues,
+      },
+    )
+  }
+  return merged
 }
 
 export function defaultLandingEntryId(mode: PresetInterfaceMode, zone: string, axis?: 'style' | 'color'): string {

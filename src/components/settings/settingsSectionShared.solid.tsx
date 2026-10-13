@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { createMemo, createSignal, For, Show, type JSX } from 'solid-js'
 import { useCustomPresetStore } from '../../domains/theme/customPresetStore'
-import { zonePresetsFor, isCustomZonePresetEntry, type ZonePresetEntry } from '../../domains/theme/zones/index.ts'
+import { zonePresetsFor, isCustomZonePresetEntry, type ChatPresetAxis, type ZonePresetEntry } from '../../domains/theme/zones/index.ts'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
 /**
@@ -29,25 +29,32 @@ export function Group(props: { title: string; children: JSX.Element; defaultOpen
 
 interface ZonePresetRowProps {
   zone: ZonePresetEntry['zone']; interfaceMode: string; activeName: string; isDirty: boolean
+  /** ★ #607 刀3a：消息流区**按轴分行**——本行只管自己那一轴（样式 / 配色）。其余区省略。 */
+  axis?: ChatPresetAxis
+  /** 折叠组标题（消息流两行各用自己的标签；其余区默认「局部预设」）。 */
+  title?: string
   onApply: (zone: ZonePresetEntry['zone'], entry: ZonePresetEntry) => void
-  onSaveCurrent: (zone: ZonePresetEntry['zone'], name: string) => void
+  onSaveCurrent: (zone: ZonePresetEntry['zone'], name: string, axis?: ChatPresetAxis) => void
   onRemoveEntry: (id: string) => void
 }
 
 /**
  * 刀6（#206）：区域预设行。候选不再是「平铺 10 个整体预设」，而是该
- * (界面模式桶, 区域) 的池条目——出厂条目（存引用，应用时现场切）+ 自定义条目（存值快照）。
- * 未登记归属桶的界面模式（如 tactical-blue）⇒ 池为空 ⇒ **整组不渲染**（与刀5 同口径）。
+ * (界面模式桶, 区域) 的池条目——出厂条目（落点材料里的 `factory:*`）+ 自定义条目（值快照）。
+ * 未登记归属桶的界面模式 ⇒ 池为空 ⇒ **整组不渲染**（与刀5 同口径）。
+ *
+ * ★ #607 刀3a：消息流区拆**两行**（样式单 / 配色单，靠 `axis` + `title` 区分）；
+ * 其余四区仍是一行。
  */
 export function ZonePresetRow(props: ZonePresetRowProps) {
   const customEntries = createZustandSignal(useCustomPresetStore, s => s.zonePresetEntries)
-  const entries = createMemo(() => zonePresetsFor(props.interfaceMode, props.zone, customEntries()))
+  const entries = createMemo(() => zonePresetsFor(props.interfaceMode, props.zone, customEntries(), props.axis))
   const [entryName, setEntryName] = createSignal('')
   // 刀7 前置（#211）：行内两段式确认的待删条目（照全局自定义预设先例，不常驻、不开模态）
   const [pendingDeleteEntryId, setPendingDeleteEntryId] = createSignal<string | null>(null)
   return (
     <Show when={entries().length > 0} fallback={null}>
-      <Group title="局部预设">
+      <Group title={props.title ?? '局部预设'}>
         <div class="set-preset-row">
           <For each={entries()}>{entry => {
             const selected = () => props.activeName === entry.id && !props.isDirty
@@ -94,7 +101,7 @@ export function ZonePresetRow(props: ZonePresetRowProps) {
         <div class="set-custom-preset-save">
           <input class="set-input" value={entryName()} onInput={event => setEntryName(event.currentTarget.value)} placeholder="区域预设名称" />
           <button type="button" class="ps-btn sm" disabled={!entryName().trim()} title={entryName().trim() ? undefined : '保存必须命名'}
-            onClick={() => { props.onSaveCurrent(props.zone, entryName()); setEntryName('') }}>存当前</button>
+            onClick={() => { props.onSaveCurrent(props.zone, entryName(), props.axis); setEntryName('') }}>存当前</button>
         </div>
       </Group>
     </Show>

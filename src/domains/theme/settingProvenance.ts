@@ -22,6 +22,8 @@ export type SettingWriteSource =
   | 'presentation-profile'
   | 'theme-reset'
   | 'zone-reset'
+  /** ★ #607 刀3a：切换界面模式（= 应用本大类隐藏默认单，整份换装）。 */
+  | 'interface-mode'
 
 export interface SettingWriteRecord {
   readonly key: string
@@ -77,6 +79,7 @@ export const SETTING_WRITE_SOURCE_LABELS: Readonly<Record<SettingWriteSource, st
   'zone-preset': '局部预设',
   'global-preset': '全局预设',
   'custom-preset': '自定义预设',
+  'interface-mode': '界面模式',
   'presentation-profile': '呈现风格',
   'theme-reset': '整体重置',
   'zone-reset': '分区重置',

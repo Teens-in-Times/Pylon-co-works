@@ -6,6 +6,9 @@ import type { PresentationProfileContribution } from '../../plugin-runtime/prese
 import type { InterfaceModeContribution } from '../../plugin-runtime/interface-mode/interfaceModeTypes.ts'
 import { DEFAULT_SHELL_RECIPE, type ShellRecipeContribution } from '../../plugin-runtime/shell-recipe/shellRecipeTypes.ts'
 import { useThemeStore } from '../../domains/theme/themeStore.ts'
+import { DEFAULTS } from '../../domains/theme/themeDefaults.ts'
+import type { SettingWriteSource } from '../../domains/theme/settingProvenance.ts'
+import { planModeDefaultForInterfaceMode } from '../../domains/theme/zones/modeLandingPlan.ts'
 import { validateRendererSuiteReferences } from '../../plugin-runtime/renderers/rendererSuiteReferences.ts'
 
 export interface InterfaceModeTransactionPorts {
@@ -111,36 +114,45 @@ export function activatePresentationProfile(profileId: string, ports: InterfaceM
   return true
 }
 
+/**
+ * ★ #607 刀3a：切换 / 重置的**唯一落点** —— 应用本大类的**隐藏默认单**（整份主题 + 清账），
+ * 身份取自材料里生效的消息流样式单。
+ *
+ * - 未登记该模式的默认单（插件模式）⇒ 回落整份 `DEFAULTS`（不报错、不悬空）；
+ * - 材料不带身份 ⇒ 不写 `activeProfileId`（保持原值）。
+ */
+function applyModeDefaultLanding(
+  mode: InterfaceMode,
+  ports: InterfaceModeTransactionPorts,
+  source: SettingWriteSource,
+): void {
+  const plan = planModeDefaultForInterfaceMode(mode)
+  ports.theme.getState().applyLandingPlan(plan?.theme ?? structuredClone(DEFAULTS), source)
+  if (plan?.styleProfileId !== undefined) {
+    ports.presentation.getState().setActiveProfileId(plan.styleProfileId)
+  }
+}
+
+/**
+ * 切换界面模式 = 应用本大类隐藏默认单。
+ *
+ * ★ #607 刀3a：**不再挑呈现档案**（不读 `profileByMode`、不 `rememberProfile`、
+ * 不 `applyPresentationProfile`）——一切值来自落点材料，档案机制本刀一行未删（3b 处置）。
+ */
 export function activateInterfaceMode(mode: InterfaceMode, ports: InterfaceModeTransactionPorts = defaultPorts): boolean {
   const modeContribution = resolveActivatableMode(mode, ports)
   if (!modeContribution) return false
-  const state = ports.interfaceMode.getState()
-  const profileId = state.profileByMode[mode] || modeContribution.defaultPresentationProfileId
-  const registry = getPresentationProfileRegistry()
-  const profile = registry.resolve(profileId)?.value
-    ?? registry.getSnapshot().entries.find(entry => presentationProfileInterfaceMode(entry.value) === mode)?.value
-  if (!profile) return false
-  try { applyModeProfile(mode, profile, ports) } catch { return false }
-  state.setInterfaceMode(mode)
+  try { applyModeDefaultLanding(mode, ports, 'interface-mode') } catch { return false }
+  ports.interfaceMode.getState().setInterfaceMode(mode)
   return true
 }
 
-/** Reset the Theme Store, then restore the current mode's remembered/default Presentation Profile. */
+/** 重置主题 = 应用当前界面模式的隐藏默认单（与切换**同一条路径**，#607 刀3a）。 */
 export function resetThemeForActiveInterfaceMode(ports: InterfaceModeTransactionPorts = defaultPorts): boolean {
   const mode = ports.interfaceMode.getState().interfaceMode
   const modeContribution = resolveActivatableMode(mode, ports)
   if (!modeContribution) return false
-  const state = ports.interfaceMode.getState()
-  const profileId = state.profileByMode[mode] || modeContribution.defaultPresentationProfileId
-  const registry = getPresentationProfileRegistry()
-  const profile = registry.resolve(profileId)?.value
-    ?? registry.getSnapshot().entries.find(entry => presentationProfileInterfaceMode(entry.value) === mode)?.value
-  if (!profile) return false
-
-  try {
-    ports.theme.getState().resetTheme()
-    applyModeProfile(mode, profile, ports)
-  } catch { return false }
+  try { applyModeDefaultLanding(mode, ports, 'theme-reset') } catch { return false }
   return true
 }
 

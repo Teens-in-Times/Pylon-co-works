@@ -62,6 +62,13 @@ export type ThemeState = ThemeSettings & {
    */
   setCcHidden: (id: string, hidden: boolean, target: CcVisibilityTarget) => void
   resetTheme: () => void
+  /**
+   * ★ #607 刀3a：**整份落点计划**的唯一写入口（切换界面模式 / 重置主题同走这条）。
+   *
+   * `plan` = `zones/modeLandingPlan` 算出的整份主题（含 `appliedPreset` 全 `''` /
+   * `custom` 全 `false` 的清账语义）。这里只记溯源 + `set(...)`，不做任何决策。
+   */
+  applyLandingPlan: (plan: ThemeSettings, source?: SettingWriteSource) => void
   /** 重置单个 zone 的字段到默认值（不清其他 zone），并清该 zone 的 custom/appliedPreset */
   resetZone: (zone: string) => void
   applyZonePreset: (zone: string, presetName: string, presetTheme: Partial<ThemeSettings>) => void
@@ -168,6 +175,9 @@ const themeKernel = createSolidStoreKernel<ThemeState>({
 
   resetTheme: () => {
     recordSettingWrites('theme-reset', '*', Object.keys(DEFAULTS))
+    // ★ #607 刀3a：**重置主题的对外路径已换成 `applyLandingPlan`**（`resetThemeForActiveInterfaceMode`
+    //   走「本大类隐藏默认单」那条统一路径）。本动作仍是**首启种子**（`firstRunThemeSeed`，刀4 对齐）
+    //   与 `theme.reset` 命令的落点，暂时保留原样（刀3b/刀4 处置）。
     // 刀7（#214）：重置落点 = **当前界面模式的默认预设**（GUI / 终端各一条，只存值不记基准）。
     // 未登记模式（tactical-blue、插件未登记模式）没有默认预设 ⇒ 回落整份 DEFAULTS（不报错、不悬空）。
     const target = defaultPresetForInterfaceMode(useInterfaceModeStore.getState().interfaceMode)
@@ -180,6 +190,12 @@ const themeKernel = createSolidStoreKernel<ThemeState>({
     // 名字传空串 = 沿用 resetZone 的「无基准」态：默认预设不进列表，若记名，预设行会因认不出它
     // 而亮出兜底的「未知预设」chip——那正是刀6/07a 要避免的悬空。
     themeKernel.setState({ ...structuredClone(DEFAULTS), ...setGlobalPresetReducer('', target.theme) })
+  },
+
+  // ★ #607 刀3a：切换界面模式 / 重置主题的**唯一写入口**（计划由 zones/modeLandingPlan 纯算出）。
+  applyLandingPlan: (plan, source = 'theme-reset') => {
+    recordSettingWrites(source, '*', Object.keys(plan))
+    themeKernel.setState(structuredClone(plan))
   },
 
   resetZone: (zone) => themeKernel.setState(state => {
@@ -215,7 +231,6 @@ const themeKernel = createSolidStoreKernel<ThemeState>({
     recordSettingWrites('global-preset', '*', Object.keys({
       ...DEFAULTS,
       ...Object.assign({}, ...slices.map(slice => slice.theme)),
-      ...(options.profileTokens ?? {}),
     }))
     themeKernel.setState(state => assembleGlobalPresetReducer(state, slices, options))
   },

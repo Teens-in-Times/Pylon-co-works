@@ -9,7 +9,7 @@ import type { ThemeSettings } from '../domains/theme/themeStore'
 import { normalizeCustomPresetId, pickCustomPresetTheme } from '../domains/theme/customPresets'
 import { INTERFACE_MODE_PRESET_BUCKET } from '../domains/theme/presets/index.ts'
 import type { PresetApplyResult } from '../domains/theme/presetBundle.ts'
-import { resolveZonePresetEntryTheme, type ZonePresetEntry } from '../domains/theme/zones/index.ts'
+import { resolveZonePresetEntryTheme, type ChatPresetAxis, type ZonePresetEntry } from '../domains/theme/zones/index.ts'
 import { useWorkspaceStore } from '../domains/workspace/workspaceStore'
 import { useIdentityStore } from '../domains/identity/identityStore'
 import { useInterfaceModeStore } from '../domains/interface/interfaceModeStore.ts'
@@ -182,12 +182,13 @@ export default function Settings(props: SettingsProps) {
     useThemeStore.getState().applyZonePreset(zone, entry.id, theme)
   }
 
-  // 「存当前为自定义」：存 = pickZoneFields(当前主题, zone)，随后立刻应用同一条目，
+  // 「存当前为自定义」：存 = 该区（消息流按行取轴切片）的当前值，随后立刻应用同一条目，
   // 使新条目成为该区基准（与全局预设「保存当前」后立即应用同一交互）。
   const modeBucket = createMemo(() => INTERFACE_MODE_PRESET_BUCKET[currentInterfaceMode()])
-  const saveZonePresetEntryFromSettings = (zone: ZonePresetEntry['zone'], name: string) => {
+  const saveZonePresetEntryFromSettings = (zone: ZonePresetEntry['zone'], name: string, axis?: ChatPresetAxis) => {
     if (!modeBucket()) return
-    const id = useCustomPresetStore.getState().saveZonePresetEntry(modeBucket()!, zone, name)
+    // ★ #607 刀3a：消息流两行各存自己那一轴（axis 由该行传入；快照在 customPresetStore 内取轴切片）。
+    const id = useCustomPresetStore.getState().saveZonePresetEntry(modeBucket()!, zone, name, axis)
     if (!id) return
     const entry = useCustomPresetStore.getState().zonePresetEntries.find(item => item.id === id)
     const theme = entry ? resolveZonePresetEntryTheme(entry) : null

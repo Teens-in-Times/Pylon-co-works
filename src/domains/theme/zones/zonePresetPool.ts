@@ -23,13 +23,13 @@
  */
 
 import type { ThemeSettings } from '../themeStore.ts'
-import { ZONE_FIELDS, type ZoneName } from '../themeFieldDefs.ts'
-import { PRESET_ZONES, assertZoneSliceOwnership, type PresetZone } from '../presetReducer.ts'
+import { ZONE_FIELDS, ZONES, type ZoneName } from '../themeFieldDefs.ts'
+import { PRESET_ZONES, assertZoneSliceOwnership, type ChatPresetAxis, type PresetZone } from '../presetReducer.ts'
 import {
   INTERFACE_MODE_PRESET_BUCKET,
   type PresetInterfaceMode,
 } from '../presets/index.ts'
-import { FACTORY_ZONE_PRESET_ENTRIES } from './factory/index.ts'
+import { LANDING_PRESET_ENTRIES } from './factory/landingEntries.ts'
 
 /**
  * 条目来源。**出厂与自定义的区分唯一真值**（不再看有没有 `values`——刀2 起两方都有）。
@@ -37,7 +37,9 @@ import { FACTORY_ZONE_PRESET_ENTRIES } from './factory/index.ts'
  */
 export type ZonePresetOrigin = 'factory' | 'custom'
 
-export type ChatPresetAxis = 'style' | 'color'
+// ★ #607 刀3a：轴类型的**唯一定义**下沉到 `presetReducer`（那里有 `CHAT_PRESET_AXES` 真值）；
+// 本模块只转发，不另立第二份（历史定义位置在此，消费面因此保持不变）。
+export type { ChatPresetAxis }
 export type ZonePresetSource =
   | { presetName: string; profileId?: never }
   | { profileId: string; presetName?: never }
@@ -89,7 +91,14 @@ export function assembleFactoryZonePresetPool(entries: readonly ZonePresetEntry[
         if (entry.axis !== undefined && (zone !== 'chat' || !['style', 'color'].includes(entry.axis))) {
           throw new Error(`出厂区域预设 ${mode}/${zone}/${entry.id}：非法 chat 轴 ${entry.axis}`)
         }
-        assertZoneSliceOwnership(zone, entry.values, `出厂区域预设 ${mode}/${zone}/${entry.id}`)
+        // ★ #607 刀3a：`inputBorderColor` 是**唯一**允许待在 cc 材料里的待迁边线
+        //   （字段归属表里它仍写 global；与 `presetReferencePlan.assertLandingEntry` 同一条例外）。
+        //   其余键的越区判据一字不动。
+        const values = entry.values as Record<string, unknown>
+        const checked = zone === 'cc' && Object.hasOwn(values, 'inputBorderColor')
+          ? (Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'inputBorderColor')) as Partial<ThemeSettings>)
+          : entry.values
+        assertZoneSliceOwnership(zone, checked, `出厂区域预设 ${mode}/${zone}/${entry.id}`)
       }
       zones[zone] = Object.freeze(cell.map(entry => Object.freeze(entry))) as ZonePresetEntry[]
     }
@@ -107,8 +116,46 @@ export function chatPresetsForAxis(
   return pool[mode].chat.filter(entry => (entry.axis ?? 'color') === axis)
 }
 
-/** 构建时装配的出厂池（刀2：来源 = 落盘数据表；内容只随数据文件变化）。 */
-export const ZONE_PRESET_POOL: ZonePresetPool = assembleFactoryZonePresetPool(FACTORY_ZONE_PRESET_ENTRIES)
+/**
+ * 出厂池的**条目来源**（#607 刀3a）：落点材料里 `factory:*` 的那一批。
+ *
+ * ★ `preset:*`（三张 Agent 卡的**合并落点**）不进池——它是「预设整体落点」，
+ * 不是单区候选；要不要在区域行里出现，取决于它是哪一区的单区材料。
+ * ★ 消息流区在这里就是**两条单**（`axis` 显式标 style / color）⇒ 设置页据此渲染两行。
+ */
+export const FACTORY_POOL_ENTRIES: readonly ZonePresetEntry[] = Object.freeze(
+  LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('factory:')),
+)
+
+/**
+ * ★ 蓝调战术那一桶的条目来源：它的**家族里只有隐藏默认一员**（没有出厂工厂材料）。
+ *
+ * 施工单 §4.4 只说「候选 = `factory:*` 条目」，但蓝调桶一条工厂材料也没有 ⇒ 按字面实现
+ * 它的区域行会**整组不渲染**，与验收 §5.6「蓝调区域行可见、可切换、可重置、可存自定义」
+ * 直接冲突。故：**没有工厂材料的桶以它的默认单为家族内容**（默认成员不进 chips 的口径不变，
+ * 只是这一桶的默认成员同时是它唯一的区域行候选）。此项已在回单「阻断与新增」点名待裁。
+ */
+export const MODE_DEFAULT_POOL_ENTRIES: readonly ZonePresetEntry[] = Object.freeze(
+  LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('default:')),
+)
+
+/** 池的装配输入 = 工厂材料 ＋ 各桶的默认单（后者只在**该桶没有工厂材料**时被用到）。 */
+const POOL_ENTRIES: readonly ZonePresetEntry[] = Object.freeze([
+  ...FACTORY_POOL_ENTRIES,
+  ...MODE_DEFAULT_POOL_ENTRIES,
+])
+
+/**
+ * 构建时装配的出厂池。
+ *
+ * 入池规则（#607 刀3a）：工厂材料全入；**默认单只在它那一桶没有工厂材料时才入池**
+ * （gui / terminal 两桶的默认成员照旧不进候选 —— 刀7 的「默认预设不进列表、不进池」不变；
+ * 蓝调那一桶没有工厂材料 ⇒ 它的默认单就是家族内容）。
+ */
+export const ZONE_PRESET_POOL: ZonePresetPool = assembleFactoryZonePresetPool(
+  POOL_ENTRIES.filter(entry => !entry.id.startsWith('default:')
+    || !FACTORY_POOL_ENTRIES.some(item => item.mode === entry.mode)),
+)
 
 // ── 自定义条目（值快照） ───────────────────────────────────────────
 
@@ -177,23 +224,42 @@ export function normalizeZonePresetEntries(value: unknown): ZonePresetEntry[] {
     if (!item || typeof item !== 'object') continue
     const candidate = item as Partial<ZonePresetEntry>
     if (typeof candidate.id !== 'string' || !candidate.id.trim()) continue
-    if (candidate.mode !== 'gui' && candidate.mode !== 'terminal') continue
-    if (typeof candidate.zone !== 'string' || !candidate.zone) continue
+    // ★ #607 刀3a：蓝调战术有桶之后，它的自定义条目也必须能读回来（原先只认 gui/terminal）。
+    if (!(PRESET_INTERFACE_MODES as readonly string[]).includes(candidate.mode as string)) continue
+    const zone = typeof candidate.zone === 'string' && candidate.zone ? candidate.zone : undefined
+    if (zone === undefined || !(ZONES as readonly string[]).includes(zone)) continue
     if (typeof candidate.label !== 'string' || !candidate.label.trim()) continue
     if (!candidate.values || typeof candidate.values !== 'object') continue
     const origin: ZonePresetOrigin | undefined = candidate.origin === 'factory' || candidate.origin === 'custom'
       ? candidate.origin
       : undefined
-    entries.push({
+    // ★ #607 刀3a：轴只属消息流区（其余区不保留）；来源身份按既有两形态原样留。
+    const axis: ChatPresetAxis | undefined = zone === 'chat'
+      && (candidate.axis === 'style' || candidate.axis === 'color') ? candidate.axis : undefined
+    const source: ZonePresetSource | undefined = validZonePresetSource(candidate.source)
+    const base = {
       id: candidate.id.trim(),
-      mode: candidate.mode,
-      zone: candidate.zone,
+      mode: candidate.mode as PresetInterfaceMode,
       label: candidate.label.trim().slice(0, 40),
       ...(origin ? { origin } : {}),
+      ...(source ? { source } : {}),
       values: { ...(candidate.values as Partial<ThemeSettings>) },
-    })
+    }
+    if (zone === 'chat') entries.push({ ...base, zone: 'chat', ...(axis ? { axis } : {}) })
+    else entries.push({ ...base, zone })
   }
   return entries
+}
+
+/** 来源身份的两形态（预设名 / 档案 id），二选一且非空；其余一律丢弃。 */
+function validZonePresetSource(value: unknown): ZonePresetSource | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const record = value as Record<string, unknown>
+  const presetName = typeof record.presetName === 'string' && record.presetName.trim() ? record.presetName : undefined
+  const profileId = typeof record.profileId === 'string' && record.profileId.trim() ? record.profileId : undefined
+  if (presetName && !profileId) return { presetName }
+  if (profileId && !presetName) return { profileId }
+  return undefined
 }
 
 const generatedZonePresetEntryIds = new Set<string>()
@@ -264,19 +330,27 @@ export function removeZonePresetEntryReducer(
 // ── 查询与消费 ─────────────────────────────────────────────────────
 
 /**
- * 该 (界面模式, 区域) 的候选条目：出厂条目（落盘数据）+ 自定义条目（已过 Q8 清理）。
- * 界面模式**未登记归属桶**（如 `tactical-blue`）⇒ 空数组 ⇒ 调用方整组不渲染。
+ * 该 (界面模式, 区域) 的候选条目：出厂条目（落点材料里的 `factory:*`）+ 自定义条目（已过 Q8 清理）。
+ * 界面模式**未登记归属桶**（如插件模式）⇒ 空数组 ⇒ 调用方整组不渲染。
+ *
+ * ★ #607 刀3a：消息流区有**两条单** ⇒ 传 `axis` 表示「只要该轴那一行」的候选；
+ *   不传 = 该区全部条目（整区视图，供非分行场景/测试用）。
  */
 export function zonePresetsFor(
   interfaceMode: string,
   zone: string,
   customEntries: readonly ZonePresetEntry[] = [],
+  axis?: ChatPresetAxis,
 ): ZonePresetEntry[] {
   const bucket = INTERFACE_MODE_PRESET_BUCKET[interfaceMode]
   if (!bucket) return []
-  const factory = (ZONE_PRESET_POOL[bucket] as Record<string, ZonePresetEntry[] | undefined>)[zone] ?? []
+  const chatAxis = zone === 'chat' ? axis : undefined
+  const factory = chatAxis
+    ? chatPresetsForAxis(ZONE_PRESET_POOL, bucket, chatAxis)
+    : (ZONE_PRESET_POOL[bucket] as Record<string, ZonePresetEntry[] | undefined>)[zone] ?? []
   const custom = normalizeZonePresetEntries(customEntries)
     .filter(entry => entry.mode === bucket && entry.zone === zone)
+    .filter(entry => chatAxis === undefined || (entry.axis ?? 'color') === chatAxis)
     .map(entry => {
       const { values } = normalizeZonePresetValues(entry.zone, entry.values ?? {})
       // ★ 持久化通道里的一律是**用户自建**条目 ⇒ 显式标 custom（挡住"手改 localStorage 塞 factory"）

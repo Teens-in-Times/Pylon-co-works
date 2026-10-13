@@ -25,8 +25,7 @@ import { useCustomPresetStore } from '../../customPresetStore.ts'
 import { useInterfaceModeStore } from '../../../interface/interfaceModeStore.ts'
 import { mountSettingsSheet } from '../../../../test/settingsSheetHarness.solid'
 import { resetStores } from '../../../../test/resetStores.ts'
-import { pickZoneFields } from '../pickZoneFields.ts'
-import { effectivePresetTheme } from '../effectivePresetTheme.ts'
+import { FACTORY_POOL_ENTRIES } from '../zonePresetPool.ts'
 import {
   ZONE_PRESET_POOL,
   assembleFactoryZonePresetPool,
@@ -79,17 +78,20 @@ describe('zonePresetPool · 派生（刀6 #206）', () => {
     useInterfaceModeStore.setState({ interfaceMode: 'modern-gui' })
   })
 
-  it('每格条数 == 桶大小（刀2 起不折叠）、桶非空每格 ≥1 条，且条目 id 恰好覆盖该桶全部预设', () => {
+  it('每格条数（消息流两轴各一份）与逐套覆盖（刀2 起不折叠）', () => {
     const cells = census()
     for (const mode of BUCKETS) {
       const names = bucketPresetNames(mode)
       for (const zone of PRESET_ZONES) {
         const entries = ZONE_PRESET_POOL[mode][zone]
-        const at = `${mode}/${zone}`
-        expect(entries.length, `${at} 条数不得超过桶大小`).toBeLessThanOrEqual(names.length)
-        expect(entries.length, `${at} 桶非空 ⇒ 每格至少 1 条`).toBeGreaterThanOrEqual(1)
-        // 覆盖性（刀2 / #223 起不折叠）：每套预设各留自己那条，id 恰好等于该桶全部预设名。
-        expect(entries.map(entry => entry.id).sort(), `${at} 覆盖该桶全部预设`).toEqual([...names].sort())
+        // ★ #607 刀3a：池的来源换成落点材料 ⇒ 消息流区是两条单（样式 / 配色各一份）。
+        const perPreset = zone === 'chat' ? 2 : 1
+        expect(entries, `${mode}/${zone} 条数`).toHaveLength(names.length * perPreset)
+        // 覆盖性（不折叠）：每套预设各留自己那条（消息流两轴各一条）
+        for (const name of names) {
+          expect(entries.filter(entry => entry.id.startsWith(`factory:${name}:`)), `${mode}/${zone}/${name}`)
+            .toHaveLength(perPreset)
+        }
       }
     }
     console.debug('[刀6] 每格条数', JSON.stringify(cells))
@@ -113,14 +115,20 @@ describe('zonePresetPool · 派生（刀6 #206）', () => {
     for (const entry of entries) expect(entry).not.toHaveProperty('sources')
   })
 
-  it('tactical-blue / 未登记模式 ⇒ 空池，且整组不渲染', async () => {
-    expect(zonePresetsFor('tactical-blue', 'sidebar')).toEqual([])
+  it('蓝调桶已登记 ⇒ 区域行以家族唯一成员（默认单）出候选；未登记模式仍空池、整组不渲染', async () => {
+    // ★ #607 刀3a：桶表补入 tactical-blue（规范 §三）⇒ 蓝调的区域行可见、可切换/重置/存自定义。
+    //   蓝调家族里只有隐藏默认一员（没有工厂材料）⇒ 候选就是那条默认单。
+    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBe('tactical')
+    expect(zonePresetsFor('tactical-blue', 'sidebar').map(entry => entry.id)).toEqual(['default:tactical:sidebar'])
+    for (const axis of ['style', 'color'] as const) {
+      expect(zonePresetsFor('tactical-blue', 'chat', [], axis).map(entry => entry.id))
+        .toEqual([`default:tactical:chat:${axis}`])
+    }
+    // 未登记模式仍整组不渲染；未登记到池的区域轴（layout 无字段）同样是空
     expect(zonePresetsFor('not-registered', 'sidebar')).toEqual([])
-    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBeUndefined()
-    // 未登记到池的区域轴（layout 无字段）同样是空
     expect(zonePresetsFor('modern-gui', 'layout')).toEqual([])
 
-    useInterfaceModeStore.setState({ interfaceMode: 'tactical-blue' })
+    useInterfaceModeStore.setState({ interfaceMode: 'not-registered' })
     mountSettingsSheet({ domain: 'appearance', section: 'sidebar' })
     // 先等侧栏岛常驻内容（「模块」组）落地，再断言「局部预设」整组不渲染（防缺席断言空转绿）
     await vi.waitFor(() => {
@@ -129,13 +137,17 @@ describe('zonePresetPool · 派生（刀6 #206）', () => {
     expect(screen.queryByText('局部预设')).not.toBeInTheDocument()
   })
 
-  it('出厂条目应用切片逐字段等于来源预设有效值在该区的切面（应用行为零变化）', () => {
+  it('出厂条目 = 材料里的同 id 条目（活数据源），且值过该区归属闸门', () => {
+    // ★ #607 刀3a：判据从「来源预设有效值视图的该区切面」换成「**落点材料**里同 id 的那条」。
+    //   视图自本刀起 = 工厂 ⊕ 档案、且不再携带非预设管理字段；池只装工厂材料 ⇒ 两者不再逐字段相等
+    //   是合同变更，不是回归。「材料 == 规范化(原材料)」的强对拍在 factoryZonePresets.solid 的 B1。
     for (const mode of BUCKETS) {
       for (const zone of PRESET_ZONES) {
         for (const entry of ZONE_PRESET_POOL[mode][zone]) {
-          const preset = GLOBAL_PRESETS.find(item => item.name === entry.source?.presetName)
-          expect(preset, `${mode}/${zone} 来源预设必须存在`).toBeTruthy()
-          expect(resolveZonePresetEntryTheme(entry), `${mode}/${zone}/${entry.id}`).toEqual(pickZoneFields(effectivePresetTheme(preset!), zone))
+          const material = FACTORY_POOL_ENTRIES.find(item => item.id === entry.id)
+          expect(material, `${mode}/${zone}/${entry.id} 必须是材料里的同 id 条目`).toBeTruthy()
+          expect(entry, `${mode}/${zone}/${entry.id} 就是材料对象本身`).toBe(material)
+          expect(resolveZonePresetEntryTheme(entry), `${mode}/${zone}/${entry.id}`).toEqual(material!.values)
         }
       }
     }
