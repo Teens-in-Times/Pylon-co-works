@@ -5,4 +5,4 @@
 
 - [Codex] #593 TS6 迁移：隔离工作树 `C:/Users/AlchemistCxC/.codex/worktrees/typescript6-migration/prism-desktop`，分支 `codex/typescript6-migration`；范围依赖/tsconfig、必要类型修正、构建脚本、说明书与独立记录；避让共享树 #515 文档。
 - [Codex] #600 code-stats 准确性修复：scripts/code-stats*.mts、code-stats SKILL.md 与独立记录；隔离树 code-stats-accuracy，避让共享树 #515 文档。
-- [607-翻译] #607 界面模式落点收敛线（分支 `feat/mode-landing.1`，四刀）：全线路径 `src/domains/theme/zones/**`、`presets/builtin.ts`（桶位/引用单/默认单）、`plugins/core/renderer/builtinPresentationProfiles.ts`（刀3 删）、`application/transactions/`（刀2/3）、`components/settings/`（刀3）。**当前：刀1 存档 `5ee2cc34`、刀2 存档 `1d589f34`（均未推远端，刀2 待用户批准后开 PR）；刀3 未开工。** 不碰 `src-tauri/`。
+- [607-翻译] #607 界面模式落点收敛线（分支 `feat/mode-landing.1`，四刀）：全线路径 `src/domains/theme/zones/**`、`presets/**`（桶位/引用单/默认单）、`plugins/core/renderer/builtinPresentationProfiles.ts`（刀3b 删）、`application/transactions/`（刀3a/3b）、`components/settings/`（刀3a/3b）、`domains/theme/customPresetStore.ts`（刀3a）。**当前：存档点 刀1 `5ee2cc34`、刀2 `1d589f34`、刀3a `6630a20f`＋环基线接续 `58c9a7b5`（均未推远端）；刀3a 已结单（翻译独立核验通过，档案机制一行未删）；刀3b 待用户授权。** 不碰 `src-tauri/`。
