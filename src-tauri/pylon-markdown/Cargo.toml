@@ -18,7 +18,7 @@ serde-wasm-bindgen = "0.6"
 # syntect-onig 会把 syntect 的 onig（C 依赖）拖进依赖图，wasm 目标直接编译失败
 # （wasm-pack 冒烟实测 cc-rs 找不到 clang）。本 crate 也不用 comrak 的 CLI / bon /
 # syntect 适配器——#241 起本 crate 只做 markdown 解析，高亮在前端 Lezer。
-comrak = { version = "0.55.0", default-features = false }
+comrak = { version = "0.56.0", default-features = false }
 # #241/ADR-0020：`syntect`（连同 `fancy-regex`/`yaml-load`）已退役——它服务的语法机器
 # 与 14 个 vendored 语法资产整体迁出到前端 Lezer，本 crate 不再需要正则引擎。
 
