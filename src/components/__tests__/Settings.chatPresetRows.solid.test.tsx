@@ -46,8 +46,11 @@ describe('#607 刀3a · 消息流两行', () => {
     for (const entry of chatPresetsForAxis(ZONE_PRESET_POOL, 'gui', 'style')) {
       expect(styleGroup.getByRole('button', { name: entry.label }), `样式行 ${entry.id}`).toBeInTheDocument()
     }
+    for (const label of ['Agent 指挥台', 'Agent 关系图', '专注流程']) {
+      expect(styleGroup.getAllByRole('button', { name: label }), `样式行无同名对 ${label}`).toHaveLength(1)
+    }
     for (const entry of chatPresetsForAxis(ZONE_PRESET_POOL, 'gui', 'color')) {
-      expect(colorGroup.getByRole('button', { name: entry.label }), `配色行 ${entry.id}`).toBeInTheDocument()
+      expect(colorGroup.getAllByRole('button', { name: entry.label }).length, `配色行 ${entry.id}`).toBeGreaterThan(0)
     }
   })
 

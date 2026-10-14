@@ -26,6 +26,8 @@ import { useInterfaceModeStore } from '../../../interface/interfaceModeStore.ts'
 import { mountSettingsSheet } from '../../../../test/settingsSheetHarness.solid'
 import { resetStores } from '../../../../test/resetStores.ts'
 import { FACTORY_POOL_ENTRIES } from '../zonePresetPool.ts'
+import { LANDING_PRESET_ENTRIES } from '../factory/landingEntries.ts'
+import { usePresentationPreferenceStore } from '../../../presentation/presentationPreferenceStore.ts'
 import {
   ZONE_PRESET_POOL,
   assembleFactoryZonePresetPool,
@@ -459,5 +461,145 @@ describe('zonePresetPool · 自定义条目删除（刀7 前置 #211）', () => 
     await vi.waitFor(() => {
       expect(within(presetGroupSync()).queryByRole('button', { name: '失效条目' })).not.toBeInTheDocument()
     })
+  })
+})
+
+// ── #607 刀3b：档案外观接入消息流样式行 ─────────────────────────────
+
+describe('zonePresetPool · 档案外观候选（#607 刀3b）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    resetStores()
+    useInterfaceModeStore.setState({ interfaceMode: 'modern-gui' })
+  })
+
+  it('样式行候选 = 工厂条在前 + 档案条在后，且排除被预设用到的全部档案', () => {
+    const factoryOf = (mode: string) => zonePresetsFor(mode, 'chat', [], 'style')
+      .filter(entry => entry.id.startsWith('factory:'))
+    const profileOf = (mode: string) => zonePresetsFor(mode, 'chat', [], 'style')
+      .filter(entry => entry.id.startsWith('profile:'))
+
+    for (const [mode, factoryCount, profileIds] of [
+      ['modern-gui', 5, []],
+      ['terminal-like', 5, [
+        'profile:builtin.presentation.terminal-modern:chat:style',
+        'profile:builtin.presentation.paper-low-contrast:chat:style',
+        'profile:builtin.presentation.console-glass:chat:style',
+      ]],
+    ] as const) {
+      const candidates = zonePresetsFor(mode, 'chat', [], 'style')
+      expect(new Set(candidates.map(entry => entry.label)).size, `${mode} 无同名对`).toBe(candidates.length)
+      expect(factoryOf(mode), `${mode} 工厂条数`).toHaveLength(factoryCount)
+      expect(profileOf(mode).map(entry => entry.id), `${mode} 档案条`).toEqual([...profileIds])
+      // 工厂条在前、档案条在后
+      expect(candidates.map(entry => entry.id.startsWith('factory:')))
+        .toEqual([...Array(factoryCount).fill(true), ...Array(profileIds.length).fill(false)])
+      const defaultProfileId = mode === 'modern-gui'
+        ? 'builtin.presentation.modern-gui' : 'builtin.presentation.terminal-classic'
+      expect(candidates.some(entry => entry.id.includes(defaultProfileId)), `${mode} 默认档案不进候选`).toBe(false)
+    }
+
+    // 蓝调桶：1 工厂（无工厂材料 ⇒ 家族唯一成员 = 默认单）+ 0 档案
+    expect(zonePresetsFor('tactical-blue', 'chat', [], 'style').map(entry => entry.id))
+      .toEqual(['default:tactical:chat:style'])
+  })
+
+  it('排除集取默认单和预设样式材料的档案，未被使用的档案仍可作区域候选', () => {
+    const used = new Set(LANDING_PRESET_ENTRIES
+      .filter(entry => (entry.id.startsWith('default:') || entry.id.startsWith('preset:'))
+        && entry.zone === 'chat' && entry.axis === 'style')
+      .map(entry => entry.styleMaterial?.profileId)
+      .filter((profileId): profileId is string => Boolean(profileId)))
+    expect([...used].sort()).toEqual([
+      'builtin.presentation.agent-command', 'builtin.presentation.agent-map',
+      'builtin.presentation.focus-flow', 'builtin.presentation.modern-gui',
+      'builtin.presentation.tactical-blue', 'builtin.presentation.terminal-classic',
+    ])
+    for (const [mode, bucket] of [
+      ['modern-gui', 'gui'], ['terminal-like', 'terminal'], ['tactical-blue', 'tactical'],
+    ] as const) {
+      for (const zone of ['chat', 'cc'] as const) {
+        const expected = LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('profile:')
+          && entry.mode === bucket && entry.zone === zone
+          && (zone === 'cc' || entry.axis === 'style')
+          && !used.has(entry.source?.profileId ?? ''))
+        const actual = zonePresetsFor(mode, zone, [], zone === 'chat' ? 'style' : undefined)
+          .filter(entry => entry.id.startsWith('profile:'))
+        expect(actual, `${mode}/${zone} 档案排除集`).toEqual(expected)
+      }
+    }
+  })
+
+  it('中控行候选 = 工厂条在前 + 终端三套档案条在后，GUI 和蓝调不加档案', () => {
+    for (const [mode, bucket, profileIds] of [
+      ['terminal-like', 'terminal', [
+        'profile:builtin.presentation.terminal-modern:cc',
+        'profile:builtin.presentation.paper-low-contrast:cc',
+        'profile:builtin.presentation.console-glass:cc',
+      ]],
+      ['modern-gui', 'gui', []],
+      ['tactical-blue', 'tactical', []],
+    ] as const) {
+      const candidates = zonePresetsFor(mode, 'cc')
+      expect(candidates.map(entry => entry.id)).toEqual([
+        ...ZONE_PRESET_POOL[bucket].cc.map(entry => entry.id), ...profileIds,
+      ])
+      expect(new Set(candidates.map(entry => entry.label)).size, `${mode} 中控无同名对`).toBe(candidates.length)
+    }
+    expect(zonePresetsFor('not-registered', 'cc')).toEqual([])
+  })
+
+  it.each(['terminal-modern', 'paper-low-contrast', 'console-glass'])(
+    '档案中控条 %s 可点击应用：材料逐键落值，其他区域和身份不变', async profileName => {
+      useInterfaceModeStore.setState({ interfaceMode: 'terminal-like' })
+      const id = `profile:builtin.presentation.${profileName}:cc`
+      const material = LANDING_PRESET_ENTRIES.find(entry => entry.id === id)!
+      const before = useThemeStore.getState()
+      const profileBefore = usePresentationPreferenceStore.getState().activeProfileId
+      mountSettingsSheet({ domain: 'appearance', section: 'cc' })
+      const chip = await screen.findByRole('button', { name: material.label })
+      fireEvent.click(chip)
+      const after = useThemeStore.getState()
+      expect(after.appliedPreset.cc).toBe(id)
+      for (const [key, value] of Object.entries(material.values)) {
+        expect(after[key as keyof ThemeSettings], `${id}/${key}`).toEqual(value)
+      }
+      for (const zone of PRESET_ZONES.filter(zone => zone !== 'cc')) {
+        for (const key of ZONE_FIELDS[zone]) {
+          if (Object.hasOwn(material.values, key)) continue
+          expect(after[key as keyof ThemeSettings], `${id} 不改 ${zone}/${key}`).toEqual(before[key as keyof ThemeSettings])
+        }
+        expect(after.appliedPreset[zone]).toBe(before.appliedPreset[zone])
+        expect(after.custom[zone]).toBe(before.custom[zone])
+      }
+      expect(usePresentationPreferenceStore.getState().activeProfileId).toBe(profileBefore)
+    },
+  )
+
+  it('配色行不加档案条（只有样式行接）', () => {
+    for (const mode of ['modern-gui', 'terminal-like']) {
+      expect(zonePresetsFor(mode, 'chat', [], 'color').every(entry => !entry.id.startsWith('profile:'))).toBe(true)
+    }
+  })
+
+  it('终端三套档案外观可应用：账记材料 id，生效值就是材料值', async () => {
+    useInterfaceModeStore.setState({ interfaceMode: 'terminal-like' })
+    mountSettingsSheet({ domain: 'appearance', section: 'chat' })
+    // 消息流两条行（样式单 / 配色单）由该组承载，档案条只在样式单那一行
+    await vi.waitFor(() => {
+      expect(screen.getByText('消息流样式单')).toBeInTheDocument()
+    })
+
+    const chip = await screen.findByRole('button', { name: '低对比纸张' })
+    fireEvent.click(chip)
+
+    expect(useThemeStore.getState().appliedPreset.chat)
+      .toBe('profile:builtin.presentation.paper-low-contrast:chat:style')
+    expect(useThemeStore.getState()).toMatchObject({
+      msgStyle: 'bubble', messageLayout: 'claude', chatFont: 'serif', msgFont: 'serif', messageRadius: 4,
+    })
+    // 出厂件：不可删（删除钮只在自定义条目上出现）
+    const styleRow = within(screen.getByText('消息流样式单').closest('.set-group') as HTMLElement)
+    expect(styleRow.queryAllByRole('button', { name: '删除' })).toHaveLength(0)
   })
 })

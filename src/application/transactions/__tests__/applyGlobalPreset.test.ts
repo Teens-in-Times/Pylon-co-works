@@ -56,18 +56,13 @@ describe('applyGlobalPreset', () => {
     expect(usePresentationPreferenceStore.getState().activeProfileId).toBe('builtin.presentation.agent-command')
   })
 
-  it('★ #607 刀3a：应用预设不再挑呈现档案 —— 界面模式与记忆表都不被它改动', () => {
-    useInterfaceModeStore.setState({
-      interfaceMode: 'terminal-like',
-      profileByMode: { 'terminal-like': 'builtin.presentation.terminal-classic' },
-    })
+  it('★ #607 刀3a／3b：应用预设不挑呈现档案 —— 界面模式不被改动，记忆表已退役', () => {
+    useInterfaceModeStore.setState({ interfaceMode: 'terminal-like' })
     expect(applyGlobalPreset('agent-command')).toBe(true)
     // 模式切换归界面模式开关 / 选择器；本路径只写主题与身份
     expect(useInterfaceModeStore.getState().interfaceMode).toBe('terminal-like')
-    // 记忆表：本路径不再写 `rememberProfile`（表本身保留，留待刀3b 处置）
-    expect(useInterfaceModeStore.getState().profileByMode).toEqual({
-      'terminal-like': 'builtin.presentation.terminal-classic',
-    })
+    // ★ 刀3b：档案记忆表已随私路退役（store 里不再有该字段）
+    expect(useInterfaceModeStore.getState()).not.toHaveProperty('profileByMode')
   })
 
   it('无身份的预设（普通 7 套）⇒ 不写 activeProfileId，保持原值', () => {

@@ -141,12 +141,33 @@ describe('#607 完整默认准备', () => {
       expect(GLOBAL_PRESETS.some(old => old.name === item.name)).toBe(false)
       expect(fallbackPresetChip(item.name, [])?.label).toBe('未知预设')
     }
+    const usedProfileIds = new Set(LANDING_PRESET_ENTRIES
+      .filter(entry => (entry.id.startsWith('default:') || entry.id.startsWith('preset:'))
+        && entry.zone === 'chat' && entry.axis === 'style')
+      .map(entry => entry.styleMaterial?.profileId))
     for (const [interfaceMode, mode] of modes) for (const zone of PRESET_ZONES) {
-      // ★ #607 刀3a：池的来源换成落点材料 ⇒ 候选 = 材料里该桶该区的条目
-      //   （gui / terminal = `factory:*`；tactical 家族只有默认一员 ⇒ 就是那条默认单）。
-      const expected = LANDING_PRESET_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone
+      const factory = LANDING_PRESET_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone
         && entry.id.startsWith(mode === 'tactical' ? 'default:' : 'factory:'))
-      expect(zonePresetsFor(interfaceMode, zone)).toEqual(expected)
+      const profiles = LANDING_PRESET_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone
+        && entry.id.startsWith('profile:') && !usedProfileIds.has(entry.source?.profileId))
+      // 整区查询不补消息流档案；样式轴与中控行按工厂在前、档案在后独立对拍。
+      expect(zonePresetsFor(interfaceMode, zone)).toEqual([...factory, ...(zone === 'cc' ? profiles : [])])
+      if (zone === 'chat') for (const axis of ['style', 'color'] as const) {
+        expect(zonePresetsFor(interfaceMode, zone, [], axis)).toEqual([
+          ...factory.filter(entry => entry.axis === axis),
+          ...(axis === 'style' ? profiles.filter(entry => entry.axis === 'style') : []),
+        ])
+      }
+    }
+    expect(zonePresetsFor('terminal-like', 'cc').filter(entry => entry.id.startsWith('profile:')).map(entry => entry.id))
+      .toEqual([
+        'profile:builtin.presentation.terminal-modern:cc',
+        'profile:builtin.presentation.paper-low-contrast:cc',
+        'profile:builtin.presentation.console-glass:cc',
+      ])
+    expect(zonePresetsFor('modern-gui', 'cc').filter(entry => entry.id.startsWith('profile:'))).toEqual([])
+    for (const [interfaceMode] of modes) {
+      expect(zonePresetsFor(interfaceMode, 'chat', [], 'color').filter(entry => entry.id.startsWith('profile:'))).toEqual([])
     }
     // ★ #607 刀3a：蓝调补入桶表（规范 §三）⇒ 该模式有桶、区域行可见
     expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBe('tactical')

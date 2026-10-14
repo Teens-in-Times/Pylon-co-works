@@ -36,7 +36,6 @@ import type { RendererSettingsCatalogEntry } from './settings/rendererSettingsCa
 // ---- settings 避让域 Solid 化已收口（#515 W1 终局批）：岛全部退役，宿主与组件同为 Solid，solid-in-solid 直连。 ----
 import { type RenderCtx, ZoneGroupFields } from './settings/themeFieldRenderer.solid.tsx'
 import SidebarModulesPanel from './settings/SidebarModulesPanel.solid.tsx'
-import PresentationProfilePicker from './settings/PresentationProfilePicker.solid.tsx'
 import SettingsSectionHeaderSolid from './settings/SettingsSectionHeader.solid.tsx'
 import ZonePresetSectionSolid from './settings/ZonePresetSection.solid.tsx'
 import AgentSettingsSectionSolid from './settings/AgentSettingsSection.solid.tsx'
@@ -303,7 +302,6 @@ export default function Settings(props: SettingsProps) {
             zone="chat"
             isSearching={isSearching()}
             interfaceMode={currentInterfaceMode()}
-            header={!isSearching() ? <Group title="渲染风格"><PresentationProfilePicker /></Group> : undefined}
             fields={<ZoneGroupFields zone="chat" ctx={renderCtx()} density={density()} />}
             onApplyZonePreset={applyLocalPreset}
             onSaveZonePresetEntry={saveZonePresetEntryFromSettings}

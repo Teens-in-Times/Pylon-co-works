@@ -48,6 +48,18 @@ import { expandGlobalPresetZoneRefs, planGlobalPreset } from '../application/tra
 
 const PROFILE_BY_ID = new Map(BUILTIN_PRESENTATION_PROFILES.map(profile => [profile.id, profile]))
 
+/**
+ * 三张 Agent 卡与呈现档案的绑定（测试侧真值）。
+ *
+ * ★ #607 刀3b：生产侧绑定已并入 `preset:*` 合并材料，`GlobalPreset` 类型不再带
+ * `presentationProfileId` 字段 ⇒ 这条「旧路径」参考实现自持一份同样的绑定。
+ */
+const AGENT_CARD_PROFILES: Readonly<Record<string, string>> = {
+  'agent-command': 'builtin.presentation.agent-command',
+  'agent-map': 'builtin.presentation.agent-map',
+  'focus-flow': 'builtin.presentation.focus-flow',
+}
+
 /** 预设带呈现方案时，旧路径拿到的输入是 `effectivePresetTheme(preset) ⊕ profile.tokens`（见 `planGlobalPreset`）。 */
 function boxedTheme(preset: GlobalPreset): Partial<ThemeSettings> {
   const tokens = profileTokensOf(preset)
@@ -55,7 +67,8 @@ function boxedTheme(preset: GlobalPreset): Partial<ThemeSettings> {
 }
 
 function profileTokensOf(preset: GlobalPreset): Partial<ThemeSettings> | undefined {
-  const profile = preset.presentationProfileId ? PROFILE_BY_ID.get(preset.presentationProfileId) : undefined
+  const boundProfileId = AGENT_CARD_PROFILES[preset.name]
+  const profile = boundProfileId ? PROFILE_BY_ID.get(boundProfileId) : undefined
   return profile?.tokens as Partial<ThemeSettings> | undefined
 }
 

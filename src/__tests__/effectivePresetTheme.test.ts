@@ -124,14 +124,23 @@ const BASELINE_FIELD_COUNTS: Record<string, number> = {
  * 直接读两张原材料真值表 —— 工厂出厂数据（`FACTORY_ZONE_PRESET_ENTRIES`）与档案 tokens
  * （`BUILTIN_PRESENTATION_PROFILES`）——按「工厂值 ⊕ 档案值（档案覆盖同键）」并起来，
  * 并只保留**预设管理字段**（`filterPresetTheme`；非预设管理字段不属于预设）。
+ *
+ * ★ #607 刀3b：绑定关系在测试侧自立真值（生产侧已并入 `preset:*` 合并材料，
+ * `GlobalPreset` 类型不再带 `presentationProfileId` 字段）。
  */
+const AGENT_CARD_PROFILES: Readonly<Record<string, string>> = {
+  'agent-command': 'builtin.presentation.agent-command',
+  'agent-map': 'builtin.presentation.agent-map',
+  'focus-flow': 'builtin.presentation.focus-flow',
+}
+
 function expectedEffectiveView(preset: GlobalPreset): Record<string, unknown> {
   const merged: Record<string, unknown> = {}
   for (const entry of FACTORY_ZONE_PRESET_ENTRIES) {
     if (entry.id !== preset.name || entry.mode !== preset.interfaceMode) continue
     Object.assign(merged, filterPresetTheme(entry.values))
   }
-  const profile = BUILTIN_PRESENTATION_PROFILES.find(item => item.id === preset.presentationProfileId)
+  const profile = BUILTIN_PRESENTATION_PROFILES.find(item => item.id === AGENT_CARD_PROFILES[preset.name])
   if (profile?.tokens) Object.assign(merged, filterPresetTheme(profile.tokens))
   return merged
 }

@@ -119,17 +119,39 @@ describe('#607 刀1 · 独立档案数据准备', () => {
     expect(() => assembleFactoryZonePresetPool([crossZone])).toThrow(/越区.*sidebarBg/)
   })
 
-  it('工厂原材料原处不动，生产候选改由落点材料供给（蓝调桶以默认单出候选）', () => {
+  it('工厂原材料原处不动，候选为factory:*加样式轴/中控行指定档案（蓝调桶以默认单出候选）', () => {
     expect(FACTORY_ZONE_PRESET_ENTRIES).toHaveLength(50)
     expect(new Set(FACTORY_ZONE_PRESET_ENTRIES.map(entry => entry.id)).size).toBe(10)
-    // ★ #607 刀3a：候选来源换成落点材料里的 `factory:*`（消息流按轴两条）
+    const usedProfileIds = new Set(LANDING_PRESET_ENTRIES
+      .filter(entry => (entry.id.startsWith('default:') || entry.id.startsWith('preset:'))
+        && entry.zone === 'chat' && entry.axis === 'style')
+      .map(entry => entry.styleMaterial?.profileId))
     for (const [interfaceMode, mode] of [['modern-gui', 'gui'], ['terminal-like', 'terminal']] as const) {
       for (const zone of PRESET_ZONES) {
         const expected = LANDING_PRESET_ENTRIES.filter(entry =>
           entry.id.startsWith('factory:') && entry.mode === mode && entry.zone === zone)
         expect(ZONE_PRESET_POOL[mode][zone]).toEqual(expected)
-        expect(zonePresetsFor(interfaceMode, zone)).toEqual(expected)
+        const profiles = LANDING_PRESET_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone
+          && entry.id.startsWith('profile:') && !usedProfileIds.has(entry.source?.profileId))
+        // 池仍只装工厂；行候选为工厂条加样式轴/中控行的指定档案，顺序固定。
+        expect(zonePresetsFor(interfaceMode, zone)).toEqual([...expected, ...(zone === 'cc' ? profiles : [])])
+        if (zone === 'chat') for (const axis of ['style', 'color'] as const) {
+          expect(zonePresetsFor(interfaceMode, zone, [], axis)).toEqual([
+            ...expected.filter(entry => entry.axis === axis),
+            ...(axis === 'style' ? profiles.filter(entry => entry.axis === 'style') : []),
+          ])
+        }
       }
+    }
+    expect(zonePresetsFor('terminal-like', 'cc').filter(entry => entry.id.startsWith('profile:')).map(entry => entry.id))
+      .toEqual([
+        'profile:builtin.presentation.terminal-modern:cc',
+        'profile:builtin.presentation.paper-low-contrast:cc',
+        'profile:builtin.presentation.console-glass:cc',
+      ])
+    expect(zonePresetsFor('modern-gui', 'cc').filter(entry => entry.id.startsWith('profile:'))).toEqual([])
+    for (const interfaceMode of ['modern-gui', 'terminal-like', 'tactical-blue']) {
+      expect(zonePresetsFor(interfaceMode, 'chat', [], 'color').filter(entry => entry.id.startsWith('profile:'))).toEqual([])
     }
     // 蓝调：家族里只有隐藏默认一员 ⇒ 区域行以它出候选（否则该桶区域行整组不渲染）
     for (const zone of PRESET_ZONES) {

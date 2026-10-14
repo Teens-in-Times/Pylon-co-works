@@ -139,6 +139,26 @@ export const MODE_DEFAULT_POOL_ENTRIES: readonly ZonePresetEntry[] = Object.free
   LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('default:')),
 )
 
+/** 档案材料只补消息流样式与中控；配色材料不进区域行候选。 */
+export const PROFILE_POOL_ENTRIES: readonly ZonePresetEntry[] = Object.freeze(
+  LANDING_PRESET_ENTRIES.filter(entry => entry.id.startsWith('profile:')
+    && (entry.zone === 'cc' || (entry.zone === 'chat' && entry.axis === 'style'))),
+)
+
+/** 默认单与预设已使用的档案不再作为独立区域候选。 */
+const USED_BY_PRESETS = new Set(
+  LANDING_PRESET_ENTRIES
+    .filter(entry => (entry.id.startsWith('default:') || entry.id.startsWith('preset:'))
+      && entry.zone === 'chat' && entry.axis === 'style')
+    .map(entry => entry.styleMaterial?.profileId)
+    .filter((profileId): profileId is string => Boolean(profileId)),
+)
+
+function profileCandidatesFor(mode: PresetInterfaceMode, zone: 'chat' | 'cc'): ZonePresetEntry[] {
+  return PROFILE_POOL_ENTRIES.filter(entry => entry.mode === mode && entry.zone === zone
+    && !USED_BY_PRESETS.has(entry.source?.profileId ?? ''))
+}
+
 /** 池的装配输入 = 工厂材料 ＋ 各桶的默认单（后者只在**该桶没有工厂材料**时被用到）。 */
 const POOL_ENTRIES: readonly ZonePresetEntry[] = Object.freeze([
   ...FACTORY_POOL_ENTRIES,
@@ -330,11 +350,14 @@ export function removeZonePresetEntryReducer(
 // ── 查询与消费 ─────────────────────────────────────────────────────
 
 /**
- * 该 (界面模式, 区域) 的候选条目：出厂条目（落点材料里的 `factory:*`）+ 自定义条目（已过 Q8 清理）。
+ * 该 (界面模式, 区域) 的候选条目：出厂条目（落点材料里的 `factory:*`）
+ * ＋ 消息流样式行与中控行的档案条目（排除已被默认单或预设使用的档案）
+ * ＋ 自定义条目（已过 Q8 清理）。
  * 界面模式**未登记归属桶**（如插件模式）⇒ 空数组 ⇒ 调用方整组不渲染。
  *
  * ★ #607 刀3a：消息流区有**两条单** ⇒ 传 `axis` 表示「只要该轴那一行」的候选；
  *   不传 = 该区全部条目（整区视图，供非分行场景/测试用）。
+ * 档案候选只补进消息流样式轴与中控行，配色行不加。
  */
 export function zonePresetsFor(
   interfaceMode: string,
@@ -348,6 +371,8 @@ export function zonePresetsFor(
   const factory = chatAxis
     ? chatPresetsForAxis(ZONE_PRESET_POOL, bucket, chatAxis)
     : (ZONE_PRESET_POOL[bucket] as Record<string, ZonePresetEntry[] | undefined>)[zone] ?? []
+  const profiles = zone === 'cc' ? profileCandidatesFor(bucket, 'cc')
+    : chatAxis === 'style' ? profileCandidatesFor(bucket, 'chat') : []
   const custom = normalizeZonePresetEntries(customEntries)
     .filter(entry => entry.mode === bucket && entry.zone === zone)
     .filter(entry => chatAxis === undefined || (entry.axis ?? 'color') === chatAxis)
@@ -357,9 +382,10 @@ export function zonePresetsFor(
       const cleaned: ZonePresetEntry = { ...entry, origin: 'custom', values }
       return isEntryStale(cleaned) ? { ...cleaned, stale: true } : cleaned
     })
-  if (factory.length === 0 && custom.length === 0) return []
-  return [...factory, ...custom]
+  if (factory.length === 0 && profiles.length === 0 && custom.length === 0) return []
+  return [...factory, ...profiles, ...custom]
 }
+
 
 /**
  * 条目 → 应用用的主题切片。

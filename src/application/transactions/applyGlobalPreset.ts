@@ -43,8 +43,8 @@ export type GlobalPresetPlan =
 /**
  * 生效的消息流样式单身份（#607 刀3a）：`activeProfileId` 的唯一来源。
  *
- * 身份挂在**材料**上（`styleMaterial`），不再读 `GlobalPreset.presentationProfileId`
- * ——那个字段本单起只是留存数据（删除留刀3b）。
+ * 身份挂在**材料**上（`styleMaterial`）；`GlobalPreset.presentationProfileId` 字段与数据
+ * 已随刀3b 删除，不再是任何路径的读源。
  */
 function styleProfileIdOf(bucket: PresetInterfaceMode, refs: ZoneRefMap): string | undefined {
   return resolveLandingReference(bucket, 'chat', refs.chat.style, LANDING_PRESET_ENTRIES, 'style')
@@ -58,7 +58,7 @@ function styleProfileIdOf(bucket: PresetInterfaceMode, refs: ZoneRefMap): string
  * 不静默回落（静默回落的症状是「预设装了但某个区域没跟上」，用户看不出原因）。
  *
  * ★ #607 刀3a：预设不再读呈现档案——档案货物已并进 `preset:*` 合并材料，
- * 这里只从材料取身份（`styleProfileId`）；`presentationProfileId` 字段不再被读。
+ * 这里只从材料取身份（`styleProfileId`）。
  */
 export function planGlobalPreset(name: string): GlobalPresetPlan {
   const preset = GLOBAL_PRESETS.find(candidate => candidate.name === name)

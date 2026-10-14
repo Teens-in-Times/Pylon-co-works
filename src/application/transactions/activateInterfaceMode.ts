@@ -1,4 +1,3 @@
-import { applyPresentationProfile } from './applyPresentationProfile.ts'
 import { DEFAULT_INTERFACE_MODE, type InterfaceMode, useInterfaceModeStore } from '../../domains/interface/interfaceModeStore.ts'
 import { usePresentationPreferenceStore } from '../../domains/presentation/presentationPreferenceStore.ts'
 import { getInterfaceModeRegistry, getPluginUiRegistry, getPresentationProfileRegistry, getRendererRegistry, getShellRecipeRegistry } from '../../plugin-runtime/runtimeServices.ts'
@@ -73,15 +72,6 @@ export function resolveShellRecipe(mode: InterfaceModeContribution | undefined):
   return DEFAULT_SHELL_RECIPE
 }
 
-function applyModeProfile(mode: InterfaceMode, profile: PresentationProfileContribution, ports: InterfaceModeTransactionPorts): void {
-  const result = applyPresentationProfile(profile, {
-    setZoneField: (zone, patch, source) => ports.theme.getState().setZoneField(zone, patch, source),
-    setActiveProfileId: profileId => ports.presentation.getState().setActiveProfileId(profileId),
-  })
-  if (result.status === 'failed') throw new Error(result.message)
-  ports.interfaceMode.getState().rememberProfile(mode, profile.id)
-}
-
 function resolveActivatableMode(mode: InterfaceMode, ports: InterfaceModeTransactionPorts): InterfaceModeContribution | undefined {
   const modeContribution = resolveInterfaceMode(mode)
   if (!modeContribution || !interfaceModeIsUsable(modeContribution)) return undefined
@@ -101,17 +91,6 @@ function resolveActivatableMode(mode: InterfaceMode, ports: InterfaceModeTransac
     resolveInterfaceModeSuite(modeContribution, selectedSuiteId, getRendererRegistry().snapshot().rendererSuites.map(entry => entry.value.id))
   }
   return modeContribution
-}
-
-/** 激活一个明确的 Profile；注册表引用未通过校验时保持偏好与主题不变。 */
-export function activatePresentationProfile(profileId: string, ports: InterfaceModeTransactionPorts = defaultPorts): boolean {
-  const profile = getPresentationProfileRegistry().resolve(profileId)?.value
-  if (!profile) return false
-  const mode = presentationProfileInterfaceMode(profile)
-  if (!resolveActivatableMode(mode, ports)) return false
-  try { applyModeProfile(mode, profile, ports) } catch { return false }
-  ports.interfaceMode.getState().setInterfaceMode(mode)
-  return true
 }
 
 /**
@@ -136,8 +115,8 @@ function applyModeDefaultLanding(
 /**
  * 切换界面模式 = 应用本大类隐藏默认单。
  *
- * ★ #607 刀3a：**不再挑呈现档案**（不读 `profileByMode`、不 `rememberProfile`、
- * 不 `applyPresentationProfile`）——一切值来自落点材料，档案机制本刀一行未删（3b 处置）。
+ * ★ #607：**不挑呈现档案**——一切值来自落点材料，身份取自材料里生效的消息流样式单。
+ * 档案私路（选择器 / 命令 / 记忆链 / bundle 段）已随刀3b 整体退役。
  */
 export function activateInterfaceMode(mode: InterfaceMode, ports: InterfaceModeTransactionPorts = defaultPorts): boolean {
   const modeContribution = resolveActivatableMode(mode, ports)
@@ -157,39 +136,19 @@ export function resetThemeForActiveInterfaceMode(ports: InterfaceModeTransaction
 }
 
 /**
- * 清理指向已注销 Interface Mode 的残留 presentation profile 偏好。
- * 只动偏好存储（可重建态），不触碰 registry——registry 权威归插件生命周期所有。
+ * Cold-start/HMR guard（#607 刀3b）：**只对齐界面模式**。
+ *
+ * 档案记忆链退役后本守卫不再解析 / 记忆呈现档案：模式可用即通过；不可用（插件卸载
+ * 留下的悬空引用）时回退默认模式（A17 韧性语义）。
  */
-function pruneDanglingPresentationProfiles(): void {
-  const modes = new Set(getInterfaceModeRegistry().getSnapshot().entries.map(entry => entry.value.id))
-  const { profileByMode, forgetModeProfile } = useInterfaceModeStore.getState()
-  for (const [mode, profileId] of Object.entries(profileByMode)) {
-    if (modes.has(mode)) continue
-    // per-mode 偏好指向的 profile 若已随插件注销，清掉悬挂映射让 DEFAULT profile 接管
-    if (!getPresentationProfileRegistry().resolve(profileId)?.value) forgetModeProfile(mode)
-  }
-}
-
-/** Cold-start/HMR guard: active profile must belong to the persisted Interface Mode. */
 export function ensureInterfaceModeProfile(): boolean {
   const mode = useInterfaceModeStore.getState().interfaceMode
   const modeContribution = resolveInterfaceMode(mode)
   if (!modeContribution || !interfaceModeIsUsable(modeContribution)) {
     if (mode === DEFAULT_INTERFACE_MODE) return false
-    // A17 韧性：插件卸载可能留下引用已注销 mode 的残留 presentation profile——
-    // validateRendererSuiteReferences 会因此拒绝激活。先清理跨注册表悬挂引用再重试，
-    // 保证默认模式回退不被半套注销状态卡死。
-    const firstAttempt = activateInterfaceMode(DEFAULT_INTERFACE_MODE)
-    if (firstAttempt) return true
-    pruneDanglingPresentationProfiles()
     return activateInterfaceMode(DEFAULT_INTERFACE_MODE)
   }
-  const activeProfile = getPresentationProfileRegistry().resolve(usePresentationPreferenceStore.getState().activeProfileId)?.value
-  if (activeProfile && presentationProfileInterfaceMode(activeProfile) === mode) {
-    useInterfaceModeStore.getState().rememberProfile(mode, activeProfile.id)
-    return true
-  }
-  return activateInterfaceMode(mode)
+  return true
 }
 
 export function interfaceModeQuickTarget(mode: InterfaceMode): InterfaceModeContribution | undefined {

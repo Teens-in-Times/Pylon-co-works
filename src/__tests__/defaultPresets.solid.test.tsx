@@ -295,16 +295,17 @@ describe('刀7 §六 · 呈现方案写入不置 custom（#214）', () => {
     expect(fallbackCustomChipRendered()).toBe(false)
   })
 
-  it('其余 source 语义一字不动：user-edit / field-reset 仍置 custom，只有呈现方案例外', () => {
+  it('其余 source 语义一字不动：user-edit / field-reset 仍置 custom（呈现方案例外已随 #607 刀3b 退役）', () => {
     useThemeStore.getState().setZoneField('chat', { chatFontSize: 18 })                       // 缺省 user-edit
     expect(useThemeStore.getState().custom.chat).toBe(true)
 
     useThemeStore.getState().setZoneField('sidebar', { sidebarBg: '#123456' }, 'field-reset')
     expect(useThemeStore.getState().custom.sidebar).toBe(true)
 
-    useThemeStore.getState().setZoneField('right', { rightBg: '#123456' }, 'presentation-profile')
-    expect(useThemeStore.getState().custom.right).toBe(false)
-    // 溯源账本照旧记录该来源（D-trace 语义不变，只改 custom 标记）
-    expect(lastSettingWriter('rightBg')?.source).toBe('presentation-profile')
+    // ★ #607 刀3b：唯一的例外来源（呈现档案）已退役 ⇒ 其余来源一律视为用户触碰。
+    useThemeStore.getState().setZoneField('right', { rightBg: '#123456' }, 'interface-mode')
+    expect(useThemeStore.getState().custom.right).toBe(true)
+    // 溯源账本照旧记录该来源（D-trace 语义不变）
+    expect(lastSettingWriter('rightBg')?.source).toBe('interface-mode')
   })
 })

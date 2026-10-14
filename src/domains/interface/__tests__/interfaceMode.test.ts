@@ -7,7 +7,7 @@ import { DEFAULT_SHELL_RECIPE, type ShellRecipeContribution } from '../../../plu
 import type { AsyncDisposable } from '../../../plugin-runtime/registry/types.ts'
 import { usePresentationPreferenceStore } from '../../presentation/presentationPreferenceStore.ts'
 import { useThemeStore } from '../../theme/themeStore.ts'
-import { DEFAULT_INTERFACE_MODE, DEFAULT_INTERFACE_PROFILES, useInterfaceModeStore } from '../interfaceModeStore.ts'
+import { DEFAULT_INTERFACE_MODE, useInterfaceModeStore } from '../interfaceModeStore.ts'
 import { BUILTIN_PRESENTATION_PROFILES } from '../../../plugins/core/renderer/builtinPresentationProfiles.ts'
 import { BUILTIN_INTERFACE_MODES } from '../../../plugins/core/interfaceMode/builtinInterfaceModes.ts'
 import { useIdentityStore } from '../../identity/identityStore.ts'
@@ -98,12 +98,9 @@ describe('Interface Mode contract', () => {
     })
   })
 
-  it('默认为 modern-gui，两种模式分别记忆 Presentation Profile', () => {
+  it('★ #607 刀3b：界面模式 store 只留模式一项（档案记忆表已退役）', () => {
     expect(useInterfaceModeStore.getState().interfaceMode).toBe(DEFAULT_INTERFACE_MODE)
-    expect(useInterfaceModeStore.getState().profileByMode).toEqual(DEFAULT_INTERFACE_PROFILES)
-    useInterfaceModeStore.getState().rememberProfile('terminal-like', 'terminal.custom')
-    expect(useInterfaceModeStore.getState().profileByMode['modern-gui']).toBe('builtin.presentation.modern-gui')
-    expect(useInterfaceModeStore.getState().profileByMode['terminal-like']).toBe('terminal.custom')
+    expect(useInterfaceModeStore.getState()).not.toHaveProperty('profileByMode')
   })
 
   it('遗留 Profile 默认归 terminal-like，显式元数据可归 modern-gui', () => {
@@ -111,7 +108,7 @@ describe('Interface Mode contract', () => {
     expect(presentationProfileInterfaceMode({ id: 'modern', label: 'Modern', family: 'gui', interfaceMode: 'modern-gui', tokens: {} })).toBe('modern-gui')
   })
 
-  it('★ #607 刀3a：切换模式＝应用本大类隐藏默认单 —— 记忆表与档案 token 都不再参与决策', () => {
+  it('★ #607 刀3a：切换模式＝应用本大类隐藏默认单 —— 档案 token 不参与决策', () => {
     const registry = getPresentationProfileRegistry()
     const owner = createPluginIdentity('test.interface', 'one')
     // 故意注册与**落点材料**相反的档案 token：若切换还读档案，下面的值断言会翻过来
@@ -132,9 +129,6 @@ describe('Interface Mode contract', () => {
       id: 'terminal-like', label: 'Terminal-like', defaultPresentationProfileId: 'builtin.presentation.terminal-classic',
       chromeStyle: 'glyphs', workbench: { renderKind: 'host', renderer: 'terminal' },
     }))
-
-    // 记忆表指向另一个档案：切换落点不受它影响
-    useInterfaceModeStore.setState({ profileByMode: { 'modern-gui': 'builtin.presentation.terminal-classic' } })
 
     expect(activateInterfaceMode('terminal-like')).toBe(true)
     expect(useInterfaceModeStore.getState().interfaceMode).toBe('terminal-like')

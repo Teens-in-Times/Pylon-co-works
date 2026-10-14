@@ -88,16 +88,13 @@ export type ThemeState = ThemeSettings & {
 // DEFAULTS 定义移入 domains/theme/themeDefaults.ts（可被 node import → 完整性断言测试）
 
 /**
- * 刀7 §六（#214）：哪些写入 source 算「用户触碰」⇒ 置该 zone 的 custom 标记。
+ * 刀7 §六（#214）：写入 source 决定这次写入**算不算「用户触碰」**（是否置该 zone 的 custom）。
  *
- * 呈现方案（界面模式的 token / 用户挑的呈现风格）是**方案自身的基准**，不是用户手改字段。
- * 此前它照旧置 custom，于是全局派生命中「任一 zone custom ⇒ `'custom'`」——点「重置主题」
- * 或切换界面模式之后，预设行会亮出兜底的「自定义」chip，把正当基准误报成用户改动。
- * 其余 source 语义一字不动（缺省 `user-edit` 仍然置 custom）。
+ * ★ #607 刀3b：唯一的例外来源（`presentation-profile`，呈现方案自身的基准）已随档案私路退役
+ * ⇒ 其余来源语义一字不动，全部视为用户触碰；切换 / 重置走 `applyLandingPlan` 整份落地，
+ * 根本不经过本漏斗。
  */
-function sourceMarksZoneCustom(source: SettingWriteSource): boolean {
-  return source !== 'presentation-profile'
-}
+const SOURCE_MARKS_ZONE_CUSTOM = true
 
 
 /** 迁移 / 结构对齐共用的默认值包（base 传 DEFAULTS，避免域→store 循环）。 */
@@ -115,12 +112,13 @@ const themeKernel = createSolidStoreKernel<ThemeState>({
   // #448 PR5：customPresets/zonePresetEntries 已拆独立域 customPresetStore
   // （pylon-custom-presets 键 + 后端 custom-presets user_data 权威）。
 
-  // D-trace：写入溯源——source 由调用方声明（用户编辑/呈现风格/界面模式…），
+  // D-trace：写入溯源——source 由调用方声明（用户编辑/界面模式/预设…），
   // 记录在漏斗出口完成，reducer 保持纯函数。
   // 刀7 §六（#214）：source 同时决定**这次写入算不算「用户触碰」**（是否置该 zone 的 custom）
+  // ★ #607 刀3b：例外来源已退役 ⇒ 一律视为用户触碰（见 SOURCE_MARKS_ZONE_CUSTOM）。
   setZoneField: (zone, partial, source = 'user-edit') => {
     recordSettingWrites(source, zone, Object.keys(partial))
-    themeKernel.setState(state => setZoneFieldReducer(state, zone, partial, sourceMarksZoneCustom(source)))
+    themeKernel.setState(state => setZoneFieldReducer(state, zone, partial, SOURCE_MARKS_ZONE_CUSTOM))
   },
   setCcEditMode: (enabled) => themeKernel.setState({ ccEditMode: enabled }),
   setCcHeight: (height) => themeKernel.setState(state => {

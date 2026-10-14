@@ -36,8 +36,6 @@ export interface GlobalPreset {
    * 读值请一律走 `effectivePresetTheme(preset)`，不要直接读这个字段。
    */
   theme?: Partial<ThemeSettings>
-  /** 可选的聊天呈现方案；应用全局预设时与主题一起激活。 */
-  presentationProfileId?: string
   /**
    * 刀1（#223 · 预设组装）：**区域引用表**——5 个区域各指向一条区域预设 id。
    * 有则「应用整套预设」走**逐区域装配**；无则回落现在的「整份 `theme`」路径。

@@ -82,7 +82,6 @@ const RAW_GLOBAL_PRESETS: GlobalPreset[] = [
     name: 'agent-command',
     interfaceMode: 'gui',
     label: 'Agent 指挥台',
-    presentationProfileId: 'builtin.presentation.agent-command',
     // #607 刀3a：档案货物已并进 `preset:agent-command:*` 合并材料 ⇒ 引用单指向它。
     zoneRefs: landingRefs('agent-command', true),
   },
@@ -90,14 +89,12 @@ const RAW_GLOBAL_PRESETS: GlobalPreset[] = [
     name: 'agent-map',
     interfaceMode: 'gui',
     label: 'Agent 关系图',
-    presentationProfileId: 'builtin.presentation.agent-map',
     zoneRefs: landingRefs('agent-map', true),
   },
   {
     name: 'focus-flow',
     interfaceMode: 'gui',
     label: '专注流程',
-    presentationProfileId: 'builtin.presentation.focus-flow',
     zoneRefs: landingRefs('focus-flow', true),
   }
 ]

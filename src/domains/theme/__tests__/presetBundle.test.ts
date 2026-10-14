@@ -13,8 +13,32 @@ describe('PresetBundle v2', () => {
 
   it('marks missing official providers as partial instead of implying complete coverage', () => {
     const bundle = createPresetBundle({ id: 'official:test', name: 'Official', now: 1, source: 'builtin', theme: { accent: '#fff' } })
-    expect(presetCoverage(bundle).find(item => item.id === 'builtin.presentation')).toMatchObject({ state: 'missing', policy: 'partial' })
+    // ★ #607 刀3b：`builtin.presentation` 段已随档案私路退役 ⇒ 覆盖表里不再有它这一项。
+    expect(presetCoverage(bundle).some(item => item.id === 'builtin.presentation')).toBe(false)
     expect(presetCoverage(bundle).find(item => item.id === 'builtin.renderer-settings')).toMatchObject({ state: 'missing', policy: 'partial' })
+  })
+
+  it('★ #607 刀3b：旧 bundle 的 `builtin.presentation` 段被静默忽略（未知 provider 不报错）', () => {
+    const registry = new PresetProviderRegistry()
+    const legacy = normalizePresetBundle({
+      manifestVersion: 2, id: 'legacy-presentation', name: 'Legacy', source: 'user',
+      contributions: {
+        'builtin.theme': { ownerPluginId: 'builtin.pylon-shell', providerVersion: 1, policy: 'complete', payload: { accent: '#123456' } },
+        // 旧数据里带着已退役的 Presentation 段
+        'builtin.presentation': {
+          ownerPluginId: 'builtin.pylon-shell', providerVersion: 1, policy: 'partial',
+          payload: { activeProfileId: 'builtin.presentation.console-glass', rendererSuiteIdByMode: { 'modern-gui': 'builtin.solid' } },
+        },
+      },
+    })!
+    const classified = markUnavailablePresetProviders(legacy, registry)
+    // 未注销、未报错：原 payload 原样留在 unavailable 里（信封可往返），且不被改写
+    expect(classified.unavailable?.['builtin.presentation']).toEqual({
+      activeProfileId: 'builtin.presentation.console-glass', rendererSuiteIdByMode: { 'modern-gui': 'builtin.solid' },
+    })
+    expect(classified.contributions['builtin.presentation']?.payload).toEqual(classified.unavailable?.['builtin.presentation'])
+    // 未知 provider 不进 prepared、不抛错
+    expect(() => preparePresetBundle(classified, registry)).not.toThrow()
   })
 
   it('drops malformed contribution entries without dropping the envelope', () => {
