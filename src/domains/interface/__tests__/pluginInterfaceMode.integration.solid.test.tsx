@@ -70,9 +70,13 @@ describe('plugin Interface Mode integration', () => {
     registrations.push(modeRegistration)
 
     render(() => <InterfaceModePicker />)
+    const profileBefore = usePresentationPreferenceStore.getState().activeProfileId
     fireEvent.click(screen.getByRole('radio', { name: /Focus Mode/ }))
     expect(useInterfaceModeStore.getState().interfaceMode).toBe('example.focus')
-    expect(usePresentationPreferenceStore.getState().activeProfileId).toBe('example.presentation.focus')
+    // ★ #607 刀3a：第三方模式没有隐藏默认单（不在 MODE_DEFAULT_REFERENCES）⇒ 切换回落整份
+    //   DEFAULTS，且不再挑它声明的档案 ⇒ `activeProfileId` 保持原值（取不到身份就不写）。
+    //   「注册表 + 插件档案 API 保留」的口径不变（拍板：只退役宿主的私路用法）。
+    expect(usePresentationPreferenceStore.getState().activeProfileId).toBe(profileBefore)
 
     const view = render(() => <AgentSheetView sheet={sheet} ctx={ctx} />)
     await waitFor(() => expect(screen.getByText('FOCUS WORKBENCH')).toBeTruthy())

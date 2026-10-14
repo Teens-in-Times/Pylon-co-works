@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// D-trace：设置项写入溯源——漏斗挂钩与贡献者区分（呈现风格 vs 用户编辑）。
+// D-trace：设置项写入溯源——漏斗挂钩与贡献者区分。
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useThemeStore } from '../themeStore.ts'
 import { resetStores } from '../../../test/resetStores.ts'
@@ -10,8 +10,6 @@ import {
   resetSettingProvenance,
   SETTING_WRITE_SOURCE_LABELS,
 } from '../settingProvenance.ts'
-import { applyPresentationProfile } from '../../../application/transactions/applyPresentationProfile.ts'
-import type { PresentationProfileContribution } from '../../../plugin-runtime/presentation/presentationProfileTypes.ts'
 
 describe('setting provenance ledger', () => {
   beforeEach(() => {
@@ -23,26 +21,6 @@ describe('setting provenance ledger', () => {
   it('attributes user edits through the setZoneField funnel', () => {
     useThemeStore.getState().setZoneField('chat', { chatFontSize: 19 })
     expect(lastSettingWriter('chatFontSize')).toMatchObject({ source: 'user-edit', zone: 'chat' })
-  })
-
-  it('distinguishes presentation-profile token writes from user edits', () => {
-    const profile = {
-      id: 'builtin.presentation.test-trace',
-      label: '溯源测试',
-      interfaceMode: 'terminal-like',
-      tokens: { chatFontSize: 16, chatFont: 'serif' },
-    } as unknown as PresentationProfileContribution
-    applyPresentationProfile(profile, {
-      setZoneField: (zone, patch, source) => useThemeStore.getState().setZoneField(zone, patch, source),
-      setActiveProfileId: () => {},
-    })
-    expect(lastSettingWriter('chatFontSize')).toMatchObject({ source: 'presentation-profile' })
-    expect(useThemeStore.getState().chatFontSize).toBe(16)
-
-    // 用户随后手改 → 贡献者被覆盖为 user-edit（last-writer-wins）
-    useThemeStore.getState().setZoneField('chat', { chatFontSize: 21 })
-    expect(lastSettingWriter('chatFontSize')).toMatchObject({ source: 'user-edit' })
-    expect(useThemeStore.getState().chatFontSize).toBe(21)
   })
 
   it('records preset and reset actions with their own sources', () => {

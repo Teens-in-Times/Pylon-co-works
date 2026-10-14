@@ -3,80 +3,99 @@
 import type { GlobalPreset, PresetInterfaceMode } from './types.ts'
 import type { ThemeSettings } from '../themeStore.ts'
 
+/**
+ * #607 刀3a：出厂预设的**区域引用单**——值一律取自「落点材料」，不再指向预设名。
+ *
+ * - 普通 7 套：五区各引一条**工厂材料** `factory:<预设名>:<区>`（消息流拆样式 / 配色两张单）；
+ * - 三张 Agent 卡（`agentCard = true`）：消息流**两张单**与**中控单**引**合并落点材料**
+ *   `preset:<预设名>:…`（= 该预设的工厂值 ⊕ 其绑定档案值），其余三区仍引工厂材料。
+ *
+ * ★ 单子 §4.2 的「`color` 一律 `factory:<名>:chat:color`」与 §4.1 / §5.4 相抵：档案的
+ *   消息流配色货物（`messageUserBg` / `messageAssistantBg` / `messageReasoningBg` /
+ *   `messageBorderColor`）落在 `profile:<档案id>:chat:color` 里，若三张卡的配色单仍指工厂，
+ *   这 4 个键会静默丢失 ⇒ 违反 §5.4「一键应用后主题字段与本单前逐字段相同」。故三张卡的
+ *   配色单也指合并材料（`preset:*:chat:color` 本就是 §4.1 要求造出来的 9 条之一，否则它是死数据）。
+ *   此项已在回单「阻断与新增」点名待裁。
+ *
+ * 材料由 `zones/factory/landingEntries.ts` 备料；本函数只写 id，不复制值
+ * （`presets/` 不许运行时依赖 `zones/`，所以 id 形态在这里以字面量表达）。
+ */
+function landingRefs(name: string, agentCard = false): NonNullable<GlobalPreset['zoneRefs']> {
+  const source = agentCard ? 'preset' : 'factory'
+  return {
+    global: `factory:${name}:global`,
+    sidebar: `factory:${name}:sidebar`,
+    chat: {
+      style: `${source}:${name}:chat:style`,
+      color: `${source}:${name}:chat:color`,
+    },
+    cc: agentCard ? `preset:${name}:cc` : `factory:${name}:cc`,
+    right: `factory:${name}:right`,
+  }
+}
+
 const RAW_GLOBAL_PRESETS: GlobalPreset[] = [
   {
     name: 'claude',
     interfaceMode: 'terminal',
     label: 'Claude 风格',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id。现有状态下 5 项同名，
-    // ★ 逐套**显式写出 5 项**（不靠「默认补全」——靠默认会掩盖漏写）。
-    zoneRefs: { global: 'claude', sidebar: 'claude', chat: 'claude', cc: 'claude', right: 'claude' },
+    // #607 刀3a：区域引用单——五区各引一条工厂材料（消息流拆样式 / 配色两张单）。
+    zoneRefs: landingRefs('claude'),
   },
   {
     name: 'glass',
     interfaceMode: 'gui',
     label: 'Glass Light',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'glass', sidebar: 'glass', chat: 'glass', cc: 'glass', right: 'glass' },
+    zoneRefs: landingRefs('glass'),
   },
   {
     name: 'nord',
     interfaceMode: 'terminal',
     label: 'Nord Frost',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'nord', sidebar: 'nord', chat: 'nord', cc: 'nord', right: 'nord' },
+    zoneRefs: landingRefs('nord'),
   },
   {
     name: 'tokyo',
     interfaceMode: 'terminal',
     label: 'Tokyo Night',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'tokyo', sidebar: 'tokyo', chat: 'tokyo', cc: 'tokyo', right: 'tokyo' },
+    zoneRefs: landingRefs('tokyo'),
   },
   {
     name: 'solarized',
     interfaceMode: 'gui',
     label: 'Solarized Light',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'solarized', sidebar: 'solarized', chat: 'solarized', cc: 'solarized', right: 'solarized' },
+    zoneRefs: landingRefs('solarized'),
   },
   {
     name: 'amber',
     interfaceMode: 'terminal',
     label: 'Amber CRT',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'amber', sidebar: 'amber', chat: 'amber', cc: 'amber', right: 'amber' },
+    zoneRefs: landingRefs('amber'),
   },
   {
     name: 'matrix',
     interfaceMode: 'terminal',
     label: 'Matrix 磷绿',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'matrix', sidebar: 'matrix', chat: 'matrix', cc: 'matrix', right: 'matrix' },
+    zoneRefs: landingRefs('matrix'),
   },
   {
     name: 'agent-command',
     interfaceMode: 'gui',
     label: 'Agent 指挥台',
-    presentationProfileId: 'builtin.presentation.agent-command',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'agent-command', sidebar: 'agent-command', chat: 'agent-command', cc: 'agent-command', right: 'agent-command' },
+    // #607 刀3a：档案货物已并进 `preset:agent-command:*` 合并材料 ⇒ 引用单指向它。
+    zoneRefs: landingRefs('agent-command', true),
   },
   {
     name: 'agent-map',
     interfaceMode: 'gui',
     label: 'Agent 关系图',
-    presentationProfileId: 'builtin.presentation.agent-map',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'agent-map', sidebar: 'agent-map', chat: 'agent-map', cc: 'agent-map', right: 'agent-map' },
+    zoneRefs: landingRefs('agent-map', true),
   },
   {
     name: 'focus-flow',
     interfaceMode: 'gui',
     label: '专注流程',
-    presentationProfileId: 'builtin.presentation.focus-flow',
-    // 刀1（#223 · 预设组装）：区域引用表——5 个区域各指向一条区域预设 id（显式写出 5 项）。
-    zoneRefs: { global: 'focus-flow', sidebar: 'focus-flow', chat: 'focus-flow', cc: 'focus-flow', right: 'focus-flow' },
+    zoneRefs: landingRefs('focus-flow', true),
   }
 ]
 
@@ -92,13 +111,16 @@ export const GLOBAL_PRESETS: GlobalPreset[] = RAW_GLOBAL_PRESETS
 
 /**
  * 刀5（#201）：界面模式 → 预设归属桶。
- * 归属表只有 GUI / 终端 两桶（用户 2026-09-19 拍板）；`tactical-blue` 是独立插入的
- * 界面模式、与预设轴零交集 ⇒ 不在映射内（其模式下预设菜单不出现），插件贡献的
- * 未登记模式同理不出现。
+ *
+ * ★ #607 刀3a 补入 `tactical-blue`（规范 §三「蓝调补入桶表」）：蓝调战术自此有完整出厂
+ * 落点（隐藏默认单 + 工厂材料），区域行按该桶出候选；**chips 家族内暂只有默认一员**
+ * ⇒ 预设菜单里能看到它的那一组 chip（成员为 0 条出厂预设），结构上都成立。
+ * 插件贡献的未登记模式仍不出现（本表查不到就不出候选）。
  */
 export const INTERFACE_MODE_PRESET_BUCKET: Readonly<Record<string, PresetInterfaceMode>> = Object.freeze({
   'modern-gui': 'gui',
   'terminal-like': 'terminal',
+  'tactical-blue': 'tactical',
 })
 
 /**
@@ -248,7 +270,7 @@ export interface DefaultPreset extends GlobalPreset {
   theme: Partial<ThemeSettings>
 }
 
-export const DEFAULT_PRESETS: Readonly<Record<PresetInterfaceMode, DefaultPreset>> = Object.freeze({
+export const DEFAULT_PRESETS: Readonly<Record<'gui' | 'terminal', DefaultPreset> & Partial<Record<Exclude<PresetInterfaceMode, 'gui' | 'terminal'>, DefaultPreset>>> = Object.freeze({
   gui: Object.freeze({
     name: 'gui-default',
     label: 'GUI-默认预设',

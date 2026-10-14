@@ -11,7 +11,6 @@ import { BUILTIN_PYLON_RENDERERS_ID } from './productPluginIds.ts'
 import { mountFirstPartyStyleAssets } from './firstPartyStyleRuntime.ts'
 import { loadBuiltinPylonRendererStyles } from './packages/builtin.pylon-renderers/styleAssets.ts'
 import { BUILTIN_PRESENTATION_PROFILES } from '../core/renderer/builtinPresentationProfiles.ts'
-import { createBuiltinPresentationCommandDefinitions } from '../core/renderer/builtinPresentationCommands.ts'
 import { BUILTIN_INTERFACE_MODES } from '../core/interfaceMode/builtinInterfaceModes.ts'
 import { DEFAULT_SHELL_RECIPE } from '../../plugin-runtime/shell-recipe/shellRecipeTypes.ts'
 import { createBuiltinSolidContentSlot, createBuiltinSolidRendererSuite } from '../../renderers/solid-workbench/builtinSolidRendererSuite.ts'
@@ -84,9 +83,6 @@ export function createBuiltinPylonRenderersPlugin(): BuiltinPluginDefinition {
         order: 30,
         sample: 'const pylon = await connect()'
       })
-      for (const command of createBuiltinPresentationCommandDefinitions()) {
-        context.commands.register(command, { contributionId: `${BUILTIN_PYLON_RENDERERS_ID}.${command.id}`, layer: 'feature', priority: command.priority })
-      }
     },
   }
 }

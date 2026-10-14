@@ -69,10 +69,17 @@ describe('Settings 全局预设菜单（#201）', () => {
     })
   })
 
-  it('tactical-blue 不在归属表内：预设组不出现（拍板：菜单不出现）', () => {
+  it('★ #607 刀3a：tactical-blue 已入归属桶 ⇒ 预设组出现，但出厂 chip 为空且不亮假账 chip', () => {
     useInterfaceModeStore.setState({ interfaceMode: 'tactical-blue' })
     mountSettingsSheet()
-    expect(screen.queryByText('全局预设')).not.toBeInTheDocument()
+    // 家族内暂只有隐藏默认一员 ⇒ 组在、出厂 chip 一条也没有
+    const group = presetGroup()
+    for (const label of [...GUI_LABELS, ...TERMINAL_LABELS]) {
+      expect(group.queryByRole('button', { name: label })).not.toBeInTheDocument()
+    }
+    // 也不亮兜底「自定义 / 未知预设」假账 chip
+    expect(group.queryByText('自定义')).not.toBeInTheDocument()
+    expect(group.queryByText('未知预设')).not.toBeInTheDocument()
     // 界面模式 Group 保持原样
     expect(screen.getByText('界面模式')).toBeInTheDocument()
   })

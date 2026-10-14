@@ -16,9 +16,12 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PRESETS, GLOBAL_PRESETS } from '../domains/theme/presets/index.ts'
-import { PRESET_ZONES } from '../domains/theme/presetReducer.ts'
+import type { GlobalPreset } from '../domains/theme/presets/index.ts'
+import { PRESET_ZONES, filterPresetTheme } from '../domains/theme/presetReducer.ts'
 import { THEME_SETTING_KEYS, ZONE_FIELDS, THEME_FIELD_DEFS, ZONES } from '../domains/theme/themeFieldDefs.ts'
-import { effectivePresetTheme, pickZoneFields, ZONE_PRESET_POOL } from '../domains/theme/zones/index.ts'
+import { effectivePresetTheme, pickZoneFields } from '../domains/theme/zones/index.ts'
+import { FACTORY_ZONE_PRESET_ENTRIES } from '../domains/theme/zones/factory/index.ts'
+import { BUILTIN_PRESENTATION_PROFILES } from '../plugins/core/renderer/builtinPresentationProfiles.ts'
 import { planGlobalPreset } from '../application/transactions/applyGlobalPreset.ts'
 import { THEME_DEFAULTS } from '../domains/theme/themeFieldDefs.ts'
 
@@ -96,27 +99,56 @@ const REPO_ROOT = resolve(__dirname, '..', '..')
  * 语义 = 预设不携带插件参数、切预设即清空；与 `ccHiddenEmpty` 同为"载体字段随预设走"）。
  * 6 套完整快照型 `175 → 176`、`glass 63 → 64`、`agent-command` / `agent-map` / `focus-flow` `36 → 37`。
  * 真值由 `.agents/spec/266-probe-preset-counts.mts` 实测（沿用同一支探针，非手推）。
+ *
+ * ★ #607 刀3a（落点收敛 · 有效值换源为**落点材料**）⇒ 基线第十次按**真值**重算
+ * （探针 `bun` 直跑 `Object.keys(effectivePresetTheme(p)).length` 逐套实测，非手推）：
+ * - 7 套普通预设 **−1 ~ −2**：`rightWidth`（owner = right-rail）各 −1；
+ *   `sidebarWidth`（owner = workspace-layout）在 6 套完整快照型上再 −1
+ *   ⇒ `claude/nord/tokyo/solarized/amber/matrix 176 → 174`、`glass 64 → 63`。
+ *   **这两个字段本来就不归预设管**（`THEME_FIELD_OWNERS`），刀2 起落点材料只装预设管理值
+ *   ⇒ 视图不再携带它们，它们的值由 `DEFAULTS` / 各自主管域给（应用后的主题字段值**逐字段未变**：
+ *   装配路径先用 `filterPresetTheme(DEFAULTS)` 铺底，本测试 B3 的「视图 == 应用值」口径不受影响）。
+ * - 三张 Agent 卡 **37 → 56**（+19）：档案货物并进材料 ⇒ 视图 = 工厂值 ⊕ 档案 tokens
+ *   （**这就是它们应用后的真实外观**；旧视图只给工厂裸值，与真正落地的值不一致）。
+ *   顺带对齐了 3 处工厂值与档案值的冲突（应用后一直是档案值）：
+ *   `agent-command.inputFocusBorder`、`agent-map.{msgLineHeight,inputBg,inputFocusBorder}`、
+ *   `focus-flow.{msgLineHeight,inputBg,inputFocusBorder}` —— 新视图与原应用结果一致。
  */
 const BASELINE_FIELD_COUNTS: Record<string, number> = {
-  claude: 176, glass: 64, nord: 176, tokyo: 176, solarized: 176,
-  amber: 176, matrix: 176, 'agent-command': 37, 'agent-map': 37, 'focus-flow': 37,
+  claude: 174, glass: 63, nord: 174, tokyo: 174, solarized: 174,
+  amber: 174, matrix: 174, 'agent-command': 56, 'agent-map': 56, 'focus-flow': 56,
 }
 
-/** 该预设的有效值 —— 用测试侧独立算法（直接并池里的 5 个切面），不复用被测函数。 */
-function unionOfZoneSlices(presetName: string, mode: 'gui' | 'terminal'): Record<string, unknown> {
+/**
+ * 该预设的**期望有效值** —— 测试侧独立算法（不复用被测函数的解析路径）：
+ * 直接读两张原材料真值表 —— 工厂出厂数据（`FACTORY_ZONE_PRESET_ENTRIES`）与档案 tokens
+ * （`BUILTIN_PRESENTATION_PROFILES`）——按「工厂值 ⊕ 档案值（档案覆盖同键）」并起来，
+ * 并只保留**预设管理字段**（`filterPresetTheme`；非预设管理字段不属于预设）。
+ *
+ * ★ #607 刀3b：绑定关系在测试侧自立真值（生产侧已并入 `preset:*` 合并材料，
+ * `GlobalPreset` 类型不再带 `presentationProfileId` 字段）。
+ */
+const AGENT_CARD_PROFILES: Readonly<Record<string, string>> = {
+  'agent-command': 'builtin.presentation.agent-command',
+  'agent-map': 'builtin.presentation.agent-map',
+  'focus-flow': 'builtin.presentation.focus-flow',
+}
+
+function expectedEffectiveView(preset: GlobalPreset): Record<string, unknown> {
   const merged: Record<string, unknown> = {}
-  for (const zone of PRESET_ZONES) {
-    const entry = ZONE_PRESET_POOL[mode][zone].find(candidate => candidate.id === presetName)
-    if (!entry) throw new Error(`${mode}/${zone} 解析不到 ${presetName}`)
-    Object.assign(merged, entry.values)
+  for (const entry of FACTORY_ZONE_PRESET_ENTRIES) {
+    if (entry.id !== preset.name || entry.mode !== preset.interfaceMode) continue
+    Object.assign(merged, filterPresetTheme(entry.values))
   }
+  const profile = BUILTIN_PRESENTATION_PROFILES.find(item => item.id === AGENT_CARD_PROFILES[preset.name])
+  if (profile?.tokens) Object.assign(merged, filterPresetTheme(profile.tokens))
   return merged
 }
 
 describe('B1 有效值等价（视图 == 五区切面之并集）', () => {
   it('10 套出厂预设逐套：视图与测试侧独立算出的并集深度相等', () => {
     for (const preset of GLOBAL_PRESETS) {
-      const union = unionOfZoneSlices(preset.name, preset.interfaceMode)
+      const union = expectedEffectiveView(preset)
       const view = effectivePresetTheme(preset) as Record<string, unknown>
       expect(Object.keys(view).sort(), `${preset.name} 键集`).toEqual(Object.keys(union).sort())
       expect(view, `${preset.name} 逐字段`).toEqual(union)
@@ -126,7 +158,7 @@ describe('B1 有效值等价（视图 == 五区切面之并集）', () => {
   it('视图不引入任何默认值铺底：键集与并集**完全相等**（不是包含）', () => {
     for (const preset of GLOBAL_PRESETS) {
       const view = effectivePresetTheme(preset) as Record<string, unknown>
-      const padded = Object.keys(view).filter(key => !(key in unionOfZoneSlices(preset.name, preset.interfaceMode)))
+      const padded = Object.keys(view).filter(key => !(key in expectedEffectiveView(preset)))
       expect(padded, `${preset.name} 不得多出并集以外的键（"先铺默认值"会多出这些）`).toEqual([])
       for (const key of Object.keys(view)) {
         // 白名单 = 「有标量默认值的字段」+ 对象型结构载体（THEME_DEFAULTS 只收标量，
@@ -160,7 +192,7 @@ describe('B2 键集完整（没有键因不属于任何区域而丢失）', () =
       const view = effectivePresetTheme(preset) as Record<string, unknown>
       for (const zone of PRESET_ZONES) {
         const sliceKeys = Object.keys(pickZoneFields(view, zone))
-        const dataKeys = Object.keys(unionOfZoneSlices(preset.name, preset.interfaceMode)).filter(key => ZONE_FIELDS[zone].includes(key as never))
+        const dataKeys = Object.keys(expectedEffectiveView(preset)).filter(key => ZONE_FIELDS[zone].includes(key as never))
         expect(sliceKeys.sort(), `${preset.name}/${zone}`).toEqual(dataKeys.sort())
       }
     }
@@ -178,22 +210,27 @@ describe('B3 两条默认预设仍走"直给 theme"', () => {
 
   it('出厂 10 套一律带引用表 ⇒ planGlobalPreset 不再走"整份 theme"回落分支', () => {
     for (const preset of GLOBAL_PRESETS) {
-      const plan = planGlobalPreset(preset.name, id => ({ id, tokens: {} } as never))
+      const plan = planGlobalPreset(preset.name)
       if (plan.kind !== 'apply') throw new Error(`${preset.name} 应可应用`)
       expect(plan.zoneRefs, `${preset.name} 的引用表`).toBeTruthy()
     }
   })
 
-  it('planGlobalPreset 的有效值就是视图（呈现方案 token 叠在视图之上）', () => {
+  it('planGlobalPreset 的有效值就是视图；身份取自生效的 chat 样式单材料', () => {
     const glass = GLOBAL_PRESETS.find(preset => preset.name === 'glass')!
-    const plain = planGlobalPreset('glass', id => ({ id, tokens: {} } as never))
+    const plain = planGlobalPreset('glass')
     if (plain.kind !== 'apply') throw new Error('glass 应可应用')
     expect(plain.theme).toEqual(effectivePresetTheme(glass))
+    // 工厂材料不带身份 ⇒ 计划里没有身份（应用时不写 activeProfileId）
+    expect(plain.styleProfileId).toBeUndefined()
 
-    const withTokens = planGlobalPreset('agent-command', id => ({ id, tokens: { msgStyle: 'bubble' } } as never))
-    if (withTokens.kind !== 'apply') throw new Error('agent-command 应可应用')
-    const view = effectivePresetTheme(GLOBAL_PRESETS.find(preset => preset.name === 'agent-command')!) as Record<string, unknown>
-    expect(withTokens.theme).toEqual({ ...view, msgStyle: 'bubble' })
+    // ★ #607 刀3a：档案 token 不再「叠在视图之上」——档案货物已并进合并材料，
+    //   计划的有效值与视图逐字段相同；呈现方案只剩**身份**一条影响（styleProfileId）。
+    const agent = GLOBAL_PRESETS.find(preset => preset.name === 'agent-command')!
+    const agentPlan = planGlobalPreset('agent-command')
+    if (agentPlan.kind !== 'apply') throw new Error('agent-command 应可应用')
+    expect(agentPlan.theme).toEqual(effectivePresetTheme(agent))
+    expect(agentPlan.styleProfileId).toBe('builtin.presentation.agent-command')
   })
 })
 

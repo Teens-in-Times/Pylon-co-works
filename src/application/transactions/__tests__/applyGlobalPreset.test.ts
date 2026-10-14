@@ -35,23 +35,39 @@ afterEach(async () => {
 })
 
 describe('applyGlobalPreset', () => {
-  it('一次应用 Agent 全局预设会同步主题、Solid 呈现方案与界面模式', () => {
+  it('一次应用 Agent 全局预设会写主题（含档案货物）并更新活动身份', () => {
     expect(applyGlobalPreset('agent-command')).toBe(true)
 
     expect(useThemeStore.getState()).toMatchObject({
       accent: '#38bdf8',
       globalBgColor: '#08111f',
       msgStyle: 'bubble',
+      // ★ #607 刀3a：档案货物（这里是消息流配色货物）由**合并材料**给出，
+      //   不再是应用时现场叠档案 tokens —— 值与本单前逐字段相同。
+      messageUserBg: 'rgba(59,130,246,0.12)',
+      inputFocusBorder: 'rgba(99,102,241,0.72)',
       appliedPreset: {
         global: 'agent-command', sidebar: 'agent-command', chat: 'agent-command',
         cc: 'agent-command', right: 'agent-command',
       },
       custom: { global: false, sidebar: false, chat: false, cc: false, right: false },
     })
+    // 身份链的唯一来源 = 生效的 chat 样式单材料（`styleMaterial.profileId`）
     expect(usePresentationPreferenceStore.getState().activeProfileId).toBe('builtin.presentation.agent-command')
-    expect(useInterfaceModeStore.getState()).toMatchObject({
-      interfaceMode: 'modern-gui',
-      profileByMode: { 'modern-gui': 'builtin.presentation.agent-command' },
-    })
+  })
+
+  it('★ #607 刀3a／3b：应用预设不挑呈现档案 —— 界面模式不被改动，记忆表已退役', () => {
+    useInterfaceModeStore.setState({ interfaceMode: 'terminal-like' })
+    expect(applyGlobalPreset('agent-command')).toBe(true)
+    // 模式切换归界面模式开关 / 选择器；本路径只写主题与身份
+    expect(useInterfaceModeStore.getState().interfaceMode).toBe('terminal-like')
+    // ★ 刀3b：档案记忆表已随私路退役（store 里不再有该字段）
+    expect(useInterfaceModeStore.getState()).not.toHaveProperty('profileByMode')
+  })
+
+  it('无身份的预设（普通 7 套）⇒ 不写 activeProfileId，保持原值', () => {
+    usePresentationPreferenceStore.getState().setActiveProfileId('builtin.presentation.console-glass')
+    expect(applyGlobalPreset('claude')).toBe(true)
+    expect(usePresentationPreferenceStore.getState().activeProfileId).toBe('builtin.presentation.console-glass')
   })
 })

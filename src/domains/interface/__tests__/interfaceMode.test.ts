@@ -7,7 +7,7 @@ import { DEFAULT_SHELL_RECIPE, type ShellRecipeContribution } from '../../../plu
 import type { AsyncDisposable } from '../../../plugin-runtime/registry/types.ts'
 import { usePresentationPreferenceStore } from '../../presentation/presentationPreferenceStore.ts'
 import { useThemeStore } from '../../theme/themeStore.ts'
-import { DEFAULT_INTERFACE_MODE, DEFAULT_INTERFACE_PROFILES, useInterfaceModeStore } from '../interfaceModeStore.ts'
+import { DEFAULT_INTERFACE_MODE, useInterfaceModeStore } from '../interfaceModeStore.ts'
 import { BUILTIN_PRESENTATION_PROFILES } from '../../../plugins/core/renderer/builtinPresentationProfiles.ts'
 import { BUILTIN_INTERFACE_MODES } from '../../../plugins/core/interfaceMode/builtinInterfaceModes.ts'
 import { useIdentityStore } from '../../identity/identityStore.ts'
@@ -98,12 +98,9 @@ describe('Interface Mode contract', () => {
     })
   })
 
-  it('默认为 modern-gui，两种模式分别记忆 Presentation Profile', () => {
+  it('★ #607 刀3b：界面模式 store 只留模式一项（档案记忆表已退役）', () => {
     expect(useInterfaceModeStore.getState().interfaceMode).toBe(DEFAULT_INTERFACE_MODE)
-    expect(useInterfaceModeStore.getState().profileByMode).toEqual(DEFAULT_INTERFACE_PROFILES)
-    useInterfaceModeStore.getState().rememberProfile('terminal-like', 'terminal.custom')
-    expect(useInterfaceModeStore.getState().profileByMode['modern-gui']).toBe('builtin.presentation.modern-gui')
-    expect(useInterfaceModeStore.getState().profileByMode['terminal-like']).toBe('terminal.custom')
+    expect(useInterfaceModeStore.getState()).not.toHaveProperty('profileByMode')
   })
 
   it('遗留 Profile 默认归 terminal-like，显式元数据可归 modern-gui', () => {
@@ -111,17 +108,17 @@ describe('Interface Mode contract', () => {
     expect(presentationProfileInterfaceMode({ id: 'modern', label: 'Modern', family: 'gui', interfaceMode: 'modern-gui', tokens: {} })).toBe('modern-gui')
   })
 
-  it('切换模式时原子应用该模式记忆的 Profile，不卸载应用', () => {
+  it('★ #607 刀3a：切换模式＝应用本大类隐藏默认单 —— 档案 token 不参与决策', () => {
     const registry = getPresentationProfileRegistry()
     const owner = createPluginIdentity('test.interface', 'one')
+    // 故意注册与**落点材料**相反的档案 token：若切换还读档案，下面的值断言会翻过来
     registrations.push(registry.register(owner, {
       id: 'builtin.presentation.modern-gui', label: 'Modern', family: 'gui', interfaceMode: 'modern-gui',
-      // ★ #266 刀9：原样本含 `inputVariant`（`composer` / `cli`）—— 该字段已删除、不再是合法 token
-      tokens: { msgStyle: 'bubble' },
+      tokens: { msgStyle: 'terminal' },
     }))
     registrations.push(registry.register(owner, {
       id: 'builtin.presentation.terminal-classic', label: 'Classic', family: 'terminal',
-      tokens: { msgStyle: 'terminal' },
+      tokens: { msgStyle: 'bubble' },
     }))
     const modes = getInterfaceModeRegistry()
     registrations.push(modes.register(owner, {
@@ -136,8 +133,7 @@ describe('Interface Mode contract', () => {
     expect(activateInterfaceMode('terminal-like')).toBe(true)
     expect(useInterfaceModeStore.getState().interfaceMode).toBe('terminal-like')
     expect(usePresentationPreferenceStore.getState().activeProfileId).toBe('builtin.presentation.terminal-classic')
-    // ★ #266 刀9：原断言还比对 `inputVariant`（'cli' / 'composer'）—— 该字段已删除，
-    //   样例 profile 也不再声明它 ⇒ 断言收缩到仍在的 `msgStyle`（切换确实落地了该 profile 的 token）。
+    // 值来自落点材料（终端默认单 = 终端经典档案的合并材料），不是注册档案里那个反向 token
     expect(useThemeStore.getState()).toMatchObject({ msgStyle: 'terminal' })
 
     expect(activateInterfaceMode('modern-gui')).toBe(true)
@@ -233,21 +229,24 @@ describe('Interface Mode contract', () => {
     expect(useInterfaceModeStore.getState().interfaceMode).toBe(DEFAULT_INTERFACE_MODE)
   })
 
-  it('蓝调战术沿用 Solid，切回原模式恢复输入，且不写入会话身份与用户配色', () => {
+  it('蓝调战术沿用 Solid，切回原模式恢复输入；切换＝整份换装（含配色）', () => {
     registerBuiltinAppearanceContributions()
     expect(activateInterfaceMode('modern-gui')).toBe(true)
     const original = appearanceSnapshot()
     const identity = useIdentityStore.getState()
-    const palette = { accent: useThemeStore.getState().accent, chatBg: useThemeStore.getState().chatBg }
     expect(activateInterfaceMode('tactical-blue')).toBe(true)
+    // 身份取自材料里生效的消息流样式单（#607 刀3a），不再是「挑档案」
     expect(usePresentationPreferenceStore.getState().activeProfileId).toBe('builtin.presentation.tactical-blue')
     // ★ #266 刀9：原断言 `inputVariant === 'composer'`（那是该 profile 写下的输入 token）；
-    //   字段已删除 ⇒ 换成同一 profile 里仍在的输入 token，锁的仍是「它的输入 token 确实落地」。
+    //   字段已删除 ⇒ 换成同一档案里仍在的输入 token，锁的仍是「它的输入 token 确实落地」。
     expect(appearanceSnapshot().inputBg).not.toBe(original.inputBg)
+    // ★ #607 刀3a：切换 = 应用本大类**隐藏默认单**（整份主题 + 清账）⇒ 配色也随落点走
+    //   （规范 §七.1「切换＝一步落本大类默认全套，不带旧数据」；旧路径只叠档案 token、不动配色）。
+    expect(useThemeStore.getState().accent).toBe('#65dfff')
     const mode = BUILTIN_INTERFACE_MODES.find(item => item.id === 'tactical-blue')!
     expect(resolveInterfaceModeSuite(mode, undefined, ['builtin.solid']).activeSuiteId).toBe('builtin.solid')
+    // 不写入会话身份
     expect(useIdentityStore.getState()).toBe(identity)
-    expect({ accent: useThemeStore.getState().accent, chatBg: useThemeStore.getState().chatBg }).toEqual(palette)
     expect(activateInterfaceMode('modern-gui')).toBe(true)
     expect(appearanceSnapshot()).toEqual(original)
     expect(useIdentityStore.getState()).toBe(identity)

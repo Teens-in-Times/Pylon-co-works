@@ -48,6 +48,18 @@ import { expandGlobalPresetZoneRefs, planGlobalPreset } from '../application/tra
 
 const PROFILE_BY_ID = new Map(BUILTIN_PRESENTATION_PROFILES.map(profile => [profile.id, profile]))
 
+/**
+ * 三张 Agent 卡与呈现档案的绑定（测试侧真值）。
+ *
+ * ★ #607 刀3b：生产侧绑定已并入 `preset:*` 合并材料，`GlobalPreset` 类型不再带
+ * `presentationProfileId` 字段 ⇒ 这条「旧路径」参考实现自持一份同样的绑定。
+ */
+const AGENT_CARD_PROFILES: Readonly<Record<string, string>> = {
+  'agent-command': 'builtin.presentation.agent-command',
+  'agent-map': 'builtin.presentation.agent-map',
+  'focus-flow': 'builtin.presentation.focus-flow',
+}
+
 /** 预设带呈现方案时，旧路径拿到的输入是 `effectivePresetTheme(preset) ⊕ profile.tokens`（见 `planGlobalPreset`）。 */
 function boxedTheme(preset: GlobalPreset): Partial<ThemeSettings> {
   const tokens = profileTokensOf(preset)
@@ -55,7 +67,8 @@ function boxedTheme(preset: GlobalPreset): Partial<ThemeSettings> {
 }
 
 function profileTokensOf(preset: GlobalPreset): Partial<ThemeSettings> | undefined {
-  const profile = preset.presentationProfileId ? PROFILE_BY_ID.get(preset.presentationProfileId) : undefined
+  const boundProfileId = AGENT_CARD_PROFILES[preset.name]
+  const profile = boundProfileId ? PROFILE_BY_ID.get(boundProfileId) : undefined
   return profile?.tokens as Partial<ThemeSettings> | undefined
 }
 
@@ -67,11 +80,14 @@ function legacyPatch(preset: GlobalPreset): ReturnType<typeof setGlobalPresetRed
 /** 新路径：引用表 → 逐区域取值切片 → 纯层装配。 */
 function assembleFromRefs(state: ThemePresetState, preset: GlobalPreset) {
   const refs = requireZoneRefs(preset.zoneRefs, `出厂预设 ${preset.name}`)
-  const tokens = profileTokensOf(preset)
+  // ★ #607 刀3a：引用指向的是**落点材料 id**（不再是预设名）⇒ 生产路径显式传
+  //   `appliedName` 把「取值用的引用」与「写进 appliedPreset 的名字」分开
+  //   （否则全局预设 chip 会因认不出记名而亮兜底「自定义」）。这里与生产对齐。
+  //   档案 token 的「装配后再叠」收口已退场（档案货物并进 `preset:*` 合并材料）。
   return assembleGlobalPresetReducer(
     state,
     expandGlobalPresetZoneRefs(preset.interfaceMode, refs),
-    tokens ? { profileTokens: tokens } : {},
+    { appliedName: preset.name },
   )
 }
 
@@ -144,7 +160,14 @@ describe('B1 引用表覆盖完整（缺项必须抛错，不是静默回落）'
   })
 
   it('缺任意一项都抛错，缺表 / 空值 / 非区域键同样抛错', () => {
-    const complete = { global: 'glass', sidebar: 'glass', chat: 'glass', cc: 'glass', right: 'glass' }
+    // ★ #607 刀3a：消息流区是**双引用**（`{ style, color }`）——引用表的合法形状。
+    const complete = {
+      global: 'factory:glass:global',
+      sidebar: 'factory:glass:sidebar',
+      chat: { style: 'factory:glass:chat:style', color: 'factory:glass:chat:color' },
+      cc: 'factory:glass:cc',
+      right: 'factory:glass:right',
+    }
     expect(() => requireZoneRefs(complete, 'X')).not.toThrow()
     expect(() => requireZoneRefs(undefined, 'X')).toThrow(/缺少区域引用表/)
     for (const zone of PRESET_ZONES) {
@@ -153,6 +176,11 @@ describe('B1 引用表覆盖完整（缺项必须抛错，不是静默回落）'
     }
     expect(() => requireZoneRefs({ ...complete, cc: '   ' }, 'X')).toThrow(/缺项/)
     expect(() => requireZoneRefs({ ...complete, layout: 'glass' }, 'X')).toThrow(/非区域键/)
+    // 消息流双引用自身的缺项 / 空值 / 多余键：同样抛错，不静默降级成单引用
+    expect(() => requireZoneRefs({ ...complete, chat: 'factory:glass:chat:style' }, 'X')).toThrow(/缺项.*chat/)
+    expect(() => requireZoneRefs({ ...complete, chat: { style: 'x' } }, 'X')).toThrow(/消息流双引用缺项/)
+    expect(() => requireZoneRefs({ ...complete, chat: { style: 'x', color: '  ' } }, 'X')).toThrow(/消息流双引用缺项/)
+    expect(() => requireZoneRefs({ ...complete, chat: { style: 'x', color: 'y', extra: 'z' } }, 'X')).toThrow(/消息流双引用含非轴键/)
   })
 
   it('两条默认预设没有引用表（结构性保证：它们走「整份 theme」回落路径）', () => {
@@ -160,13 +188,13 @@ describe('B1 引用表覆盖完整（缺项必须抛错，不是静默回落）'
       const preset = DEFAULT_PRESETS[bucket]
       expect(preset.zoneRefs, `${preset.name} 本刀不加引用表`).toBeUndefined()
       // 它们不在 GLOBAL_PRESETS 里 ⇒ planGlobalPreset 根本不会给它们排装配计划
-      expect(planGlobalPreset(preset.name, id => PROFILE_BY_ID.get(id))).toEqual({ kind: 'skip' })
+      expect(planGlobalPreset(preset.name)).toEqual({ kind: 'skip' })
     }
   })
 
   it('planGlobalPreset 给 10 套出厂预设排出的计划都带上完整引用表', () => {
     for (const preset of GLOBAL_PRESETS) {
-      const plan = planGlobalPreset(preset.name, id => PROFILE_BY_ID.get(id))
+      const plan = planGlobalPreset(preset.name)
       if (plan.kind !== 'apply') throw new Error(`${preset.name} 应可应用`)
       expect(plan.interfaceMode, preset.name).toBe(preset.interfaceMode)
       expect(plan.zoneRefs ? Object.keys(plan.zoneRefs).sort() : null, preset.name).toEqual([...PRESET_ZONES].sort())
@@ -187,17 +215,19 @@ describe('B2 新旧装配等价（旧路径保留为参考实现）', () => {
     }
   })
 
-  it('带呈现方案的三套：覆盖层仍在装配之后叠加（token 覆盖预设值）', () => {
+  it('带呈现方案的三套：档案货物由合并材料给出（值与本单前逐字段相同）', () => {
     const state = baseState()
     for (const name of ['agent-command', 'agent-map', 'focus-flow'] as const) {
       const preset = GLOBAL_PRESETS.find(candidate => candidate.name === name)!
       const tokens = profileTokensOf(preset)
-      expect(tokens, `${name} 必须有呈现方案`).toBeTruthy()
+      expect(tokens, `${name} 必须绑定呈现方案`).toBeTruthy()
       const assembled = assembleFromRefs(state, preset)
+      // ★ #607 刀3a：档案 token 不再「装配后叠」——它们已并进 `preset:*` 合并材料，
+      //   所以这些键的值仍必须在装配结果里（只是来源从覆盖层换成材料）。
       for (const [key, value] of Object.entries(tokens!)) {
         expect((assembled as Record<string, unknown>)[key], `${name}/${key}`).toBe(value)
       }
-      // 且仍与旧路径等价（上面那条覆盖的是「不等价也不报错」的空洞风险）
+      // 且仍与「改造前那条路」（effectivePresetTheme ⊕ profile.tokens 整份写）等价
       expect(assembled).toEqual(legacyPatch(preset))
     }
   })
@@ -293,20 +323,26 @@ describe('B4 cc 区特殊处理在逐区域路径上仍生效', () => {
 // ── B5 不许串区 ───────────────────────────────────────────────────
 
 describe('B5 不许串区（用户点名）', () => {
-  it('50 条出厂区域预设的**全部值键**都属于它自己那个区域（判据 ZONE_FIELDS）', () => {
+  it('出厂区域预设的**全部值键**都属于它自己那个区域（判据 ZONE_FIELDS）', () => {
     let checked = 0
     for (const bucket of ['gui', 'terminal'] as const) {
       for (const zone of PRESET_ZONES) {
         for (const entry of ZONE_PRESET_POOL[bucket][zone]) {
           const values = resolveZonePresetEntryTheme(entry)
           expect(values, `${bucket}/${zone}/${entry.id} 必须可解析`).toBeTruthy()
-          const foreign = Object.keys(values!).filter(key => !ZONE_FIELDS[zone].includes(key as never))
+          // ★ #607 刀3a：池的来源换成落点材料 ⇒ 条目 = `factory:*` 那批（60 条）。
+          //   ★ 待迁边线 `inputBorderColor`（字段归属表里仍写 global）按合同归 **cc 材料**
+          //   ⇒ 它是唯一允许出现在非 global 切片里的键；其余越区键照样红。
+          const foreign = Object.keys(values!).filter(key => key !== 'inputBorderColor' && !ZONE_FIELDS[zone].includes(key as never))
           expect(foreign, `${bucket}/${zone}/${entry.id} 出现越区键`).toEqual([])
+          if (Object.hasOwn(values!, 'inputBorderColor')) {
+            expect(zone, `${bucket}/${entry.id} 待迁边线只归 cc`).toBe('cc')
+          }
           checked += 1
         }
       }
     }
-    expect(checked, '出厂区域预设条目数').toBe(50)
+    expect(checked, '出厂区域预设条目数（40 非 chat + 10×2 轴）').toBe(60)
   })
 
   it('装配 zone = X 时，X 区以外的字段一个都没变（逐区逐字段对拍）', () => {

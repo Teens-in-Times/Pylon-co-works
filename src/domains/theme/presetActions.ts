@@ -10,7 +10,6 @@ import { createCustomPresetId, normalizeCustomPresetId, pickCustomPresetTheme } 
 import { THEME_PRESET_KEYS } from './themeFieldDefs.ts'
 import { applyCustomPresetReducer, saveCustomPresetReducer, toThemeDelta } from './presetReducer.ts'
 import { getRendererSettingsStore } from '../../plugin-runtime/runtimeServices.ts'
-import { usePresentationPreferenceStore } from '../presentation/presentationPreferenceStore.ts'
 import {
   adaptLegacyThemePreset,
   createPresetBundle,
@@ -21,7 +20,6 @@ import {
   recordPayload,
   type PresetApplyResult,
   type PresetJsonValue,
-  type PresentationPresetPayload,
   type RendererPresetPayload,
 } from './presetBundle.ts'
 import { createFirstPartyPresetProviderRegistry } from './firstPartyPresetProviders.ts'
@@ -64,11 +62,6 @@ export function saveCustomPresetAction(name: string, id: string | undefined, api
     const captureProviders = createFirstPartyPresetProviderRegistry({
       captureTheme: () => toPresetJson(toThemeDelta(pickCustomPresetTheme(get()))) as PresetJsonValue,
       applyTheme: () => {}, restoreTheme: () => {},
-      capturePresentation: () => ({
-        activeProfileId: usePresentationPreferenceStore.getState().activeProfileId,
-        rendererSuiteIdByMode: usePresentationPreferenceStore.getState().rendererSuiteIdByMode,
-      }),
-      applyPresentation: () => {}, restorePresentation: () => {},
       captureRenderer: () => {
         const snapshot = rendererStore.getSnapshot()
         return { values: snapshot.values, unavailable: snapshot.unavailable }
@@ -82,7 +75,6 @@ export function saveCustomPresetAction(name: string, id: string | undefined, api
       ...(existing ? { createdAt: existing.createdAt } : {}),
       theme: captureProviders.resolve('builtin.theme')!.capture(),
       renderer: captureProviders.resolve('builtin.renderer-settings')!.capture() as unknown as RendererPresetPayload,
-      presentation: captureProviders.resolve('builtin.presentation')!.capture() as unknown as PresentationPresetPayload,
     })
     const { patch, savedId } = saveCustomPresetReducer(state, { id: resolvedId, name, now, bundle })
     set(patch)
@@ -133,11 +125,6 @@ export function applyCustomPresetAction(id: string, api: PresetStoreApi): Promis
         ['custom', structuredClone(state.custom)],
         ['customPresets', structuredClone(state.customPresets)],
       ])
-      const beforePresentation = usePresentationPreferenceStore.getState()
-      const beforePresentationSnapshot = {
-        activeProfileId: beforePresentation.activeProfileId,
-        rendererSuiteIdByMode: structuredClone(beforePresentation.rendererSuiteIdByMode),
-      }
       const rendererStore = getRendererSettingsStore()
       const beforeRenderer = rendererStore.getSnapshot()
       const registry = createFirstPartyPresetProviderRegistry({
@@ -149,17 +136,6 @@ export function applyCustomPresetAction(id: string, api: PresetStoreApi): Promis
           return patch
         }),
         restoreTheme: () => set(beforeTheme),
-        capturePresentation: () => ({
-          activeProfileId: usePresentationPreferenceStore.getState().activeProfileId,
-          rendererSuiteIdByMode: usePresentationPreferenceStore.getState().rendererSuiteIdByMode,
-        }),
-        applyPresentation: payload => {
-          if (typeof payload.activeProfileId === 'string') usePresentationPreferenceStore.getState().setActiveProfileId(payload.activeProfileId)
-          if (payload.rendererSuiteIdByMode) for (const [mode, suiteId] of Object.entries(payload.rendererSuiteIdByMode)) {
-            if (typeof suiteId === 'string') usePresentationPreferenceStore.getState().setRendererSuiteId(mode, suiteId)
-          }
-        },
-        restorePresentation: () => usePresentationPreferenceStore.setState(beforePresentationSnapshot),
         captureRenderer: () => ({ values: beforeRenderer.values, unavailable: beforeRenderer.unavailable }),
         applyRenderer: (payload, context) => {
           const current = rendererStore.getSnapshot()
@@ -181,7 +157,7 @@ export function applyCustomPresetAction(id: string, api: PresetStoreApi): Promis
         restoreRenderer: () => rendererStore.replaceOverrides(beforeRenderer.values, beforeRenderer.unavailable),
       })
       const classified = markUnavailablePresetProviders(bundle, registry)
-      const expectedProviderIds = ['builtin.theme', 'builtin.presentation', 'builtin.renderer-settings']
+      const expectedProviderIds = ['builtin.theme', 'builtin.renderer-settings']
       const unavailable = [...new Set([
         ...expectedProviderIds.filter(providerId => !bundle.contributions[providerId] || !registry.resolve(providerId)),
         ...Object.keys(bundle.contributions).filter(providerId => !registry.resolve(providerId)),
