@@ -53,6 +53,18 @@ mod tests {
     use super::*;
     use std::process::Stdio;
 
+    /// `CREATE_NEW_CONSOLE`：为子进程显式分配一个新控制台。
+    ///
+    /// 仅供下面差分用例的**控制组**使用（#617）：控制组必须有一个可看见的控制台
+    /// 才能证明探针没坏，而"不加任何标志位"只会在父进程本身是控制台进程时成立——
+    /// CI runner 与任何一种无控制台的宿主（编辑器任务、agent 执行器）都让控制组
+    /// 静默失效。改成显式新建后，控制组的成立与父进程形态解耦。
+    ///
+    /// 落在这里（而非模块级）是刻意的：它是测试专用常量，放模块级会让非测试构建
+    /// 多出一条 `dead_code`。
+    #[cfg(windows)]
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
     /// 设置标志位不得破坏 spawn：std 与 tokio 两条路径都必须仍能启动并等待退出。
     ///
     /// （标志位的**可见效果**由下面那条差分用例证明；这条只钉「加了标志位还能跑」。）
@@ -84,16 +96,20 @@ mod tests {
     ///
     /// 做法是把测试可执行文件自己再拉起来一次（`--exact console_probe_child`），
     /// 子进程用 `GetConsoleWindow()` 报告自己有没有控制台窗口，父进程收 stdout：
-    /// - **不加**标志位（控制组）：子进程继承/分配到一个带窗口的控制台 → 非 0；
-    /// - 加了标志位：`CREATE_NO_WINDOW` 给一个窗口句柄为 NULL 的控制台 → 0。
+    /// - **控制组**（`CREATE_NEW_CONSOLE`）：子进程被显式分配到一个带窗口的控制台
+    ///   → 非 0；
+    /// - **实验组**（`CREATE_NO_WINDOW`）：控制台窗口句柄为 NULL → 0。
     ///
     /// 控制组是这条用例的关键：它证明探针本身能看见窗口，否则「读到 0」也可能只是
     /// 探针坏了。
+    ///
+    /// #617：控制组从"不加标志位"改为显式 `CREATE_NEW_CONSOLE`。原写法把控制组的
+    /// 成立押在父进程自己有控制台上，CI（无控制台）下恒失败；新写法不依赖该前提。
     #[cfg(windows)]
     #[test]
     fn hiding_the_console_window_removes_the_window_handle() {
-        let inherited = probe_child_console_window(false);
-        let hidden = probe_child_console_window(true);
+        let inherited = probe_child_console_window(ProbeConsole::ControlGroup);
+        let hidden = probe_child_console_window(ProbeConsole::Hidden);
         assert_ne!(
             inherited, 0,
             "控制组必须看得见控制台窗口（否则探针无效，下面的 0 不能作数）"
@@ -104,9 +120,21 @@ mod tests {
         );
     }
 
+    /// 探针子进程的控制台形态。
+    #[cfg(windows)]
+    #[derive(Clone, Copy)]
+    enum ProbeConsole {
+        /// 控制组：显式新建控制台，`GetConsoleWindow()` 必须非 0。
+        ControlGroup,
+        /// 实验组：`CREATE_NO_WINDOW`，`GetConsoleWindow()` 必须为 0。
+        Hidden,
+    }
+
     /// 把本测试可执行文件以 `console_probe_child` 用例再跑一次，返回它报告的 HWND。
     #[cfg(windows)]
-    fn probe_child_console_window(hide: bool) -> isize {
+    fn probe_child_console_window(console: ProbeConsole) -> isize {
+        use std::os::windows::process::CommandExt;
+
         let exe = std::env::current_exe().expect("resolved test executable");
         let mut command = StdCommand::new(exe);
         command
@@ -119,9 +147,10 @@ mod tests {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        if hide {
-            command.hide_console_window();
-        }
+        match console {
+            ProbeConsole::ControlGroup => command.creation_flags(CREATE_NEW_CONSOLE),
+            ProbeConsole::Hidden => command.hide_console_window(),
+        };
         let output = command.output().expect("probe child must run");
         let stdout = String::from_utf8_lossy(&output.stdout);
         stdout

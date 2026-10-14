@@ -385,11 +385,18 @@ pub fn list_workspace_files(
             if is_ignored(&name) || name.starts_with('.') {
                 continue;
             }
-            // file_type() 不跟随 symlink：symlink 目录不下钻（防环/防逃逸）。
+            // file_type() 不跟随 symlink，故 symlink 目录的 is_dir() 为 false——
+            // 必须单独判定，否则目录 symlink 会落到下面的收录分支进索引（#603）。
+            // 目录 symlink 一律不进也不下钻（防环、防 root 外逃逸）；文件 symlink
+            // 照收（本枚举只列名字、不读内容）。
             let Ok(file_type) = item.file_type() else {
                 continue;
             };
-            if file_type.is_dir() {
+            if file_type.is_symlink() {
+                if item.path().is_dir() {
+                    continue;
+                }
+            } else if file_type.is_dir() {
                 queue.push_back(item.path());
                 continue;
             }
@@ -1563,6 +1570,51 @@ mod tests {
         assert_eq!(
             page.entries,
             vec!["README.md", "src/deep/util.ts", "src/main.ts"]
+        );
+    }
+
+    /// #603 差分：文档契约是「含 symlink 文件、不含 symlink 目录」——只看目录那一侧，
+    /// 会把「一律跳过 symlink」这种过度修正误判为通过。
+    #[test]
+    fn list_files_indexes_symlink_files_but_not_symlink_directories() {
+        let (_dir, root) = index_fixture();
+        #[cfg(unix)]
+        {
+            let linked_file =
+                std::os::unix::fs::symlink(root.join("README.md"), root.join("readme-link.md"));
+            let linked_dir =
+                std::os::unix::fs::symlink(root.join("node_modules"), root.join("modules-link"));
+            if linked_file.is_err() || linked_dir.is_err() {
+                return;
+            }
+        }
+        #[cfg(windows)]
+        {
+            let linked_file = std::os::windows::fs::symlink_file(
+                root.join("README.md"),
+                root.join("readme-link.md"),
+            );
+            let linked_dir = std::os::windows::fs::symlink_dir(
+                root.join("node_modules"),
+                root.join("modules-link"),
+            );
+            if linked_file.is_err() || linked_dir.is_err() {
+                return;
+            }
+        }
+        let page = list_workspace_files(&root, None).unwrap();
+        assert!(
+            page.entries.iter().any(|entry| entry == "readme-link.md"),
+            "文件 symlink 必须进索引: {:?}",
+            page.entries
+        );
+        assert!(
+            !page
+                .entries
+                .iter()
+                .any(|entry| entry.contains("modules-link")),
+            "目录 symlink 不得进索引: {:?}",
+            page.entries
         );
     }
 

@@ -69,6 +69,17 @@ describe('terminal delivery does not depend on the per-source IPC Channel (issue
     // 模拟 Channel 注册丢失：feed.onTerminal 一次都不触发（没有 Channel 帧）。
     expect(listeners).toHaveLength(1)
 
+    // 这 5ms 是承重睡（同 agentWorkbenchSession.emptyStateFirstPrompt.test.ts 的既有
+    // 约定，#613）：elapsedMs = 终帧 Date.now() − 发送入口 Date.now()（optimisticEcho
+    // 的 generationStart，agentWorkbenchOptimisticEcho.ts:87–88 与
+    // agentWorkbenchTurnLifecycle.ts:52），两端都是 1ms 分辨率的 Date.now，所以
+    // `elapsedMs > 0` 等价于「这条序列真实跨过一个毫秒边界」——是对墙钟分辨率的断言。
+    // 冷进程里这段序列要 4–6ms，但本文件属 node-shared（isolate: false）分组，长跑
+    // worker 里被同组文件预热后会掉到亚毫秒：实测同进程重复 300 次有 287 次恰为 0。
+    // 不睡就是全量偶发红（隔离跑反而绿，因为它是冷进程）。
+    // 不能降级成纯微任务冲刷（可落在同一毫秒内）。
+    await new Promise(resolve => setTimeout(resolve, 5))
+
     // 终帧只从 window 广播兜底进来——它带 source，必须照常收敛。
     listeners[0]({ source: active.source, kind: 'done', payload: { source: active.source } })
 
