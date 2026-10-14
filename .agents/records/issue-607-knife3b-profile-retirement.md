@@ -194,5 +194,4 @@
 - 收尾回modern-gui默认，核对exe路径后关闭验收PID11604；验收结束共享源码与起点副本逐文件差异0，index与diff检查EXIT=0。随后本段仅更新验收/送审记录，不改产品代码。
 - 本地完整命令、反向红、恢复指纹与真机读数：`E:\Acode\FILES\任务\预设修正\报告等\03b-施工单-档案退役\2026-10-15-翻译验收报告-两续单与增补.md`及同级独立核验目录。该本地报告不随PR上传。
 - 送审与后续边界：档案注册表、插件registerProfile能力、kindTokens/assets、activeProfileId及身份CSS保留；区域行仅应用材料，不承诺整键外观复现。蓝调标签`tactical-默认`暂保留。
-
-
+- 最终送审跟进main@81b95808，合流存档ae311d8e，只有交流板冲突，保留双方条目；相对main无后端/CI改动。在英文路径临时worktree按序重跑五步全部EXIT=0，690文件/5409用例passed、1 skipped。首次中文路径运行因既有B-04测试直接用URL.pathname读取文件而ENOENT（src/domains/theme/__tests__/B-04-visual-conformance.test.ts:6），未改单外测试；保留失败日志，移至英文路径完整复跑绿。合流前后本线产品源码字节未变，真机结论范围不扩展为合流后的后端验证。
