@@ -1,4 +1,5 @@
 [package]
+license = "AGPL-3.0-only"
 name = "pylon-foundations"
 version = "1.0.0"
 edition = "2021"
