@@ -1,7 +1,7 @@
 {
   "name": "pylon",
   "private": true,
-  "version": "0.4.2-SYN",
+  "version": "0.4.3-AGP",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -59,9 +59,9 @@
     "@codemirror/view": "^6.43.9",
     "@lezer/highlight": "^1.2.3",
     "@tanstack/solid-virtual": "3.13.40",
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "~2.11.0",
     "@tauri-apps/plugin-dialog": "^2",
-    "@tauri-apps/plugin-fs": "~2.7.0",
+    "@tauri-apps/plugin-fs": "~2.5.2",
     "anser": "^2.3.5",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",
