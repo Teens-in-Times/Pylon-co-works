@@ -26,11 +26,6 @@ export interface RendererPresetPayload {
   readonly unavailable: Readonly<Record<string, RendererSettingValue>>
 }
 
-export interface PresentationPresetPayload {
-  readonly activeProfileId: string
-  readonly rendererSuiteIdByMode: Readonly<Record<string, string>>
-}
-
 export interface PresetCaptureScope {
   /** Optional provider ids when capturing/applying a selected settings area. */
   readonly providerIds?: readonly string[]
@@ -294,14 +289,10 @@ export function createPresetBundle(input: {
   createdAt?: number
   theme: PresetJsonValue
   renderer?: RendererPresetPayload
-  presentation?: PresentationPresetPayload
   source?: PresetBundleV2['source']
 }): PresetBundleV2 {
   const contributions: Record<string, PresetContribution> = {
     'builtin.theme': { ownerPluginId: 'builtin.pylon-shell', providerVersion: 1, policy: 'complete', payload: input.theme },
-  }
-  if (input.presentation) contributions['builtin.presentation'] = {
-    ownerPluginId: 'builtin.pylon-shell', providerVersion: 1, policy: 'partial', payload: input.presentation as unknown as PresetJsonValue,
   }
   if (input.renderer) contributions['builtin.renderer-settings'] = {
     ownerPluginId: 'builtin.pylon-renderers', providerVersion: 1, policy: 'partial', payload: input.renderer as unknown as PresetJsonValue,
@@ -338,10 +329,6 @@ function coverageCounts(providerId: string, contribution: PresetContribution | u
       unavailable,
     }
   }
-  if (providerId === 'builtin.presentation') {
-    const explicit = ['activeProfileId', 'rendererSuiteIdByMode'].filter(key => payload[key] !== undefined).length
-    return { explicit, defaulted: contribution.policy === 'complete' ? Math.max(0, 2 - explicit) : 0, unavailable }
-  }
   if (providerId === 'builtin.renderer-settings') {
     const values = recordPayload(payload.values)
     const storedUnavailable = recordPayload(payload.unavailable)
@@ -353,7 +340,6 @@ function coverageCounts(providerId: string, contribution: PresetContribution | u
 export function presetCoverage(bundle: PresetBundleV2 | undefined): readonly PresetCoverage[] {
   const labels: Readonly<Record<string, string>> = {
     'builtin.theme': 'Theme',
-    'builtin.presentation': 'Presentation',
     'builtin.renderer-settings': 'Renderer overrides',
   }
   const coverage: PresetCoverage[] = Object.entries(labels).map(([id, label]) => {

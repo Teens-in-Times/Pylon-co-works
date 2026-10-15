@@ -117,7 +117,7 @@ const SPLICE_FAMILIES: { prefix: string; sources?: string[]; packages?: string[]
   { prefix: 'agent-light-', sources: ['src/components/AgentStatusLights.solid.tsx'], reason: '状态灯拼接族（agent-light-${light}）' },
   { prefix: 'severity-', sources: ['src/components/ErrorCenter.solid.tsx'], reason: '错误中心严重度拼接族（severity-${severity()}）' },
   { prefix: 'type-', sources: ['src/sheets/file/fileIcons.solid.tsx'], reason: '文件类型图标拼接族（type-${mapped.type}）；位点存活但值域变化时须同步审 CSS 对应规则' },
-  { prefix: 'is-', sources: ['src/components/settings/AgentSettingsSection.solid.tsx', 'src/components/settings/TemplateLibrary.solid.tsx', 'src/components/settings/PresentationProfilePicker.solid.tsx'], reason: '状态标记拼接族（is-${status/state/kind} 三处模板；前缀较宽经裁定维持）；位点存活但值域变化时须同步审 CSS 对应规则' },
+  { prefix: 'is-', sources: ['src/components/settings/AgentSettingsSection.solid.tsx', 'src/components/settings/TemplateLibrary.solid.tsx'], reason: '状态标记拼接族（is-${status/state/kind} 两处模板；前缀较宽经裁定维持）；位点存活但值域变化时须同步审 CSS 对应规则' },
   { prefix: 'cm-', packages: ['node_modules/@codemirror/view', 'node_modules/@codemirror/search'], reason: 'CodeMirror 编辑器运行时自生成 DOM 类名（第三方值域，非本仓代码生成）' },
   { prefix: 'footnote-backref', sources: ['src-tauri/pylon-markdown/src/parser.rs'], reason: 'Rust 侧 markdown 解析器跨语言生成（<a class="footnote-backref">，parser.rs）' },
 ]

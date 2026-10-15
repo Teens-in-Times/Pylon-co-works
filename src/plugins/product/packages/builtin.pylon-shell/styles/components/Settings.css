@@ -2,12 +2,9 @@
 .set-custom-preset-save .set-input { width:180px; }
 .custom-preset-feedback.is-success { color:var(--tool-ok,var(--accent)); }
 .custom-preset-feedback.is-error { color:var(--danger,var(--tool-err)); }
-.template-apply-feedback,
-.presentation-profile-feedback { padding:6px 8px; border:1px solid var(--border); color:var(--text-dim); font:var(--font-size-sm)/1.35 var(--font); }
-.template-apply-feedback.is-success,
-.presentation-profile-feedback.is-success { color:var(--tool-ok,var(--accent)); border-color:color-mix(in srgb,var(--tool-ok,var(--accent)) 42%,var(--border)); }
-.template-apply-feedback.is-error,
-.presentation-profile-feedback.is-error { color:var(--danger,var(--tool-err)); border-color:color-mix(in srgb,var(--danger,var(--tool-err)) 42%,var(--border)); }
+.template-apply-feedback { padding:6px 8px; border:1px solid var(--border); color:var(--text-dim); font:var(--font-size-sm)/1.35 var(--font); }
+.template-apply-feedback.is-success { color:var(--tool-ok,var(--accent)); border-color:color-mix(in srgb,var(--tool-ok,var(--accent)) 42%,var(--border)); }
+.template-apply-feedback.is-error { color:var(--danger,var(--tool-err)); border-color:color-mix(in srgb,var(--danger,var(--tool-err)) 42%,var(--border)); }
 .set-custom-presets { display:flex; flex-direction:column; gap:5px; margin-top:8px; }
 .set-custom-preset { display:flex; align-items:center; gap:5px; }
 .set-custom-preset .set-preset-chip { min-width:120px; text-align:left; }
@@ -240,8 +237,7 @@ body[data-interface-mode="tactical-blue"] .agent-switch-card.active { border-col
 .set-preset-chip.active { background:var(--state-selected-bg); color:var(--text); font-weight:600; border-color:var(--state-selected-stroke); text-decoration:underline; text-underline-offset:3px; }
 .set-preset-chip:disabled,
 .template-apply:disabled,
-.template-restore:disabled,
-.presentation-profile-card:disabled { opacity:.55; cursor:default; }
+.template-restore:disabled { opacity:.55; cursor:default; }
 
 /* PresetRow component */
 .preset-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
@@ -414,8 +410,7 @@ body[data-interface-mode="tactical-blue"] .agent-switch-card.active { border-col
 .template-coverage .is-unavailable i { background:var(--warning); }
 .template-coverage .is-missing { color:var(--text-placeholder); }
 
-/* Presentation Profile：风格是可组合的结构令牌，不伪装成另一个渲染引擎。 */
-.presentation-settings { display:grid; gap:14px; }
+/* Interface Mode 卡片（设置页界面模式选择器）。 */
 .interface-mode-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .interface-mode-card { display:grid; min-height:72px; grid-template-columns:40px minmax(0,1fr); align-items:center; gap:10px; padding:10px; border:1px solid var(--border); border-radius:var(--ui-radius-md); color:var(--text); background:color-mix(in srgb,var(--bg-panel) 84%,transparent); text-align:left; cursor:pointer; }
 .interface-mode-card:hover { border-color:color-mix(in srgb,var(--accent) 42%,var(--border)); background:var(--bg-hover); }
@@ -424,50 +419,6 @@ body[data-interface-mode="tactical-blue"] .agent-switch-card.active { border-col
 .interface-mode-card > span:last-child { min-width:0; display:flex; flex-direction:column; gap:3px; }
 .interface-mode-card strong { font-size:var(--font-size-sm); }
 .interface-mode-card small { color:var(--text-dim); font-size:var(--font-size-xs); line-height:1.35; }
-.presentation-profile-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:7px; }
-.presentation-profile-card {
-  position:relative;
-  display:grid;
-  grid-template-columns:34px minmax(0,1fr);
-  gap:9px 10px;
-  min-height:82px;
-  padding:11px 12px;
-  border:1px solid color-mix(in srgb,var(--border) 86%,transparent);
-  border-radius:var(--ui-radius-sm);
-  background:linear-gradient(145deg,color-mix(in srgb,var(--bg-panel) 96%,transparent),color-mix(in srgb,var(--accent) 3%,var(--bg-panel)));
-  color:var(--text);
-  text-align:left;
-  cursor:pointer;
-  transition:border-color var(--motion-standard) var(--ease-standard),background var(--motion-standard) var(--ease-standard),box-shadow var(--motion-standard) var(--ease-standard),transform var(--motion-standard) var(--ease-emphasized);
-}
-.presentation-profile-card:hover {
-  border-color:color-mix(in srgb,var(--accent) 42%,var(--border));
-  background:linear-gradient(145deg,color-mix(in srgb,var(--bg-panel) 94%,transparent),color-mix(in srgb,var(--accent) 7%,var(--bg-panel)));
-  transform:translateY(-1px);
-}
-.presentation-profile-card:focus-visible { outline:2px solid color-mix(in srgb,var(--accent) 70%,transparent); outline-offset:2px; }
-.presentation-profile-card.active {
-  border-color:var(--state-selected-stroke);
-  background:var(--state-selected-bg);
-  box-shadow:inset 2px 0 0 var(--accent),var(--shadow-soft);
-}
-.presentation-profile-asset {
-  grid-row:1 / span 2;
-  display:grid;
-  place-items:center;
-  width:34px;
-  height:34px;
-  border:1px solid color-mix(in srgb,var(--accent) 32%,var(--border));
-  border-radius:var(--ui-radius-xs);
-  background:color-mix(in srgb,var(--accent) 8%,transparent);
-  color:var(--accent);
-  font-family:var(--mono,var(--font));
-  font-size:16px;
-}
-.presentation-profile-copy { display:flex; min-width:0; flex-direction:column; gap:3px; }
-.presentation-profile-copy strong { font-family:var(--font); font-size:var(--font-size-sm); font-weight:650; letter-spacing:.01em; }
-.presentation-profile-copy small { overflow:hidden; color:var(--text-dim); font-family:var(--font); font-size:var(--font-size-xs); line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
-.presentation-profile-family { align-self:end; color:color-mix(in srgb,var(--text-dim) 88%,transparent); font-family:var(--font); font-size:10px; letter-spacing:.06em; text-transform:uppercase; }
 .presentation-renderer-row {
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(164px,220px);
@@ -1205,7 +1156,6 @@ body[data-interface-mode="tactical-blue"] .agent-switch-card.active { border-col
   .template-card,
   .template-preview,
   .interface-mode-card,
-  .presentation-profile-card,
   .plugin-manager .plugin-row,
   .plugin-overview span,
   .plugin-empty,
@@ -1230,7 +1180,6 @@ body[data-interface-mode="tactical-blue"] .agent-switch-card.active { border-col
   .template-apply,
   .template-restore,
   .interface-mode-icon,
-  .presentation-profile-asset,
   .set-color-trigger,
   .set-color-current-sample,
   .set-color-value-input input,

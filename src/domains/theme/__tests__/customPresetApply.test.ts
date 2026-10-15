@@ -84,7 +84,9 @@ describe('custom preset apply (D-fix)', () => {
     const result = await useCustomPresetStore.getState().applyCustomPreset(id)
     expect(result).toMatchObject({ status: 'applied', id })
     if (result.status !== 'applied') throw new Error('custom preset unexpectedly failed')
-    expect(result.providers).toEqual(expect.arrayContaining(['builtin.theme', 'builtin.presentation', 'builtin.renderer-settings']))
+    // ★ #607 刀3b：`builtin.presentation` provider 已随档案私路退役 ⇒ 提交面只剩这两家。
+    expect(result.providers).toEqual(expect.arrayContaining(['builtin.theme', 'builtin.renderer-settings']))
+    expect(result.providers).not.toContain('builtin.presentation')
     expect(result.revision).toBeGreaterThan(0)
   })
 
@@ -105,7 +107,7 @@ describe('custom preset apply (D-fix)', () => {
     expect(useThemeStore.getState().chatFontSize).toBe(29)
   })
 
-  it('rolls back Theme and Presentation when a Renderer provider commit fails', async () => {
+  it('rolls back Theme when a Renderer provider commit fails', async () => {
     const rendererStore = getRendererSettingsStore()
     const beforeRenderer = rendererStore.getSnapshot()
     useThemeStore.getState().setZoneField('chat', { chatFontSize: 17 })
@@ -113,7 +115,7 @@ describe('custom preset apply (D-fix)', () => {
       id: 'custom-renderer-failure', name: '渲染器失败', theme: { chatFontSize: 29 }, createdAt: 1, updatedAt: 1,
       bundle: createPresetBundle({
         id: 'custom-renderer-failure', name: '渲染器失败', now: 1, theme: { chatFontSize: 29 },
-        presentation: { activeProfileId: 'profile-after', rendererSuiteIdByMode: { 'terminal-like': 'suite-after' } },
+        // ★ #607 刀3b：`presentation` 段已随档案私路退役 ⇒ 本用例只剩 Theme + Renderer 两家要回滚。
         renderer: { values: {}, unavailable: {} },
       }),
     }] as never })

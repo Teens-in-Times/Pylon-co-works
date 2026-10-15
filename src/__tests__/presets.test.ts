@@ -91,8 +91,9 @@ describe('刀5 预设归属（#201，拍板归属表 2026-09-19）', () => {
       .toEqual(['amber', 'claude', 'matrix', 'nord', 'tokyo'])
   })
 
-  it('tactical-blue 与未登记模式不在归属表内：无预设、菜单不出现', () => {
-    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBeUndefined()
+  it('★ #607 刀3a：蓝调战术补入归属桶，但家族内暂无公开预设；未登记模式仍无预设', () => {
+    expect(INTERFACE_MODE_PRESET_BUCKET['tactical-blue']).toBe('tactical')
+    // 「家族内暂只有默认一员」⇒ 没有公开 chips（默认成员不进 chips；蓝调的区域行由那条默认单供给）
     expect(presetsForInterfaceMode('tactical-blue')).toEqual([])
     expect(presetsForInterfaceMode('third-party.mode')).toEqual([])
   })

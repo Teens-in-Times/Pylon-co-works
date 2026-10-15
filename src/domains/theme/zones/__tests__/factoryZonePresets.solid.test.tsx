@@ -24,24 +24,27 @@
 import { cleanup, fireEvent, screen, within } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GLOBAL_PRESETS } from '../../presets/index.ts'
-import { PRESET_ZONES, requireZoneRefs } from '../../presetReducer.ts'
+import { PRESET_ZONES, filterPresetTheme, requireZoneRefs } from '../../presetReducer.ts'
 import { expandGlobalPresetZoneRefs } from '../../../../application/transactions/applyGlobalPreset.ts'
 import { DEFAULTS } from '../../themeDefaults.ts'
+import type { ThemeSettings } from '../../themeStore.ts'
 import { useThemeStore } from '../../themeStore.ts'
 import { useCustomPresetStore } from '../../customPresetStore.ts'
 import { useInterfaceModeStore } from '../../../interface/interfaceModeStore.ts'
 import { mountSettingsSheet } from '../../../../test/settingsSheetHarness.solid'
 import { resetStores } from '../../../../test/resetStores.ts'
+import { splitChatPresetValues } from '../chatPresetAxes.ts'
+import { LANDING_PRESET_ENTRIES } from '../factory/landingEntries.ts'
 import {
   FACTORY_ZONE_PRESET_ENTRIES,
+  FACTORY_PROFILE_ZONE_PRESET_ENTRIES,
   ZONE_PRESET_POOL,
   assembleFactoryZonePresetPool,
   effectivePresetTheme,
   isCustomZonePresetEntry,
-  pickZoneFields,
   removeZonePresetEntryReducer,
-  resolveZonePresetEntryTheme,
   zonePresetsFor,
+  type ChatPresetAxis,
   type ZonePresetEntry,
 } from '../index.ts'
 
@@ -72,42 +75,94 @@ afterEach(async () => {
   cleanup()
 })
 
-// ── B1 数据 == 派生参考 ────────────────────────────────────────────
+// ── B1 数据 == 新材料里的工厂条目 ──────────────────────────────────
 
-describe('B1 落盘数据 == 来源预设有效值在该区的切面（50 条逐字段）', () => {
-  it('50 条 × 每条全部字段与 pickZoneFields(有效值视图, zone) 逐字段相等', () => {
+/**
+ * 独立复算：工厂**原材料** → 工厂**材料** values 的两处规范化（`landingEntries` 的合同）：
+ * 1. 只留预设管理字段（`filterPresetTheme`；`sidebarWidth` / `rightWidth` 不归预设管）；
+ * 2. 待迁边线 `inputBorderColor`：global 去键、cc 收键（值取同级 global 原材料里的那份）。
+ * 消息流按轴切两片（样式 / 配色）。
+ */
+function expectedFactoryMaterialValues(
+  entry: ZonePresetEntry,
+  zone: 'global' | 'sidebar' | 'cc' | 'right' | 'chat',
+  axis?: ChatPresetAxis,
+): Partial<ThemeSettings> {
+  const values = filterPresetTheme(structuredClone(entry.values))
+  if (zone === 'global') delete values.inputBorderColor
+  if (zone === 'cc') {
+    const sibling = FACTORY_ZONE_PRESET_ENTRIES.find(item => item.mode === entry.mode && item.zone === 'global' && item.id === entry.id)
+    if (sibling?.values.inputBorderColor !== undefined) values.inputBorderColor = sibling.values.inputBorderColor
+  }
+  if (zone === 'chat') return splitChatPresetValues(values)[axis!]
+  return values
+}
+
+function factoryMaterialOf(entry: ZonePresetEntry, zone: 'global' | 'sidebar' | 'cc' | 'right' | 'chat', axis?: ChatPresetAxis) {
+  const id = zone === 'chat' ? `factory:${entry.id}:chat:${axis}` : `factory:${entry.id}:${zone}`
+  const material = LANDING_PRESET_ENTRIES.find(item => item.id === id)
+  expect(material, `${id} 材料必须存在`).toBeTruthy()
+  return material!
+}
+
+describe('B1 落盘工厂数据 == 新材料里的工厂条目（50 条逐字段）', () => {
+  it('50 条 × 每条全部字段与 factory: 材料逐字段相等（差异只有预设域过滤与待迁边线）', () => {
     expect(FACTORY_ZONE_PRESET_ENTRIES).toHaveLength(50)
     let checked = 0
     for (const entry of FACTORY_ZONE_PRESET_ENTRIES) {
       const at = `${entry.mode}/${entry.zone}/${entry.id}`
-      const preset = GLOBAL_PRESETS.find(candidate => candidate.name === entry.id)
-      expect(preset, `${at} 来源预设必须存在（id = 来源预设名）`).toBeTruthy()
       expect(entry.origin, `${at} 出厂数据必须显式标 factory`).toBe('factory')
       expect(entry.source?.presetName, `${at} 来源可追溯`).toBe(entry.id)
-      // 刀3（#223）：预设不再自带 theme ⇒ 参考值改由有效值视图取（= 该预设五区切面之并集）。
-      // 这条锁的是「切片 → 并集 → 再切回该区」这条往返无损（没有哪一区的值在合并里被别的区盖掉）。
-      expect(entry.values, `${at} 全部字段`).toEqual(pickZoneFields(effectivePresetTheme(preset!), entry.zone))
+      if (entry.zone === 'chat') {
+        for (const axis of ['style', 'color'] as const) {
+          const material = factoryMaterialOf(entry, 'chat', axis)
+          expect(material.mode, `${at}/${axis} 同桶`).toBe(entry.mode)
+          expect(material.axis, `${at}/${axis} 轴`).toBe(axis)
+          expect(material.values, `${at}/${axis} 全部字段`).toEqual(expectedFactoryMaterialValues(entry, 'chat', axis))
+          // 工厂条目无档案身份 ⇒ 样式单不带 styleMaterial（身份只属 Agent 卡合并材料）
+          expect(material.styleMaterial, `${at}/${axis} 不带身份`).toBeUndefined()
+        }
+        checked += 1
+        continue
+      }
+      const zone = entry.zone as 'global' | 'sidebar' | 'cc' | 'right'
+      const material = factoryMaterialOf(entry, zone)
+      expect(material.mode, `${at} 同桶`).toBe(entry.mode)
+      // 刀3（#223）起预设不再自带 theme；#607 刀3a 起判据改对**工厂材料**本身
+      // （旧断言 `== pickZoneFields(有效值视图, zone)` 在三张 Agent 卡上已不成立 ——
+      //  它们的有效值视图是「工厂 ⊕ 档案」，比原材料多一批档案货物）。
+      expect(material.values, `${at} 全部字段`).toEqual(expectedFactoryMaterialValues(entry, zone))
       checked += 1
     }
     expect(checked, '实际逐条对拍条数').toBe(50)
   })
 
-  it('★ 数据表是活数据源：池里的条目就是数据表里的那些对象（不是重算出的副本）', () => {
+  it('★ 落点材料是活数据源：池里的条目就是材料里的那些对象（不是重算出的副本）', () => {
     for (const mode of BUCKETS) {
       for (const zone of PRESET_ZONES) {
         for (const entry of ZONE_PRESET_POOL[mode][zone]) {
-          expect(FACTORY_ZONE_PRESET_ENTRIES, `${mode}/${zone}/${entry.id} 必须是数据表里的同一对象`).toContain(entry)
+          expect(LANDING_PRESET_ENTRIES, `${mode}/${zone}/${entry.id} 必须是材料里的同一对象`).toContain(entry)
         }
       }
     }
   })
 
-  it('每格条数 == 该桶预设数，且候选恰好是该格出厂条目（顺序 = 桶内预设顺序）', () => {
+  it('每格条数 == 该桶预设数（消息流 ×2 轴），且候选恰好是该格的 `factory:*` 材料（顺序 = 材料顺序）', () => {
     for (const mode of BUCKETS) {
       const names = bucketPresetNames(mode)
       for (const zone of PRESET_ZONES) {
-        expect(ZONE_PRESET_POOL[mode][zone], `${mode}/${zone} 条数`).toHaveLength(names.length)
-        expect(ZONE_PRESET_POOL[mode][zone].map(entry => entry.id), `${mode}/${zone} 顺序`).toEqual(names)
+        const cell = ZONE_PRESET_POOL[mode][zone]
+        expect(cell, `${mode}/${zone} 条数`).toHaveLength(zone === 'chat' ? names.length * 2 : names.length)
+        // 候选 = 材料里同桶同区的 `factory:*` 那批，顺序不变
+        const expected = LANDING_PRESET_ENTRIES
+          .filter(entry => entry.id.startsWith('factory:') && entry.mode === mode && entry.zone === zone)
+          .map(entry => entry.id)
+        expect(cell.map(entry => entry.id), `${mode}/${zone} 顺序`).toEqual(expected)
+        // 且每套预设仍各留自己的那条（不折叠）
+        for (const name of names) {
+          expect(cell.filter(entry => entry.id.startsWith(`factory:${name}:`)), `${mode}/${zone}/${name}`)
+            .toHaveLength(zone === 'chat' ? 2 : 1)
+        }
       }
     }
   })
@@ -160,9 +215,11 @@ describe('B3 出厂条目不进 zonePresetEntries（结构性闸门）', () => {
     const factoryIds = new Set(FACTORY_ZONE_PRESET_ENTRIES.map(entry => entry.id))
     expect(factoryIds.size, '出厂条目 id 去重后 = 10 套预设名').toBe(10)
 
+    const profileFactoryIds = new Set(FACTORY_PROFILE_ZONE_PRESET_ENTRIES.map(entry => entry.id))
     const assertNoFactoryIds = (stage: string) => {
       for (const entry of useCustomPresetStore.getState().zonePresetEntries) {
         expect(factoryIds.has(entry.id), `${stage}：出厂条目 ${entry.id} 混进了用户条目数组`).toBe(false)
+        expect(profileFactoryIds.has(entry.id), `${stage}：档案出厂条目 ${entry.id} 混进了用户条目数组`).toBe(false)
       }
     }
 
@@ -181,19 +238,24 @@ describe('B3 出厂条目不进 zonePresetEntries（结构性闸门）', () => {
 // ── B4 引用解析仍通 ───────────────────────────────────────────────
 
 describe('B4 刀1 的区域引用解析仍通（10 套 × 5 区域）', () => {
-  it('全部解析成功，取到的值 = 有效值视图在该区的切面，且就是数据里的那份 values', () => {
+  it('全部解析成功，切片并集 == 有效值视图，且切片与材料隔离（不是材料对象本体）', () => {
     for (const preset of GLOBAL_PRESETS) {
       const refs = requireZoneRefs(preset.zoneRefs, preset.name)
       const slices = expandGlobalPresetZoneRefs(preset.interfaceMode, refs)
       expect(slices.map(slice => slice.zone), `${preset.name} 区域覆盖`).toEqual([...PRESET_ZONES])
       for (const slice of slices) {
-        const at = `${preset.name}/${slice.zone}`
-        // 刀3：预设不再自带 theme ⇒ 参考值改由有效值视图取
-        expect(slice.theme, `${at} 等于视图的该区切面`).toEqual(pickZoneFields(effectivePresetTheme(preset), slice.zone))
-        // 且来源是落盘数据里的那份 values（同一个对象 ⇒ 生产路径没有回头重算）
-        const entry = ZONE_PRESET_POOL[preset.interfaceMode][slice.zone].find(candidate => candidate.id === slice.presetName)!
-        expect(entry, `${at} 池里必须能解析到 ${slice.presetName}`).toBeTruthy()
-        expect(slice.theme, `${at} 就是数据里的 values`).toBe(resolveZonePresetEntryTheme(entry))
+        expect(slice.theme, `${preset.name}/${slice.zone} 必须可应用`).toBeTruthy()
+        expect(Object.keys(slice.theme).length, `${preset.name}/${slice.zone} 不能是空切片`).toBeGreaterThan(0)
+      }
+      // ★ #607 刀3a：两个消费入口（有效值视图 / 装配切片）必须同源同值。
+      //   逐区切片对拍「view 的该区切面」这条形式已退场：视图按**字段归属**投影，
+      //   而材料把待迁边线放在 cc、字段归属仍写 global（`legacyAssemblySlices` 只搬不改值）
+      //   ⇒ 两边的区域投影天然差一个键。改成对拍「并集 == 视图」——它才是取值等价的正题。
+      const union = Object.assign({}, ...slices.map(slice => slice.theme))
+      expect(union, `${preset.name} 切片并集 == 有效值视图`).toEqual(effectivePresetTheme(preset))
+      // 隔离：交出去的切片是克隆（改切片不得回写材料）
+      for (const slice of slices) {
+        expect(LANDING_PRESET_ENTRIES.some(entry => entry.values === slice.theme), `${preset.name}/${slice.zone} 不得是材料本体`).toBe(false)
       }
     }
   })
@@ -219,13 +281,16 @@ describe('B5 出厂数据里的越区键必须报错（不是静默丢弃）', (
 // ── B6 无折叠 ─────────────────────────────────────────────────────
 
 describe('B6 无折叠（规范 §7 刀2「裁决 A」）', () => {
-  it('每格条目 id 恰好等于桶内预设名——同形也各留一条，池里不再有 sources', () => {
+  it('每套预设各留自己那条（消息流两轴各一条）——同形也不折叠，池里不再有 sources', () => {
     for (const mode of BUCKETS) {
       const names = bucketPresetNames(mode)
       for (const zone of PRESET_ZONES) {
         const cell = ZONE_PRESET_POOL[mode][zone]
-        // 折叠若复活：同形的另一条会被折进来 ⇒ 少了 id ⇒ 该套预设的 zoneRefs 解析不到
-        expect(cell.map(entry => entry.id), `${mode}/${zone} 每套预设各留一条`).toEqual(names)
+        // 折叠若复活：同形的另一条会被折进来 ⇒ 少了 id ⇒ 该套预设的引用解析不到
+        expect(cell.map(entry => entry.id), `${mode}/${zone} 每套预设各留一条`)
+          .toEqual(names.flatMap(name => zone === 'chat'
+            ? [`factory:${name}:chat:style`, `factory:${name}:chat:color`]
+            : [`factory:${name}:${zone}`]))
         for (const entry of cell) expect(entry, `${mode}/${zone}/${entry.id}`).not.toHaveProperty('sources')
       }
     }

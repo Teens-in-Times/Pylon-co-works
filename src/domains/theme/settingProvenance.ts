@@ -1,9 +1,9 @@
 /**
  * settingProvenance — 主题字段写入溯源账本（D-trace）。
  *
- * 动机：主题字段存在 9 类写入方（用户编辑/zone 预设/全局预设/自定义预设/
- * 呈现风格 profile/界面模式重置/字段级恢复默认/cc 专用动作/持久化迁移），
- * 此前全部汇入同一 setZoneField 漏斗且互不可区分——"这个字段为什么是这个值"
+ * 动机：主题字段存在 8 类写入方（用户编辑/zone 预设/全局预设/自定义预设/
+ * 界面模式切换/界面模式重置/字段级恢复默认/持久化迁移），此前全部汇入同一
+ * setZoneField 漏斗且互不可区分——"这个字段为什么是这个值"
  * 无法回答（自定义预设排查时的核心盲区）。
  *
  * 设计约束：
@@ -19,9 +19,10 @@ export type SettingWriteSource =
   | 'zone-preset'
   | 'global-preset'
   | 'custom-preset'
-  | 'presentation-profile'
   | 'theme-reset'
   | 'zone-reset'
+  /** ★ #607 刀3a：切换界面模式（= 应用本大类隐藏默认单，整份换装）。 */
+  | 'interface-mode'
 
 export interface SettingWriteRecord {
   readonly key: string
@@ -77,7 +78,7 @@ export const SETTING_WRITE_SOURCE_LABELS: Readonly<Record<SettingWriteSource, st
   'zone-preset': '局部预设',
   'global-preset': '全局预设',
   'custom-preset': '自定义预设',
-  'presentation-profile': '呈现风格',
+  'interface-mode': '界面模式',
   'theme-reset': '整体重置',
   'zone-reset': '分区重置',
 }

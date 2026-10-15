@@ -80,7 +80,7 @@ describe('刀7 · 两条默认预设不显示（#214）', () => {
     useInterfaceModeStore.setState({ interfaceMode: 'modern-gui' })
   })
 
-  it('不进列表、不进池：两桶各 5 条，池每格 5 条，GLOBAL_PRESETS 仍是 10 套', () => {
+  it('不进列表、不进池：两桶各 5 条，池每格 5 条（消息流两行各 5 条），GLOBAL_PRESETS 仍是 10 套', () => {
     for (const interfaceMode of ['modern-gui', 'terminal-like']) {
       const listed = presetsForInterfaceMode(interfaceMode)
       expect(listed, `${interfaceMode} 列表条数`).toHaveLength(5)
@@ -89,7 +89,8 @@ describe('刀7 · 两条默认预设不显示（#214）', () => {
     for (const [bucket, interfaceMode] of [['gui', 'modern-gui'], ['terminal', 'terminal-like']] as const) {
       for (const zone of PRESET_ZONES) {
         const entries = (ZONE_PRESET_POOL[bucket] as Record<string, { id: string }[]>)[zone]
-        expect(entries, `${bucket}/${zone} 池条数`).toHaveLength(5)
+        // ★ #607 刀3a：池的来源换成落点材料 ⇒ 消息流区是**两条单**（样式单 / 配色单各 5 条）。
+        expect(entries, `${bucket}/${zone} 池条数`).toHaveLength(zone === 'chat' ? 10 : 5)
         expect(entries.some(entry => DEFAULT_NAMES.includes(entry.id))).toBe(false)
       }
       expect(zonePresetsFor(interfaceMode, 'sidebar').some(entry => DEFAULT_NAMES.includes(entry.id))).toBe(false)
@@ -97,7 +98,11 @@ describe('刀7 · 两条默认预设不显示（#214）', () => {
     // 默认预设住在独立表里 ⇒ 出厂预设总数不变（docs「当前 10 套」不失真）
     expect(GLOBAL_PRESETS).toHaveLength(10)
     // 刀3：glass 不再自带 theme 对象 ⇒ 比的从"同一个对象"改为"同一份值"（有效值视图）
-    expect(DEFAULT_PRESETS.gui.theme).toEqual(effectivePresetTheme(GLASS))
+    // ★ #607 刀3a：有效值视图只装**预设管理字段**（`rightWidth` 归 right-rail、
+    //   `sidebarWidth` 归 workspace-layout ⇒ 两边都不进视图）⇒ 比对面同步过一遍
+    //   `filterPresetTheme`（GUI 默认字面量里那条 `rightWidth: 250` 是历史载荷，
+    //   任何预设路径都不写它，它的存量守卫在 modeDefaultReferences.test.ts 里）。
+    expect(filterPresetTheme(DEFAULT_PRESETS.gui.theme)).toEqual(effectivePresetTheme(GLASS))
   })
 
   it('预设菜单里没有「默认预设」这类按钮（全局行 5 条 chip）', () => {
@@ -290,16 +295,17 @@ describe('刀7 §六 · 呈现方案写入不置 custom（#214）', () => {
     expect(fallbackCustomChipRendered()).toBe(false)
   })
 
-  it('其余 source 语义一字不动：user-edit / field-reset 仍置 custom，只有呈现方案例外', () => {
+  it('其余 source 语义一字不动：user-edit / field-reset 仍置 custom（呈现方案例外已随 #607 刀3b 退役）', () => {
     useThemeStore.getState().setZoneField('chat', { chatFontSize: 18 })                       // 缺省 user-edit
     expect(useThemeStore.getState().custom.chat).toBe(true)
 
     useThemeStore.getState().setZoneField('sidebar', { sidebarBg: '#123456' }, 'field-reset')
     expect(useThemeStore.getState().custom.sidebar).toBe(true)
 
-    useThemeStore.getState().setZoneField('right', { rightBg: '#123456' }, 'presentation-profile')
-    expect(useThemeStore.getState().custom.right).toBe(false)
-    // 溯源账本照旧记录该来源（D-trace 语义不变，只改 custom 标记）
-    expect(lastSettingWriter('rightBg')?.source).toBe('presentation-profile')
+    // ★ #607 刀3b：唯一的例外来源（呈现档案）已退役 ⇒ 其余来源一律视为用户触碰。
+    useThemeStore.getState().setZoneField('right', { rightBg: '#123456' }, 'interface-mode')
+    expect(useThemeStore.getState().custom.right).toBe(true)
+    // 溯源账本照旧记录该来源（D-trace 语义不变）
+    expect(lastSettingWriter('rightBg')?.source).toBe('interface-mode')
   })
 })

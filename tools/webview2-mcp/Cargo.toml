@@ -1,4 +1,5 @@
 [package]
+license = "AGPL-3.0-only"
 name = "pylon-webview2-mcp"
 version = "0.1.0"
 edition = "2021"

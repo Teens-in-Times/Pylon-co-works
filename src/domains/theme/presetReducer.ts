@@ -189,24 +189,52 @@ export function setGlobalPresetReducer(name: string, theme: Partial<ThemeSetting
 // 等价性由 `src/__tests__/presetAssembly.test.ts` 对 10 套出厂预设 + 2 套默认预设逐套对拍。
 
 /**
- * 区域引用表：5 个区域各指向一条区域预设 id（现有状态下 = 来源预设名）。
+ * 区域引用表：5 个区域各指向一条**落点材料 id**（工厂 / 档案 / 默认 / 合并四族之一）。
+ * 消息流区是**双引用**（`{ style, color }`）——它有两张单（样式单 + 配色单）；其余四区各一张。
  * `PRESET_ZONES` 是唯一真值——不许另立第二份区域清单。
+ *
+ * ★ #607 刀3a：消息流从「一条单」改成「两条单」后，指向它的引用形状随之从 `string`
+ * 变成 `{ style, color }`；旧形状**不留兼容分支**（引用表是内部合同，不是持久化数据）。
  */
-export type ZoneRefMap = Readonly<Record<PresetZone, string>>
+export type ZoneRefMap = Readonly<Record<Exclude<PresetZone, 'chat'>, string> & {
+  chat: Readonly<Record<ChatPresetAxis, string>>
+}>
+
+/** 消息流两轴的唯一真值（`zones/zonePresetPool.ts` 只转发本类型，不另立第二份）。 */
+export const CHAT_PRESET_AXES = ['style', 'color'] as const
+export type ChatPresetAxis = (typeof CHAT_PRESET_AXES)[number]
 
 /**
- * 引用表完整性校验：**缺项 / 空值 / 非区域键一律抛错**（缺项不得静默回落）。
- * 覆盖 `PRESET_ZONES` 全部 5 项才算过。
+ * 引用表完整性校验：**缺项 / 空值 / 多余键一律抛错**（缺项不得静默回落）。
+ * 覆盖 `PRESET_ZONES` 全部 5 项、消息流两轴齐才算过。
  */
 export function requireZoneRefs(value: unknown, context: string): ZoneRefMap {
   if (value === undefined || value === null) throw new Error(`${context}：缺少区域引用表`)
-  if (typeof value !== 'object') throw new Error(`${context}：区域引用表不是键值表`)
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`${context}：区域引用表不是键值表`)
   const record = value as Record<string, unknown>
-  const missing = PRESET_ZONES.filter(zone => typeof record[zone] !== 'string' || !(record[zone] as string).trim())
+  const missing = PRESET_ZONES.filter(zone => {
+    const item = record[zone]
+    // 消息流区的合法形态是 `{ style, color }` 键值表；缺表 / 给了单字符串都算**缺项**。
+    if (zone === 'chat') return !item || typeof item !== 'object' || Array.isArray(item)
+    return typeof item !== 'string' || !(item as string).trim()
+  })
   if (missing.length > 0) throw new Error(`${context}：区域引用表缺项（${missing.join(' / ')}）`)
   const unknown = Object.keys(record).filter(key => !(PRESET_ZONES as readonly string[]).includes(key))
   if (unknown.length > 0) throw new Error(`${context}：区域引用表含非区域键（${unknown.join(' / ')}）`)
-  return Object.fromEntries(PRESET_ZONES.map(zone => [zone, String(record[zone])])) as ZoneRefMap
+
+  const chatRecord = record.chat as Record<string, unknown>
+  const chatMissing = CHAT_PRESET_AXES.filter(axis => typeof chatRecord[axis] !== 'string' || !(chatRecord[axis] as string).trim())
+  if (chatMissing.length > 0) throw new Error(`${context}：消息流双引用缺项（${chatMissing.join(' / ')}）`)
+  const chatUnknown = Object.keys(chatRecord).filter(axis => !(CHAT_PRESET_AXES as readonly string[]).includes(axis))
+  if (chatUnknown.length > 0) throw new Error(`${context}：消息流双引用含非轴键（${chatUnknown.join(' / ')}）`)
+
+  return {
+    global: String(record.global),
+    sidebar: String(record.sidebar),
+    chat: { style: String(chatRecord.style), color: String(chatRecord.color) },
+    cc: String(record.cc),
+    right: String(record.right),
+  }
 }
 
 /** 该区域合法的字段键集（判据用 `ZONE_FIELDS` 单一真值，不另写一份区域归属判断）。 */
@@ -231,7 +259,7 @@ export function assertZoneSliceOwnership(zone: string, slice: Partial<ThemeSetti
 /** 一条区域引用展开后的装配输入：哪个区域、记什么名字、取哪些值。 */
 export interface GlobalPresetZoneSlice {
   zone: PresetZone
-  /** 该区域引用的区域预设 id（现有状态下 = 来源预设名）。 */
+  /** 该区域引用的**落点材料 id**（#607 刀3a 起；此前是来源预设名）。 */
   presetName: string
   /** 该区域引用的取值切片。 */
   theme: Partial<ThemeSettings>
@@ -245,8 +273,6 @@ export interface AssembleGlobalPresetOptions {
    * 但名字必须是空串——默认预设不进列表，按它的名字记名会让预设行认不出它而亮出兜底 chip「未知预设」。
    */
   appliedName?: string
-  /** 呈现方案覆盖层：**装配之后**叠加，优先级不变（token 覆盖预设值）。 */
-  profileTokens?: Partial<ThemeSettings>
 }
 
 /**
@@ -294,9 +320,8 @@ export function assembleGlobalPresetReducer(
   patch.appliedPreset = Object.fromEntries(PRESET_ZONES.map(zone => [zone, appliedName ?? byZone.get(zone)!.presetName]))
   patch.custom = Object.fromEntries(PRESET_ZONES.map(zone => [zone, false]))
 
-  // 呈现方案覆盖层最后叠加（模式自身的基准，不标 custom —— 见 sourceMarksZoneCustom）
-  if (options.profileTokens) patch = { ...patch, ...filterPresetTheme(options.profileTokens) }
-
+  // ★ #607 刀3a：原先这里还有一个「呈现方案 token 覆盖层」收口（`profileTokens`）——
+  //   档案货物已并进 `preset:*` 合并材料，取值不再有第二段叠加 ⇒ 该选项连同收口一并退场。
   return patch
 }
 

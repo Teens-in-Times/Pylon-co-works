@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { createBuiltinCommandDefinitions } from '../builtinCommandExecutors.ts'
 import { createBuiltinFileCommandDefinitions } from '../../file/builtinFileCommands.ts'
 import { createBuiltinWorkspaceCommandDefinitions } from '../../sheet/builtinWorkspaceCommands.ts'
-import { createBuiltinPresentationCommandDefinitions } from '../../renderer/builtinPresentationCommands.ts'
 import { createBuiltinShellCommandDefinitions } from '../../shell/builtinShellCommands.ts'
 import { createSkinCommandDefinitions } from '../../../../plugin-runtime/skin/skinCommandApi.ts'
 import { getSkinRuntime } from '../../../../infrastructure/skin/skinRuntimeServices.ts'
@@ -12,7 +11,6 @@ const EXPECTED = [
   'file.entries.list', 'file.text.read', 'file.text.write', 'file.search', 'git.status', 'git.history', 'git.diff',
   'layout.inspect', 'layout.sidebar.set', 'layout.sidebar-width.set', 'layout.right-panel.set', 'layout.agent-sidebar.block.set',
   'workspace.sheet.focus', 'workspace.sheet.pin.toggle', 'workspace.sheet.close-others', 'workspace.sheet.close-right', 'workspace.sheet.reopen',
-  'presentation.list', 'presentation.inspect', 'presentation.apply',
   'interface.tactical-blue.activate',
   'plugin-settings.pages', 'plugin-settings.get', 'plugin-settings.set', 'plugin-settings.remove',
   'theme.inspect', 'theme.patch', 'theme.reset-zone', 'theme.reset', 'config.export', 'config.import.preflight',
@@ -26,7 +24,6 @@ describe('built-in CLI command coverage', () => {
       ...createBuiltinCommandDefinitions(),
       ...createBuiltinFileCommandDefinitions(),
       ...createBuiltinWorkspaceCommandDefinitions(),
-      ...createBuiltinPresentationCommandDefinitions(),
       ...createBuiltinShellCommandDefinitions(),
       ...createSkinCommandDefinitions(getSkinRuntime()),
     ]

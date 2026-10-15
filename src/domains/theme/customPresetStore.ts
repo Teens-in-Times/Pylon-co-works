@@ -29,6 +29,8 @@ import {
   normalizeZonePresetEntries,
   pickZoneFields,
   removeZonePresetEntryReducer,
+  splitChatPresetValues,
+  type ChatPresetAxis,
   type ZonePresetEntry,
 } from './zones/index.ts'
 import { removeCustomPresetReducer } from './presetReducer.ts'
@@ -47,8 +49,11 @@ export interface CustomPresetState {
   saveCustomPreset: (name: string, id?: string) => string
   applyCustomPreset: (id: string) => Promise<PresetApplyResult>
   removeCustomPreset: (id: string) => void
-  /** 「存当前为自定义区域预设」——快照读 themeStore 当前值，条目落本 store。 */
-  saveZonePresetEntry: (mode: ZonePresetEntry['mode'], zone: ZonePresetEntry['zone'], label: string) => string | null
+  /**
+   * 「存当前为自定义区域预设」——快照读 themeStore 当前值，条目落本 store。
+   * ★ #607 刀3a：消息流区**按轴**存（`axis` 由该行给出，快照取该轴切面）；其余区不变。
+   */
+  saveZonePresetEntry: (mode: ZonePresetEntry['mode'], zone: ZonePresetEntry['zone'], label: string, axis?: ChatPresetAxis) => string | null
   /** 读入容错 + 自动清理值快照里的已删字段键（无变化则不动状态）。 */
   pruneZonePresetEntries: () => void
   removeZonePresetEntry: (id: string) => void
@@ -120,19 +125,22 @@ const customPresetKernel = createSolidStoreKernel<CustomPresetState>({
       customPresetKernel.setState({ customPresets: patch.customPresets })
     },
 
-    saveZonePresetEntry: (mode, zone, label) => {
+    saveZonePresetEntry: (mode, zone, label, axis) => {
       const cleanLabel = label.trim()
       if (!cleanLabel) return null
       const theme = useThemeStore.getState()
       const existing = normalizeZonePresetEntries(customPresetKernel.getState().zonePresetEntries)
       const id = createZonePresetEntryId(mode, zone, Date.now(), existing.map(entry => entry.id))
-      const entry: ZonePresetEntry = {
-        id,
-        mode,
-        zone,
-        label: cleanLabel.slice(0, 40),
-        values: structuredClone(pickZoneFields(theme, zone)),
-      }
+      // ★ #607 刀3a：消息流区按轴快照（该行只管自己那一轴）；UI 恒传 axis，
+      //   省略时按配色轴解释（与 `chatPresetsForAxis` 对无轴条目的口径一致）。
+      const axisOf = zone === 'chat' ? (axis ?? 'color') : undefined
+      const values = zone === 'chat'
+        ? splitChatPresetValues(pickZoneFields(theme, 'chat'))[axisOf!]
+        : pickZoneFields(theme, zone)
+      const cleanName = cleanLabel.slice(0, 40)
+      const entry: ZonePresetEntry = zone === 'chat'
+        ? { id, mode, zone: 'chat', label: cleanName, values: structuredClone(values), ...(axisOf ? { axis: axisOf } : {}) }
+        : { id, mode, zone, label: cleanName, values: structuredClone(values) }
       customPresetKernel.setState({ zonePresetEntries: [...existing, entry] })
       return id
     },

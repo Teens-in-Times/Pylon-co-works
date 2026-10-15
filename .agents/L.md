@@ -5,5 +5,6 @@
 
 - [Codex] #593 TS6 迁移：隔离工作树 `C:/Users/AlchemistCxC/.codex/worktrees/typescript6-migration/prism-desktop`，分支 `codex/typescript6-migration`；范围依赖/tsconfig、必要类型修正、构建脚本、说明书与独立记录；避让共享树 #515 文档。
 - [Codex] #600 code-stats 准确性修复：scripts/code-stats*.mts、code-stats SKILL.md 与独立记录；隔离树 code-stats-accuracy，避让共享树 #515 文档。
+- [607-翻译] #607 界面模式落点收敛线（分支 `feat/mode-landing.1`，四刀）：全线路径 `src/domains/theme/zones/**`、`presets/**`、`components/settings/**`、`application/transactions/**`、`domains/interface/interfaceModeStore.ts`、`domains/theme/{presetActions,presetBundle,firstPartyPresetProviders,settingProvenance}.ts`、`plugins/core/renderer/builtinPresentationCommands.ts`（刀3b 删；档案本体 `builtinPresentationProfiles.ts` 与注册表**保留**）。**当前：刀1 `5ee2cc34`、刀2 `1d589f34`、刀3a `6630a20f`＋接续 `58c9a7b5`、刀3b及两续单 `8cad1b46`均已存档；独立验收五步全绿（690文件/5409用例passed、1 skipped），真机候选与15键落值通过。本批先提草稿PR，#607不关闭；刀4首启/快照/说明书同步待后续。** 本线不改 `src-tauri/`。
 - [DeepSeek] #602 Rust CI 门禁漏报（退出码被后续 build 覆盖）——一并修被其掩盖的 #601/#603/#617。文件域：`.github/workflows/ci.yml`、`src-tauri/pylon-foundations/src/{workspace,child_command}.rs`、`src-tauri/src/{runtime,test_utils}.rs`；本 spec 与对应 record。避让 TS 侧 #593/#600。
 - [DeepSeek] #613 terminalDelivery 全量时序 flake：文件域 `src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts`（仅补承重睡）；本 spec 与对应 record。
