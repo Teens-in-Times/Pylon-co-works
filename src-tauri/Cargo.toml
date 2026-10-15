@@ -1,7 +1,7 @@
 [package]
 license = "AGPL-3.0-only"
 name = "pylon"
-version = "0.4.2-SYN"
+version = "0.4.3-AGP"
 edition = "2021"
 description = "Prism Desktop - AI Agent GUI"
 default-run = "pylon"

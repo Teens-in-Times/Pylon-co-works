@@ -9,6 +9,9 @@
       resources/...            # 来自 src-tauri/target/release/resources
       agents.yaml              # 零 Agent 配置模板（仓库侧 agents.template.yaml，包内改名）
       README.txt
+      LICENSE                  # 仓库许可原文（AGPL-3.0-only）
+      NOTICE                   # 版权与第三方声明
+      LICENSES/...             # 随附第三方许可原文
       portable.flag
       data/                    # 空目录，即唯一数据根（#482：便携唯一存储，flag 仅身份标记）
       tools/install-webview2.bat             # 缺 WebView2 Runtime 时的联网兜底安装
@@ -686,6 +689,11 @@ def collect_source_files(version: str, with_runtime: bool = False) -> list[tuple
     if not readme_src.is_file():
         raise PackError(f"缺少发行包 README: {readme_src}")
     files.append((readme_src, "README.md"))
+    for rel in ("LICENSE", "NOTICE", "LICENSES/Apache-2.0.txt"):
+        license_src = REPO_DIR / rel
+        if not license_src.is_file():
+            raise PackError(f"缺少发行包许可或来源声明: {license_src}")
+        files.append((license_src, rel))
     manual_dir = REPO_DIR / "docs" / "说明书"
     if not manual_dir.is_dir():
         raise PackError(f"缺少发行包说明书目录: {manual_dir}")
