@@ -1,4 +1,5 @@
 [package]
+license = "AGPL-3.0-only"
 name = "pylon-fake-agent"
 version = "0.3.0-AUE"
 edition = "2021"

@@ -200,4 +200,7 @@ shared/                              前后端共享协议和类型
 
 ## License
 
-见 [LICENSE](LICENSE)。
+Pylon is licensed under the GNU Affero General Public License version 3 only
+(`AGPL-3.0-only`). See [LICENSE](LICENSE). Copyright (c) 2026 AlchemistCxC
+and Pylon contributors. Third-party notices and source attributions are
+retained in [NOTICE](NOTICE), [LICENSES](LICENSES/) and the vendored source.
