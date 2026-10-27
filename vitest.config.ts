@@ -57,10 +57,11 @@ export default defineConfig({
         setupFiles: ['vitest.setup.ts'],
         // Node suites include source-contract tests that intentionally replace
         // module mocks; keep their module registry per file.
-        // Node pure logic suites have no DOM lifecycle and are safe to share;
-        // DOM suites retain file isolation because async UI effects can outlive
-        // a test file even after cleanup.
-        isolate: name !== 'node-shared',
+        // #650：DOM 档同样复用 worker——solid-dom 是纯组件面、180 文件重建 jsdom 的
+        // 税约 70s。跨文件泄漏（Tauri 运行时全局、原型 descriptor、孤儿定时器）
+        // 由 vitest.setup.ts 的收尾层逐文件复位兜底，不再靠销毁环境隐式解决。
+        // jsdom-mock / jsdom-shared 仍保留隔离：它们的用例直接替换模块 mock。
+        isolate: name === 'node' || name === 'jsdom-mock' || name === 'jsdom-shared',
         pool: 'forks',
         testTimeout: 30_000,
       },

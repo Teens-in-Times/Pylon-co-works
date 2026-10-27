@@ -113,14 +113,112 @@ function currentTestFile(): string {
   return raw.replaceAll('\\', '/')
 }
 
-afterAll(() => {
+const ledgerNatives = {
+  setTimeout: globalThis.setTimeout.bind(globalThis),
+  clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  setInterval: globalThis.setInterval.bind(globalThis),
+  clearInterval: globalThis.clearInterval.bind(globalThis),
+  cancelAnimationFrame: typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+    ? window.cancelAnimationFrame.bind(window)
+    : undefined,
+}
+
+interface TimerLedger {
+  timeouts: Set<unknown>
+  intervals: Set<unknown>
+  frames: Set<number>
+}
+
+const TIMER_LEDGER_KEY = Symbol.for('pylon.vitest.timerLedger')
+
+/**
+ * 孤儿定时器账本（去隔离专用）。
+ *
+ * 隔离模式下文件结束即销毁环境，未决的 setTimeout/rAF 随环境消失；`isolate: false`
+ * 复用同一 worker 后，上一文件遗留的 rAF 循环与延时回调会继续在下一文件里跑——
+ * 既烧 CPU（把 waitFor 的预算挤爆），又把自己的 console.error 与未处理 rejection
+ * 记到「当次在跑的文件」头上（#542 记录过这种背锅漂移）。账本按文件收集、
+ * afterAll 统一撤销，等价于把隔离环境的这层保证显式补回来。
+ *
+ * 只包装真实定时器；`vi.useFakeTimers()` 生效期间全局已被替换，调用不进账本，
+ * 由 afterAll 的 `vi.useRealTimers()` 收尾。
+ */
+function installTimerLedger(): TimerLedger {
+  const host = globalThis as unknown as Record<symbol, TimerLedger | undefined>
+  const existing = host[TIMER_LEDGER_KEY]
+  if (existing) {
+    existing.timeouts.clear()
+    existing.intervals.clear()
+    existing.frames.clear()
+    return existing
+  }
+  const ledger: TimerLedger = { timeouts: new Set(), intervals: new Set(), frames: new Set() }
+  host[TIMER_LEDGER_KEY] = ledger
+  const nativeSetTimeout = ledgerNatives.setTimeout
+  const nativeSetInterval = ledgerNatives.setInterval
+  globalThis.setTimeout = function trackedSetTimeout(handler: TimerHandler, timeout?: number, ...args: unknown[]) {
+    const id = nativeSetTimeout(() => {
+      ledger.timeouts.delete(id)
+      if (typeof handler === 'function') (handler as (...a: unknown[]) => void)(...args)
+    }, timeout, ...args as never)
+    ledger.timeouts.add(id)
+    return id
+  } as typeof setTimeout
+  globalThis.setInterval = function trackedSetInterval(handler: TimerHandler, timeout?: number, ...args: unknown[]) {
+    const id = nativeSetInterval(handler as never, timeout, ...args as never)
+    ledger.intervals.add(id)
+    return id
+  } as typeof setInterval
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    const nativeRaf = window.requestAnimationFrame.bind(window)
+    window.requestAnimationFrame = callback => {
+      const id = nativeRaf(time => {
+        ledger.frames.delete(id)
+        callback(time)
+      })
+      ledger.frames.add(id)
+      return id
+    }
+  }
+  return ledger
+}
+
+function cancelTrackedTimers(): void {
+  const ledger = (globalThis as unknown as Record<symbol, TimerLedger | undefined>)[TIMER_LEDGER_KEY]
+  if (!ledger) return
+  for (const id of ledger.timeouts) ledgerNatives.clearTimeout(id as never)
+  for (const id of ledger.intervals) ledgerNatives.clearInterval(id as never)
+  if (ledgerNatives.cancelAnimationFrame) for (const id of ledger.frames) ledgerNatives.cancelAnimationFrame(id)
+  ledger.timeouts.clear()
+  ledger.intervals.clear()
+  ledger.frames.clear()
+}
+
+installTimerLedger()
+
+afterAll(async () => {
+  // 先销毁 Solid 根：组件自带的 rAF/延时链随 owner 释放，后面的账本只需要兜底
+  // 那些 owner 之外（服务层、模块级）的调度。
+  cleanup()
   console.error = originalConsoleError
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
   vi.useRealTimers()
+  cancelTrackedTimers()
+  // 让已排入的真实宏任务与 promise 链在环境复位前跑完，避免它们的报错落进下一个
+  // 文件的 console.error / unhandledRejection 收集器。
+  //
+  // #650：清图前必须等**所有**在飞 import 落地（dynamicImportSettled 递归等待，
+  // resolve 后再查一轮），单个 0ms 宏任务不够。隔离模式下 vitest 在文件边界先
+  // `mocker.reset() + resetModules()`（runner 里的 `if (config.isolate)`），去隔离后
+  // 这层保障没了；还在飞的动态 import 会在我方复位之后才把旧图写回 evaluatedModules，
+  // 下一个文件里被 mock 的外部包（@tauri-apps/api/core）就顺着已经求值的中间模块
+  // 拿到真实实现——mock 注册了却不生效，产品走进真实错误路径。
+  await vi.dynamicImportSettled()
   vi.resetModules()
   process.removeListener('unhandledRejection', onUnhandledRejection)
+  resetSharedBrowserGlobals()
   if (consoleErrors.length > 0) {
     const file = currentTestFile()
     const whitelisted = EXPECTED_CONSOLE_ERROR_FILES.some(entry => file.endsWith(entry))
@@ -210,3 +308,178 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 if (typeof window !== 'undefined' && typeof window.Element.prototype.scrollIntoView !== 'function') {
   window.Element.prototype.scrollIntoView = function scrollIntoView() {}
 }
+
+/**
+ * 去隔离（isolate: false）下的环境收尾。
+ *
+ * 隔离模式靠销毁 jsdom 环境自动复位这些全局；去隔离后同一 worker 复用 window /
+ * document，产品与用例直接赋值的全局会留给后继文件。已证实的污染源：
+ * `src/demo/mockTauri.ts` 安装 `__TAURI_INTERNALS__` 后从不撤销，而
+ * `infrastructure/tauri/env.ts` 的 `IS_TAURI` 在模块求值时按该字段判定——后继文件
+ * 会把「有 window 无 Tauri」的 jsdom 误判成 Tauri 宿主，走进真实 invoke 路径
+ * （#228 白名单外 console.error 的整片来源）。
+ *
+ * `vi.unstubAllGlobals` 不管这类直接赋值，故在此显式删除。
+ */
+const LEAKED_BROWSER_GLOBALS = [
+  '__TAURI_INTERNALS__',
+  '__TAURI__',
+  '__TAURI_EVENT_PLUGIN_INTERNALS__',
+  '__PYLON_BROWSER_MOCK__',
+] as const
+
+/**
+ * DOM 基线快照（去隔离专用）。
+ *
+ * 环境复用不只带走「值」，还带走「descriptor」：用例里
+ * `Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value })`
+ * 会把该成员定义成不可写（defineProperty 缺省 writable: false），后继文件再用
+ * `HTMLElement.prototype.scrollIntoView = vi.fn()` 赋值时在严格模式下直接抛
+ * `Cannot assign to read only property`。`vi.restoreAllMocks` / `vi.unstubAllGlobals`
+ * 都不还原这种直接 defineProperty，所以这里在 worker 首次装载 setup 时给
+ * 「原型 + window/document 上的浏览器垫片」拍基线，afterAll 逐文件回放：
+ * 基线里没有的成员删掉，descriptor 变过的还原。
+ *
+ * 基线只需拍一次（同一 worker 内原型对象与 window 实例不变），用 globalThis 上的
+ * well-known symbol 存，避免 setup 模块逐文件重估时重复采样（首个文件采样时垫片
+ * 已装好，见文件末尾的 installSharedDomBaseline()）。
+ */
+interface SharedDomBaseline {
+  readonly prototypes: Map<object, Map<string, PropertyDescriptor>>
+  readonly windowMembers: Map<string, PropertyDescriptor>
+  readonly documentMembers: Map<string, PropertyDescriptor>
+}
+
+// 只覆盖实测存在的直接改写面（Element/HTMLElement 的 scrollIntoView、
+// getBoundingClientRect、setPointerCapture；Range 几何垫片；document 的 fonts /
+// visibilityState）。新增用例若改写别的原型成员，把该原型加进这里即可。
+const BASELINE_PROTOTYPES: readonly (() => object)[] = [
+  () => Node.prototype,
+  () => Element.prototype,
+  () => HTMLElement.prototype,
+  () => HTMLMediaElement.prototype,
+  () => HTMLImageElement.prototype,
+  () => Range.prototype,
+  () => Document.prototype,
+]
+
+// window 上的浏览器垫片同样可能被用例直接赋值或 defineProperty 顶掉。
+const BASELINE_WINDOW_MEMBERS = [
+  'matchMedia',
+  'ResizeObserver',
+  'IntersectionObserver',
+  'MutationObserver',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  'requestIdleCallback',
+  'cancelIdleCallback',
+  'scrollTo',
+  'scrollBy',
+  'scroll',
+  'alert',
+  'confirm',
+  'prompt',
+  'getComputedStyle',
+  'Image',
+  'CSS',
+  'visualViewport',
+  'innerWidth',
+  'innerHeight',
+  'devicePixelRatio',
+] as const
+
+// document 实例上的自有权（Object.defineProperty(document, ...) 落在实例上）。
+const BASELINE_DOCUMENT_MEMBERS = ['fonts', 'visibilityState', 'hidden', 'title'] as const
+
+const DOM_BASELINE_KEY = Symbol.for('pylon.vitest.domBaseline')
+
+function snapshotDescriptors(target: object, keys?: readonly string[]): Map<string, PropertyDescriptor> {
+  const snapshot = new Map<string, PropertyDescriptor>()
+  for (const key of keys ?? Object.getOwnPropertyNames(target)) {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key)
+    if (descriptor) snapshot.set(key, descriptor)
+  }
+  return snapshot
+}
+
+function sameDescriptor(a: PropertyDescriptor, b: PropertyDescriptor): boolean {
+  return a.configurable === b.configurable
+    && a.enumerable === b.enumerable
+    && a.writable === b.writable
+    && a.value === b.value
+    && a.get === b.get
+    && a.set === b.set
+}
+
+function restoreDescriptors(target: object, baseline: Map<string, PropertyDescriptor>): void {
+  // 先删掉用例新插的成员（只删可配置的，别硬碰不可配置的既有语义）
+  for (const key of Object.getOwnPropertyNames(target)) {
+    if (baseline.has(key)) continue
+    if (Object.getOwnPropertyDescriptor(target, key)?.configurable) Reflect.deleteProperty(target, key)
+  }
+  for (const [key, expected] of baseline) {
+    const current = Object.getOwnPropertyDescriptor(target, key)
+    if (current && sameDescriptor(current, expected)) continue
+    if (current && !current.configurable) {
+      // 不可配置就只能改值（且原本可写），其余差异只能记录下来留给人工处理
+      if (current.writable && 'value' in expected) Object.defineProperty(target, key, { ...current, value: expected.value })
+      continue
+    }
+    Object.defineProperty(target, key, expected)
+  }
+}
+
+function installSharedDomBaseline(): SharedDomBaseline | undefined {
+  if (typeof window === 'undefined') return undefined
+  const host = globalThis as unknown as Record<symbol, SharedDomBaseline | undefined>
+  const existing = host[DOM_BASELINE_KEY]
+  if (existing) return existing
+  const prototypes = new Map<object, Map<string, PropertyDescriptor>>()
+  for (const resolve of BASELINE_PROTOTYPES) {
+    const proto = resolve()
+    if (proto && typeof proto === 'object') prototypes.set(proto, snapshotDescriptors(proto))
+  }
+  const baseline: SharedDomBaseline = {
+    prototypes,
+    windowMembers: snapshotDescriptors(window, BASELINE_WINDOW_MEMBERS),
+    documentMembers: snapshotDescriptors(document, BASELINE_DOCUMENT_MEMBERS),
+  }
+  host[DOM_BASELINE_KEY] = baseline
+  return baseline
+}
+
+function restoreSharedDomBaseline(): void {
+  if (typeof window === 'undefined') return
+  const baseline = (globalThis as unknown as Record<symbol, SharedDomBaseline | undefined>)[DOM_BASELINE_KEY]
+  if (!baseline) return
+  for (const [proto, descriptors] of baseline.prototypes) restoreDescriptors(proto, descriptors)
+  // window / document 按「基线里有就还原、基线里没有就删除」处理
+  for (const key of BASELINE_WINDOW_MEMBERS) restoreSingleMember(window, key, baseline.windowMembers.get(key))
+  for (const key of BASELINE_DOCUMENT_MEMBERS) restoreSingleMember(document, key, baseline.documentMembers.get(key))
+}
+
+function restoreSingleMember(target: object, key: string, expected: PropertyDescriptor | undefined): void {
+  const current = Object.getOwnPropertyDescriptor(target, key)
+  if (expected === undefined) {
+    if (current?.configurable) Reflect.deleteProperty(target, key)
+    return
+  }
+  if (current && sameDescriptor(current, expected)) return
+  if (current && !current.configurable) {
+    if (current.writable && 'value' in expected) Object.defineProperty(target, key, { ...current, value: expected.value })
+    return
+  }
+  Object.defineProperty(target, key, expected)
+}
+
+function resetSharedBrowserGlobals(): void {
+  if (typeof window === 'undefined') return
+  const host = window as unknown as Record<string, unknown>
+  for (const key of LEAKED_BROWSER_GLOBALS) delete host[key]
+  restoreSharedDomBaseline()
+  memory.clear()
+  document.body.replaceChildren()
+}
+
+// 采样点必须在上面所有垫片装好之后（基线本身就是「垫片装好的干净状态」）。
+installSharedDomBaseline()
