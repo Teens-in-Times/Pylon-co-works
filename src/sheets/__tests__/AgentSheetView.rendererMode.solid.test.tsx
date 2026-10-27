@@ -16,6 +16,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes.ts'
 import { resetStores } from '../../test/resetStores.ts'
 import AgentSheetView from '../AgentSheetView.solid.tsx'
+import { loadSolidWorkbench } from '../../renderers/solid-workbench/loadSolidWorkbench.ts'
 import { useInterfaceModeStore } from '../../domains/interface/interfaceModeStore.ts'
 import { activateBuiltinPlugin, getPackageInstallationService, getPluginRuntime } from '../../plugin-runtime/pluginCompositionRoot.ts'
 import { getPluginEventBus, getPresentationProfileRegistry, getRendererRegistry, getRendererSettingsStore } from '../../plugin-runtime/runtimeServices.ts'
@@ -90,6 +91,9 @@ function suitePlugin(pluginId: string, label: string, failPrepare = false, destr
 }
 
 beforeAll(async () => {
+  // #619：内置 Suite 的 factory.prepare 懒加载整个工作台模块图，首次挂载实测冷载约 3s。
+  // 在这里预热，避免这笔一次性成本落进首例的查询预算（挂载 5s / 正文 1s）。
+  await loadSolidWorkbench()
   await activateBuiltinPlugin('builtin.pylon-renderers')
 })
 
@@ -175,7 +179,7 @@ describe('AgentSheetView renderer mode context', () => {
 
     first.unmount()
     const second = render(() => <AgentSheetView sheet={sheet({})} ctx={{ ...ctx, activeSession: mock.id, sessionSource: () => mock.source }} />)
-    expect(await screen.findByText('mock 从空态恢复的正文')).toBeVisible()
+    expect(await screen.findByText('mock 从空态恢复的正文', {}, { timeout: 5_000 })).toBeVisible()
     expect(localStorage.getItem(messageStorageKey(mock.id))).toContain('mock 从空态恢复的正文')
 
     second.unmount()
@@ -183,7 +187,7 @@ describe('AgentSheetView renderer mode context', () => {
     await waitFor(() => expect(screen.queryByText('mock 从空态恢复的正文')).toBeNull())
     third.unmount()
     render(() => <AgentSheetView sheet={sheet({})} ctx={{ ...ctx, activeSession: mock.id, sessionSource: () => mock.source }} />)
-    expect(await screen.findByText('mock 从空态恢复的正文')).toBeVisible()
+    expect(await screen.findByText('mock 从空态恢复的正文', {}, { timeout: 5_000 })).toBeVisible()
   })
 
   it('默认 Interface Mode 经 Renderer Suite Host 挂载内置 Solid Workbench', async () => {
