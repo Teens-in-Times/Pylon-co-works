@@ -44,6 +44,8 @@
 | `resources/sdk/testing.js`、`types/**`、`package.json` | 必须 | 插件开发分发包全量其余部分（2026-09-01 起，打包器从 `dist-plugin-sdk/normal` 收集；缺 `pylon-plugin-sdk.js`/`testing.js`/schema 时打包失败） |
 | `resources/docs-site/**` | 必须 | 离线文档站（#371）：`PYLON_DOCS_OFFLINE=1` 构建的 VitePress 静态产物（base 回根、裁 Web 字体，约 2.4 MB），由 `bun run docs:build:offline` 暂存 `src-tauri/resources/docs-site/`、打包器取暂存源入包（#471：跳过 target 的 Tauri 增量拷贝，防历史哈希代际残留）；缺 `index.html` 时打包失败 |
 | `README.md` | 必须 | 项目说明（仓库根 README，2026-09-01 起随包） |
+| `LICENSE` | 必须 | 仓库根 AGPL-3.0-only 许可原文，随发行包原样收录 |
+| `NOTICE`、`LICENSES/Apache-2.0.txt` | 必须 | 版权声明与随附第三方许可原文，保持上游声明；NOTICE 所引用的逐文件来源记录随源码仓库提供 |
 | `docs/说明书/**` | 必须 | 全量用户说明书（2026-09-01 起随包） |
 | `agents.yaml` | 必须 | 零 Agent 配置模板（#372 起随包：仓库侧 `resources/release/agents.template.yaml` 打包时改名；包内可直接编辑预置 Agent，#326 的裸启动零 Agent 口径不变——模板不含占位 Agent） |
 | `README.txt` | 必须 | 解压后首次运行和 Hermes 说明 |
@@ -133,7 +135,7 @@ WebView2 时联网下载安装器，发布说明无需再区分常规/降级包�
 
 ### 构建前
 
-- [ ] Tauri 官方插件的 JS/Rust 依赖保持相同 major/minor；`plugin-fs` 两端约束为 2.5 系列（#598），升级时同步两套 manifest 与锁文件。CLI 的版本守卫通过后才进入 Rust 发行构建。
+- [ ] Tauri 主 API 与官方插件的 JS/Rust 依赖保持相同 major/minor；当前 API 为 2.11 系列、`plugin-fs` 为 2.5 系列（#598、#637），前端约束限定到对应 minor。升级时同步两套 manifest 与锁文件，不能只升级 JS 一端。CLI 的版本守卫通过后才进入 Rust 发行构建。
 - [ ] 三处版本号一致，目标架构为 win64。
 - [ ] 仅 `--with-runtime` 包：`python scripts/prepare_hermes_runtime.py` 成功，且运行时校验通过。
 - [ ] 仅 `--with-runtime` 包：`resources/runtime/git/bin/bash.exe`、`usr/bin/msys-2.0.dll` 和关键命令均存在，
