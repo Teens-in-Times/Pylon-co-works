@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "community.agent-operations",
+  "name": "Agent Operations · 团子调度局",
+  "version": "0.1.0",
+  "api": "1.0",
+  "kind": "feature",
+  "web": { "entry": "./dist/index.js" },
+  "activation": { "events": ["kernel.ready"] },
+  "hotSwap": { "mode": "restart-required", "drainTimeoutMs": 5000 }
+}
