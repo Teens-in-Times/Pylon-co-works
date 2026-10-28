@@ -121,7 +121,7 @@ mimalloc = { version = "0.1", default-features = false }
 # I06-A-DATA-01：SQLite 消息仓库（bundled 离线编译，无系统 sqlite 依赖）
 # cache：启用 prepare_cached 语句缓存——canonical_events 热路径（append/ingest）
 # 免去每次 execute 重新编译 SQL。
-rusqlite = { version = "0.40", default-features = false, features = ["bundled", "cache"] }
+rusqlite = { version = "0.41", default-features = false, features = ["bundled", "cache"] }
 # I12-W3：Gateway 凭据 AES-256-GCM envelope 与主密钥归零（用户 2026-08-11 授权新增）
 aes-gcm = "0.10"
 zeroize = { version = "1", features = ["derive"] }
