@@ -127,12 +127,15 @@ pub fn spawn_sdk_client(
                                         pending.insert(id.clone(), responder);
                                     }
                                 }
+                                // 所有权移交：SDK 已把帧解析成拥有所有权的消息，
+                                // `params().clone()` 会按载荷大小再拷一遍（#666）。
+                                let (method, params) = request.into_parts();
                                 let mut classified = ClassifiedMessage::live(RawMessage {
                                     id,
-                                    kind: super::AcpKind::from_method(Some(request.method())),
-                                    method: Some(request.method().to_string()),
+                                    kind: super::AcpKind::from_method(Some(&method)),
+                                    method: Some(method),
                                     result: None,
-                                    params: Some(request.params().clone()),
+                                    params: Some(params),
                                     error: None,
                                 });
                                 classified.wire_ordinal = wire.take_inbound_ordinal();
@@ -144,12 +147,13 @@ pub fn spawn_sdk_client(
                                 );
                             }
                             Dispatch::Notification(notification) => {
+                                let (method, params) = notification.into_parts();
                                 let mut classified = ClassifiedMessage::live(RawMessage {
                                     id: None,
-                                    kind: super::AcpKind::from_method(Some(notification.method())),
-                                    method: Some(notification.method().to_string()),
+                                    kind: super::AcpKind::from_method(Some(&method)),
+                                    method: Some(method),
                                     result: None,
-                                    params: Some(notification.params().clone()),
+                                    params: Some(params),
                                     error: None,
                                 });
                                 classified.wire_ordinal = wire.take_inbound_ordinal();
@@ -194,8 +198,9 @@ pub fn spawn_sdk_client(
                                 match outbound {
                                     SdkOutbound::Request { method, params, reply } => {
                                         let result = async {
-                                            let message = UntypedMessage::new(&method, params)
-                                                .map_err(map_sdk_error)?;
+                                            // 字段公开：直接移交已拥有的 params，
+                                            // 免 `new()` 内部 `to_value` 再深拷（#666）。
+                                            let message = UntypedMessage { method, params };
                                             task_cx.send_request(message).block_task().await
                                                 .map_err(map_sdk_error)
                                         }
@@ -204,8 +209,9 @@ pub fn spawn_sdk_client(
                                     }
                                     SdkOutbound::Notification { method, params, reply } => {
                                         let result = async {
-                                            let message = UntypedMessage::new(&method, params)
-                                                .map_err(map_sdk_error)?;
+                                            // 字段公开：直接移交已拥有的 params，
+                                            // 免 `new()` 内部 `to_value` 再深拷（#666）。
+                                            let message = UntypedMessage { method, params };
                                             task_cx.send_notification(message).map_err(map_sdk_error)
                                         }
                                         .await;
@@ -213,8 +219,9 @@ pub fn spawn_sdk_client(
                                     }
                                     SdkOutbound::RequestKeepRx { method, params, ready } => {
                                         let result = async {
-                                            let message = UntypedMessage::new(&method, params)
-                                                .map_err(map_sdk_error)?;
+                                            // 字段公开：直接移交已拥有的 params，
+                                            // 免 `new()` 内部 `to_value` 再深拷（#666）。
+                                            let message = UntypedMessage { method, params };
                                             let (resp_tx, resp_rx) = oneshot::channel();
                                             task_cx.send_request(message).on_receiving_result(
                                                 move |response| {

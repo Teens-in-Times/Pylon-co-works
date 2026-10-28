@@ -2035,6 +2035,57 @@ fn malformed_input_rejected_not_silently_dropped() {
     assert!(matches!(err, EventError::Invalid(_)));
 }
 
+/// #664：分页读必须走主键范围 seek 与跨度覆盖索引——防止 `(?N IS NULL OR ...)`
+/// 或索引缺失时静默退回全 owner 扫表（130k 行实测 40–80ms/页的根因）。
+#[test]
+fn paging_queries_use_primary_key_range_seek_and_span_index() {
+    fn plan_for(conn: &rusqlite::Connection, sql: &str, params: &[&dyn rusqlite::ToSql]) -> String {
+        let mut stmt = conn.prepare(sql).expect("prepare plan query");
+        stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            row.get::<_, String>(3)
+        })
+        .expect("query plan")
+        .map(|row| row.expect("plan row"))
+        .collect::<Vec<_>>()
+        .join(" | ")
+    }
+
+    let repo = repo();
+    let conn = repo.conn.lock().unwrap();
+    let owner = r#"["p1","peri","local:s1"]"#;
+    let list_cursor = plan_for(
+        &conn,
+        "EXPLAIN QUERY PLAN SELECT sequence FROM canonical_events
+         WHERE owner_key = ?1 AND sequence < ?2 ORDER BY sequence DESC LIMIT ?3",
+        &[&owner, &10_i64, &5_i64],
+    );
+    assert!(
+        list_cursor.contains("sequence<?"),
+        "list_events 游标分支必须走主键范围 seek，实际 plan: {list_cursor}"
+    );
+    let metadata = plan_for(
+        &conn,
+        "EXPLAIN QUERY PLAN SELECT sequence, event_type FROM canonical_events
+         WHERE owner_key = ?1 AND sequence > ?2 ORDER BY sequence ASC LIMIT ?3",
+        &[&owner, &0_i64, &5_i64],
+    );
+    assert!(
+        metadata.contains("sequence>?"),
+        "compact 元数据扫描必须走主键范围 seek，实际 plan: {metadata}"
+    );
+    let spans = plan_for(
+        &conn,
+        "EXPLAIN QUERY PLAN SELECT rollup_seq_start, rollup_seq_end FROM canonical_events
+         WHERE owner_key = ?1 AND event_type = ?2 AND rollup_seq_end >= ?3
+           AND rollup_seq_start IS NOT NULL AND rollup_seq_end IS NOT NULL",
+        &[&owner, &"turn.unit", &0_i64],
+    );
+    assert!(
+        spans.contains("idx_canonical_events_rollup_spans"),
+        "compact 跨度查询必须走 #664 覆盖索引，实际 plan: {spans}"
+    );
+}
+
 #[test]
 fn fresh_db_migration_includes_table_after_reopen() {
     // 复用 msg_repo 的迁移链：打开内存仓库验证 v6 表存在（迁移测试见 msg_repo tests）
