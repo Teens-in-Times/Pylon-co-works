@@ -529,8 +529,10 @@ impl AppStateHandles {
         // and awaiting the task closes the consumer side of the old inbox, so
         // a kill-generated crash notification cannot schedule reconnect work
         // after this replacement has begun.  This is the task-level half of
-        // the no-overlap invariant; the ACP process is synchronously killed
-        // below before the replacement is published.
+        // the no-overlap invariant; the ACP process itself is retired to a
+        // disconnected placeholder under the write lock and killed right
+        // after the lock is released (#656: `kill_and_wait` has no timeout,
+        // so it must not run under a lock that read paths contend on).
         let old_dispatcher = runtime
             .notification_task
             .lock()
@@ -546,10 +548,11 @@ impl AppStateHandles {
         // 一致）——否则旧 source 条目随任意命名的 GUI source 无限累积。锁内先快照
         // 旧 source 键，映射清空后在锁外逐个清理（锁序单向：sessions → prompt_locks）。
         // 方案 8：sessions 迁移委托 SessionStore（migrate_or_clear 返回旧 source 键）。
-        let (stale_sources, probe_candidates) = {
-            // #549/ADR-0037：换装写锁——块内全为同步操作（激活应用/kill/赋值/
+        let (stale_sources, probe_candidates, old_acp) = {
+            // #549/ADR-0037：换装写锁——块内全为同步操作（激活应用/退役/赋值/
             // 代际落位），锁内无 await；检查→退役→暴露的整窗原子性由写锁承担，
-            // 与旧 tokio 锁语义一致（std 写锁同样排斥全部快照读）。
+            // 与旧 tokio 锁语义一致（std 写锁同样排斥全部快照读）。#656：旧进程
+            // kill 已移出本块（块后 spawn_blocking），锁只覆盖状态切换。
             let mut acp = runtime
                 .acp
                 .write()
@@ -582,15 +585,17 @@ impl AppStateHandles {
                 } else {
                     Vec::new()
                 };
-            // Retire the old process before exposing the replacement.  A plain
+            // Retire the old client before exposing the replacement.  A plain
             // `mem::replace` followed by a later kill leaves two live ACP
             // instances during dispatcher startup and allows old stdout to
             // race into the new generation.  The disconnected placeholder
             // keeps the runtime fail-closed while the old process is drained.
+            // #656：kill 移出写锁——`kill_and_wait` 在 job 路径关闭 Job Object 后
+            // `wait()`、非 job 路径还要 `taskkill /T /F` + `wait()`，均无超时；旧实现
+            // 在锁内等待，切换瞬间所有 acp 读方（状态快照/会话命令）一起排队。锁内只
+            // 保留「退役为 disconnected 占位 → 发布新连接」，回收旧进程在锁外
+            // `spawn_blocking`（见下方 old_acp）。
             let old_acp = std::mem::replace(&mut *acp, Arc::new(AcpClient::disconnected()));
-            if let Err(error) = old_acp.kill() {
-                tracing::warn!("kill replaced agent before activation: {}", error);
-            }
             *acp = Arc::new(new_acp);
             runtime
                 .client_generation
@@ -640,8 +645,20 @@ impl AppStateHandles {
                 emit_event(&window, crate::event_names::INTERACTION, resolved);
             }
             tracing::info!("ACP client activated; generation is now {}", new_generation);
-            (stale_sources, probe_candidates)
+            (stale_sources, probe_candidates, old_acp)
         };
+        // #656：旧连接已退役并发布新连接，写锁已释放——这里才回收旧进程，读方不再
+        // 被 `kill_and_wait` 的 wait 拖住。放在 dispatcher 启动之前，保留「旧进程先
+        // 死、新 dispatcher 后起」的原有时序。
+        match tokio::task::spawn_blocking(move || old_acp.kill()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!("kill replaced agent before activation: {}", error)
+            }
+            Err(error) => {
+                tracing::warn!("kill replaced agent task did not complete: {}", error)
+            }
+        }
         // 优化-1：sessions 锁已释放——清理旧 source 的 prompt 锁条目。
         // G2-08：lib.rs 本地 drop_stale_prompt_locks 删除，收敛为 runtime 方法。
         runtime.drop_prompt_locks(&stale_sources);
