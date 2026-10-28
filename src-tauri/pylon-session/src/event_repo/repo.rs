@@ -137,6 +137,18 @@ fn query_events_by_sequence(
 /// （最坏 = 上限 × 单行 64 KiB），也是 `sequence IN (...)` 的绑定参数个数上限。
 const MAX_COMPACT_PAGE_LIMIT: u32 = 2000;
 
+/// `list_events` 两条游标分支的共用收尾：解码存储行（失败即库损坏）。
+fn collect_decoded_events<I>(rows: I) -> Result<Vec<CanonicalEventRow>, EventError>
+where
+    I: Iterator<Item = rusqlite::Result<super::row::StoredCanonicalEventRow>>,
+{
+    let mut events = Vec::new();
+    for row in rows {
+        events.push(row.map_err(EventError::from)?.decode()?);
+    }
+    Ok(events)
+}
+
 /// 读取升序行集 [start, end]（含端点；ingest 单元构建与 trim 校验共用）。
 fn query_event_rows(
     conn: &Connection,
@@ -615,24 +627,37 @@ impl EventRepo {
             .conn
             .lock()
             .map_err(|_| EventError::Unavailable("event repo lock poisoned".into()))?;
-        let mut stmt = conn
-            .prepare_cached(&format!(
-                "SELECT {EVENT_COLUMNS} FROM canonical_events
-                 WHERE owner_key = ?1 AND (?2 IS NULL OR sequence < ?2)
-                 ORDER BY sequence DESC
-                 LIMIT ?3"
-            ))
-            .map_err(EventError::from)?;
-        let rows = stmt
-            .query_map(
-                params![owner_key, before_sequence, i64::from(limit)],
-                map_event_row,
-            )
-            .map_err(EventError::from)?;
-        let mut events: Vec<CanonicalEventRow> = Vec::new();
-        for row in rows {
-            events.push(row.map_err(EventError::from)?.decode()?);
-        }
+        // 游标分支各自编译：`(?N IS NULL OR sequence < ?N)` 会让 SQLite 失去
+        // `(owner_key, sequence)` 主键范围 seek，深分页退化为每页扫到游标处
+        // （130k 行实测 40–71ms/页 → 0.1ms/页，#664）。
+        let events = if let Some(before) = before_sequence {
+            let mut stmt = conn
+                .prepare_cached(&format!(
+                    "SELECT {EVENT_COLUMNS} FROM canonical_events
+                     WHERE owner_key = ?1 AND sequence < ?2
+                     ORDER BY sequence DESC
+                     LIMIT ?3"
+                ))
+                .map_err(EventError::from)?;
+            let rows = stmt
+                .query_map(params![owner_key, before, i64::from(limit)], map_event_row)
+                .map_err(EventError::from)?;
+            collect_decoded_events(rows)?
+        } else {
+            let mut stmt = conn
+                .prepare_cached(&format!(
+                    "SELECT {EVENT_COLUMNS} FROM canonical_events
+                     WHERE owner_key = ?1
+                     ORDER BY sequence DESC
+                     LIMIT ?2"
+                ))
+                .map_err(EventError::from)?;
+            let rows = stmt
+                .query_map(params![owner_key, i64::from(limit)], map_event_row)
+                .map_err(EventError::from)?;
+            collect_decoded_events(rows)?
+        };
+        let mut events = events;
         // DESC 查询 → 升序返回（与历史消息仓库分页语义一致；v9 后为 canonical 唯一读路径）
         events.reverse();
         let next_before_sequence = events.first().map(|e| e.sequence);
@@ -731,20 +756,27 @@ impl EventRepo {
             .lock()
             .map_err(|_| EventError::Unavailable("event repo lock poisoned".into()))?;
         let limit = usize::try_from(limit.clamp(1, MAX_COMPACT_PAGE_LIMIT)).unwrap_or(1);
-        // 1) 覆盖跨度（只取两列，不碰任何载荷）。
+        // 1) 覆盖跨度（只取两列，不碰任何载荷）。只取与游标之后可能相交的跨度：
+        //    `end < 游标` 的跨度覆盖不到任何待扫描行（等值也安全：end == 游标时不覆盖
+        //    任何 > 游标 的行）。无游标用 i64::MIN 兜底（sequence 恒 ≥ 1，与原无界语义
+        //    等值）。排序在 Rust 侧做：覆盖索引不提供 sequence 序，SQL 的 ORDER BY 会
+        //    让 planner 退回主键扫表（#664）。
         let mut ranges: Vec<(i64, i64)> = Vec::new();
         {
             let mut stmt = conn
                 .prepare_cached(
                     "SELECT rollup_seq_start, rollup_seq_end FROM canonical_events
-                     WHERE owner_key = ?1 AND event_type = ?2
-                       AND rollup_seq_start IS NOT NULL AND rollup_seq_end IS NOT NULL
-                     ORDER BY sequence ASC",
+                     WHERE owner_key = ?1 AND event_type = ?2 AND rollup_seq_end >= ?3
+                       AND rollup_seq_start IS NOT NULL AND rollup_seq_end IS NOT NULL",
                 )
                 .map_err(EventError::from)?;
             for row in stmt
                 .query_map(
-                    params![owner_key, crate::turn_rollup::TURN_UNIT_EVENT_TYPE],
+                    params![
+                        owner_key,
+                        crate::turn_rollup::TURN_UNIT_EVENT_TYPE,
+                        after_sequence.unwrap_or(i64::MIN)
+                    ],
                     |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
                 )
                 .map_err(EventError::from)?
@@ -752,6 +784,7 @@ impl EventRepo {
                 ranges.push(row.map_err(EventError::from)?);
             }
         }
+        ranges.sort_unstable();
         // 2) 元数据扫描状态：只读 (sequence, event_type)，按跨度指针剪掉被覆盖行。
         let mut cursor = after_sequence;
         let mut pointer = 0usize;
@@ -765,8 +798,10 @@ impl EventRepo {
         let mut scan_exhausted = false;
         let mut stmt = conn
             .prepare_cached(
+                // 有游标时 `sequence > ?2` 走主键范围 seek；无游标用 i64::MIN 兜底，
+                // 与原 `(?2 IS NULL OR ...)` 等价（#664：该谓词曾让每页从 owner 首行扫起）。
                 "SELECT sequence, event_type FROM canonical_events
-                 WHERE owner_key = ?1 AND (?2 IS NULL OR sequence > ?2)
+                 WHERE owner_key = ?1 AND sequence > ?2
                  ORDER BY sequence ASC LIMIT ?3",
             )
             .map_err(EventError::from)?;
@@ -784,9 +819,10 @@ impl EventRepo {
             while rows.len() < target && !*scan_exhausted && *budget > 0 {
                 let window = i64::try_from(target.saturating_sub(rows.len()) + 1).unwrap_or(1);
                 let batch: Vec<(i64, String)> = stmt
-                    .query_map(params![owner_key, *cursor, window], |row| {
-                        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-                    })
+                    .query_map(
+                        params![owner_key, cursor.unwrap_or(i64::MIN), window],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+                    )
                     .map_err(EventError::from)?
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(EventError::from)?;
@@ -1126,48 +1162,77 @@ impl EventRepo {
         let pattern = format!("%{escaped}%");
         let mut stmt = conn
             .prepare_cached(
-                "SELECT owner_key, remote_session_id, sequence, event_type, occurred_at,
-                        NULLIF(instr(lower(raw_payload), lower(?2)), 0),
-                        NULLIF(instr(lower(COALESCE(typed_payload, '')), lower(?2)), 0)
+                // #668：只取轻量列 + 下推 LIMIT。排序表达式的结论与 Rust 侧
+                // `(profile, agent, local, sequence)` 元组序逐字节等价：owner_key 是
+                // JSON 数组，逐字段 `json_extract` 比较（BINARY 字节序 = Rust str Ord），
+                // `COALESCE(…, '')` 对齐 `owner_triple` 对畸形 owner 的空串回退。
+                // 旧写法无 LIMIT：整库命中时把两列 payload 与两次 instr 全部物化后
+                // 才截断（150k 命中 ≈ 1 s / 数百 MB）。
+                "SELECT owner_key, remote_session_id, sequence, event_type, occurred_at
                  FROM canonical_events
                  WHERE event_type LIKE ?1 ESCAPE '\\' COLLATE NOCASE
                     OR raw_payload LIKE ?1 ESCAPE '\\' COLLATE NOCASE
                     OR COALESCE(typed_payload, '') LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-                 ORDER BY owner_key, sequence",
+                 ORDER BY COALESCE(json_extract(owner_key, '$[0]'), ''),
+                          COALESCE(json_extract(owner_key, '$[1]'), ''),
+                          COALESCE(json_extract(owner_key, '$[2]'), ''),
+                          sequence
+                 LIMIT ?3",
             )
             .map_err(EventError::from)?;
         let rows = stmt
-            .query_map(params![pattern, query], |row| {
+            .query_map(params![pattern, query, i64::from(limit)], |row| {
                 let owner_key: String = row.get(0)?;
                 let (profile_id, agent_id, local_session_id) = owner_triple(&owner_key);
-                Ok(EventSearchHit {
-                    profile_id,
-                    agent_id,
-                    local_session_id,
-                    remote_session_id: row.get(1)?,
-                    sequence: row.get(2)?,
-                    event_type: row.get(3)?,
-                    occurred_at: row.get::<_, String>(4)?,
-                    match_offset: row
-                        .get::<_, Option<i64>>(5)?
-                        .or(row.get::<_, Option<i64>>(6)?),
-                })
+                Ok((
+                    owner_key,
+                    EventSearchHit {
+                        profile_id,
+                        agent_id,
+                        local_session_id,
+                        remote_session_id: row.get(1)?,
+                        sequence: row.get(2)?,
+                        event_type: row.get(3)?,
+                        occurred_at: row.get::<_, String>(4)?,
+                        match_offset: None,
+                    },
+                ))
             })
             .map_err(EventError::from)?;
-        let mut hits = Vec::new();
+        let mut located = Vec::new();
         for row in rows {
-            hits.push(row.map_err(EventError::from)?);
+            located.push(row.map_err(EventError::from)?);
         }
         // 与候选 owner 版（v15）一致的排序截断语义：按 (profile, agent, local) 排序
-        // 后截断；稳定排序保留 SQL 侧 owner 内 sequence 升序。
-        hits.sort_by(|a, b| {
+        // 后截断；稳定排序保留 SQL 侧 owner 内 sequence 升序。SQL 已按同一序截断，
+        // 这里保留兜底（行数 ≤ limit）。
+        located.sort_by(|(_, a), (_, b)| {
             (&a.profile_id, &a.agent_id, &a.local_session_id).cmp(&(
                 &b.profile_id,
                 &b.agent_id,
                 &b.local_session_id,
             ))
         });
-        hits.truncate(limit as usize);
+        located.truncate(limit as usize);
+        // matchOffset 只对返回行按主键补取（advisory 字段：与命中同源，用同一 query）。
+        let mut offset_stmt = conn
+            .prepare_cached(
+                "SELECT NULLIF(instr(lower(raw_payload), lower(?2)), 0),
+                        NULLIF(instr(lower(COALESCE(typed_payload, '')), lower(?2)), 0)
+                 FROM canonical_events WHERE owner_key = ?1 AND sequence = ?3",
+            )
+            .map_err(EventError::from)?;
+        let mut hits = Vec::with_capacity(located.len());
+        for (owner_key, mut hit) in located {
+            let offsets: Option<(Option<i64>, Option<i64>)> = offset_stmt
+                .query_row(params![owner_key, query, hit.sequence], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .optional()
+                .map_err(EventError::from)?;
+            hit.match_offset = offsets.and_then(|(raw, typed)| raw.or(typed));
+            hits.push(hit);
+        }
         Ok(hits)
     }
 }
