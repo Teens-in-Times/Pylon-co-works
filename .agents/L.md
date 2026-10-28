@@ -9,4 +9,3 @@
 - [DeepSeek] #602 Rust CI 门禁漏报（退出码被后续 build 覆盖）——一并修被其掩盖的 #601/#603/#617。文件域：`.github/workflows/ci.yml`、`src-tauri/pylon-foundations/src/{workspace,child_command}.rs`、`src-tauri/src/{runtime,test_utils}.rs`；本 spec 与对应 record。避让 TS 侧 #593/#600。
 - [DeepSeek] #613 terminalDelivery 全量时序 flake：文件域 `src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts`（仅补承重睡）；本 spec 与对应 record。
 
-- [Qoder] #653 终端注册表插入后二次查找 panic：文件域 `src-tauri/pylon-acp/src/terminal_runtime.rs`（`insert` 返回实例 + 一条新用例）；本 spec 与对应 record。不动 `lifecycle/stop.rs` 与 dispatcher 侧契约。
