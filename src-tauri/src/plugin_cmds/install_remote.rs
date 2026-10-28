@@ -364,13 +364,17 @@ pub(crate) async fn plugin_package_inspect_zip(
     }
     let work = unique_install_temp("pylon-plugin-inspect");
     let extract_dir = work.join("extracted");
-    let result = async {
+    let result: Result<PluginPackageDescriptor, PylonError> = async {
         extract_zip_off_thread(zip_path, &extract_dir).await?;
-        describe_source(&extract_dir)
+        // #670：整包哈希是同步 IO，移出 reactor 线程。
+        tauri::async_runtime::spawn_blocking(move || describe_source(&extract_dir))
+            .await
+            .map_err(|error| PluginError::Io(format!("plugin inspect task failed: {error}")))?
+            .map_err(Into::into)
     }
     .await;
     cleanup_install_temp(&work);
-    Ok(result?)
+    result
 }
 
 /// 只读：下载 https zip 并解析 descriptor（不落库；限流/超时/重定向同安装）。
@@ -383,13 +387,17 @@ pub(crate) async fn plugin_package_inspect_url(
     let work = unique_install_temp("pylon-plugin-inspect");
     let zip_download = work.join("package.zip");
     let extract_dir = work.join("extracted");
-    let result = async {
+    let result: Result<PluginPackageDescriptor, PylonError> = async {
         let plugin_hint = format!("inspect:{}", parsed.host_str().unwrap_or("remote"));
         download_install_zip(&app, &url, &zip_download, &plugin_hint).await?;
         extract_zip_off_thread(zip_download.clone(), &extract_dir).await?;
-        describe_source(&extract_dir)
+        // #670：整包哈希是同步 IO，移出 reactor 线程。
+        tauri::async_runtime::spawn_blocking(move || describe_source(&extract_dir))
+            .await
+            .map_err(|error| PluginError::Io(format!("plugin inspect task failed: {error}")))?
+            .map_err(Into::into)
     }
     .await;
     cleanup_install_temp(&work);
-    Ok(result?)
+    result
 }

@@ -288,7 +288,13 @@ pub(crate) fn hash_bytes(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-pub(crate) fn scan(dir: &Path) -> Result<(Vec<super::PluginFileMetadata>, u64, u64), PluginError> {
+/// 共享目录遍历：symlink / 非文件 / 相对路径 / 体积上限校验 + 文件清单。
+/// `visit` 只在需要内容指纹时读盘（源目录与 staging 副本）；已安装包描述用
+/// 空访问器，只做 `symlink_metadata`（#670）。
+fn walk_files(
+    dir: &Path,
+    mut visit: impl FnMut(&Path, &str) -> Result<(), PluginError>,
+) -> Result<(Vec<super::PluginFileMetadata>, u64), PluginError> {
     if !dir.is_dir() {
         return Err(PluginError::SourceInvalid(format!(
             "not a directory: {}",
@@ -297,7 +303,6 @@ pub(crate) fn scan(dir: &Path) -> Result<(Vec<super::PluginFileMetadata>, u64, u
     }
     let mut files = Vec::new();
     let mut total = 0_u64;
-    let mut fingerprint = 0xcbf29ce484222325_u64;
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
         for path in sorted_paths(&current)? {
@@ -334,18 +339,7 @@ pub(crate) fn scan(dir: &Path) -> Result<(Vec<super::PluginFileMetadata>, u64, u
                 .ok_or_else(|| PluginError::SourceInvalid("non-UTF-8 path".into()))?
                 .replace('\\', "/");
             validate_relative_path(&relative)?;
-            hash_bytes(&mut fingerprint, relative.as_bytes());
-            let mut input = File::open(&path).map_err(|e| PluginError::Io(e.to_string()))?;
-            let mut buffer = [0_u8; 64 * 1024];
-            loop {
-                let read = input
-                    .read(&mut buffer)
-                    .map_err(|e| PluginError::Io(e.to_string()))?;
-                if read == 0 {
-                    break;
-                }
-                hash_bytes(&mut fingerprint, &buffer[..read]);
-            }
+            visit(&path, &relative)?;
             files.push(super::PluginFileMetadata {
                 path: relative.clone(),
                 size: meta.len(),
@@ -354,7 +348,34 @@ pub(crate) fn scan(dir: &Path) -> Result<(Vec<super::PluginFileMetadata>, u64, u
         }
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok((files, total))
+}
+
+pub(crate) fn scan(dir: &Path) -> Result<(Vec<super::PluginFileMetadata>, u64, u64), PluginError> {
+    let mut fingerprint = 0xcbf29ce484222325_u64;
+    let (files, total) = walk_files(dir, |path, relative| {
+        hash_bytes(&mut fingerprint, relative.as_bytes());
+        let mut input = File::open(path).map_err(|e| PluginError::Io(e.to_string()))?;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = input
+                .read(&mut buffer)
+                .map_err(|e| PluginError::Io(e.to_string()))?;
+            if read == 0 {
+                break;
+            }
+            hash_bytes(&mut fingerprint, &buffer[..read]);
+        }
+        Ok(())
+    })?;
     Ok((files, total, fingerprint))
+}
+
+/// 已安装包的文件清单与体积：只读元数据，不重算内容指纹（#670）。
+pub(crate) fn scan_metadata(
+    dir: &Path,
+) -> Result<(Vec<super::PluginFileMetadata>, u64), PluginError> {
+    walk_files(dir, |_, _| Ok(()))
 }
 
 pub(crate) fn describe_source(dir: &Path) -> Result<super::PluginPackageDescriptor, PluginError> {
@@ -465,5 +486,10 @@ pub(crate) async fn plugin_package_inspect(
         )
         .into());
     }
-    Ok(describe_source(&source)?)
+    // #670：整包遍历 + 内容指纹是同步 IO，移出 reactor 线程（与写事务同标准）。
+    Ok(
+        tauri::async_runtime::spawn_blocking(move || describe_source(&source))
+            .await
+            .map_err(|error| PluginError::Io(format!("plugin inspect task failed: {error}")))??,
+    )
 }
