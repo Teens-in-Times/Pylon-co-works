@@ -50,17 +50,59 @@ pub fn output_limit(requested: Option<usize>) -> usize {
     requested.unwrap_or(DEFAULT_OUTPUT_BYTE_LIMIT as usize)
 }
 
-/// Codeg terminal runtime keeps the newest bytes and never splits UTF-8.
-pub fn enforce_output_limit(output: &mut String, limit: usize) -> usize {
-    if output.len() <= limit {
-        return 0;
+/// 有界终端输出缓冲：可见窗口 `text[head..]` 恒 ≤ limit（不切断 UTF-8）。
+/// 追加只推进 `head`；已截断的前缀累计到 ≥ limit 才压缩一次，把旧实现
+/// 「每来一块就把整个 limit 窗口 memmove 一次」摊还成 O(1)/字节（#673）。
+#[derive(Debug)]
+pub struct TerminalOutputBuffer {
+    text: String,
+    head: usize,
+    limit: usize,
+    base_offset: u64,
+    truncated: bool,
+}
+
+impl TerminalOutputBuffer {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            text: String::new(),
+            head: 0,
+            limit,
+            base_offset: 0,
+            truncated: false,
+        }
     }
-    let mut start = output.len().saturating_sub(limit);
-    while start < output.len() && !output.is_char_boundary(start) {
-        start += 1;
+
+    pub fn append(&mut self, text: &str) {
+        self.text.push_str(text);
+        let visible = self.text.len() - self.head;
+        if visible <= self.limit {
+            return;
+        }
+        let mut start = self.head + (visible - self.limit);
+        while start < self.text.len() && !self.text.is_char_boundary(start) {
+            start += 1;
+        }
+        self.base_offset = self.base_offset.saturating_add((start - self.head) as u64);
+        self.head = start;
+        self.truncated = true;
+        if self.head >= self.limit {
+            self.text.drain(..self.head);
+            self.head = 0;
+        }
     }
-    output.drain(..start);
-    start
+
+    pub fn visible(&self) -> &str {
+        &self.text[self.head..]
+    }
+
+    pub fn base_offset(&self) -> u64 {
+        self.base_offset
+    }
+
+    pub fn truncated(&self) -> bool {
+        self.truncated
+    }
 }
 
 /// Decode complete UTF-8 while retaining an incomplete trailing sequence for
@@ -180,13 +222,29 @@ mod tests {
 
     #[test]
     fn output_keeps_newest_utf8_and_decoder_keeps_partial_bytes() {
-        let mut output = "old-😀-new".to_owned();
-        let dropped = enforce_output_limit(&mut output, 8);
-        assert!(dropped > 0 && output == "😀-new");
+        let mut output = TerminalOutputBuffer::new(8);
+        output.append("old-😀-new");
+        assert_eq!(output.visible(), "😀-new");
+        assert!(output.truncated());
+        assert_eq!(output.base_offset(), 4);
         let mut pending = vec![0xf0, 0x9f];
         assert_eq!(decode_available_utf8(&mut pending), "");
         pending.extend([0x98, 0x80, b'!']);
         assert_eq!(decode_available_utf8(&mut pending), "😀!");
+    }
+
+    #[test]
+    fn output_buffer_keeps_window_bounded_and_offsets_contiguous() {
+        let limit = 16;
+        let chunk = "0123456789abcdef";
+        let mut output = TerminalOutputBuffer::new(limit);
+        for _ in 0..1000 {
+            output.append(chunk);
+            assert!(output.visible().len() <= limit, "可见窗口恒 ≤ limit");
+        }
+        assert_eq!(output.visible(), chunk, "保留最新一块");
+        assert_eq!(output.base_offset(), 1000 * chunk.len() as u64 - 16);
+        assert!(output.truncated());
     }
 
     #[test]
