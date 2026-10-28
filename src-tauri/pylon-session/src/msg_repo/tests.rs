@@ -77,7 +77,7 @@ fn migrate_fresh_db_to_current_version_without_message_tables() {
 }
 
 #[test]
-fn v15_upgrade_adds_draft_table_without_losing_canonical_history() {
+fn v15_upgrade_keeps_canonical_history_without_rebuild() {
     let path = unique_temp_db_path();
     {
         let repo = MsgRepo::open(&path).expect("open current schema");
@@ -99,7 +99,7 @@ fn v15_upgrade_adds_draft_table_without_losing_canonical_history() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 16);
+    assert_eq!(version, SCHEMA_VERSION);
     let payload: String = conn
         .query_row(
             "SELECT typed_payload FROM canonical_events WHERE owner_key = ?1 AND sequence = 7",
@@ -111,6 +111,52 @@ fn v15_upgrade_adds_draft_table_without_losing_canonical_history() {
     assert!(table_names(&conn)
         .iter()
         .any(|name| name == "canonical_draft_fragments"));
+    drop(conn);
+    drop(upgraded);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn v16_upgrade_adds_rollup_span_index_without_losing_canonical_history() {
+    let path = unique_temp_db_path();
+    {
+        let repo = MsgRepo::open(&path).expect("open current schema");
+        let conn = repo.conn.lock().unwrap();
+        conn.execute_batch(
+            r#"INSERT INTO canonical_events
+               (owner_key, remote_session_id, sequence, client_generation, occurred_at,
+                received_at, event_type, payload_version, identity, typed_payload,
+                raw_payload, created_at, provenance)
+               VALUES ('["p","a","local:s"]', NULL, 3, 1, 't', 't',
+                       'turn.unit', 1, NULL, NULL, '{}', 1, 0);
+               DROP INDEX idx_canonical_events_rollup_spans;
+               PRAGMA user_version = 16;"#,
+        )
+        .expect("prepare v16 fixture");
+    }
+    let upgraded = MsgRepo::open(&path).expect("upgrade v16 to current");
+    let conn = upgraded.conn.lock().unwrap();
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+    let preserved: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM canonical_events WHERE owner_key = ?1 AND sequence = 3",
+            params![r#"["p","a","local:s"]"#],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(preserved, 1, "v16 原位升级不得丢 canonical 行");
+    let index_exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'index'
+                           AND name = 'idx_canonical_events_rollup_spans')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(index_exists, "v16 原位升级必须补建 #664 跨度覆盖索引");
     drop(conn);
     drop(upgraded);
     let _ = std::fs::remove_file(path);

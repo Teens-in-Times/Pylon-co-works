@@ -24,12 +24,11 @@ const LEGACY_DROP_TABLES: &[&str] = &[
 /// ——ADR-0008 承认的可见行为变化：「重建后不会再有历史会话」。
 const USER_DATA_PRESERVED_KEYS: &[&str] = &["profiles"];
 
-/// #155 T2（v15）：原位升版来源的判别线——`user_version == LAST_IN_PLACE_VERSION`
-/// 的库做原位增量迁移（如 v15→v16 加表，不触碰既有行）；其余旧版本（>0 且不等于
-/// 本常量）一律走 ADR-0008「老数据全丢重建」。v15 是逐版本迁移链的最后一个原位
-/// 升版源，其后无迁移链先例；v17 起延续该二分法，不复活逐版本迁移。
-/// （与既往字面量 `current != 15` 逐位等价，仅显式化策略。）
-const LAST_IN_PLACE_VERSION: i64 = 15;
+/// #155 T2（v15）：原位升版来源集合——`user_version` 在此集合内的库做原位增量迁移
+/// （v15→v16 加表、v16→v17 加索引，均不触碰既有行）；其余旧版本（>0 且不在集合内）
+/// 一律走 ADR-0008「老数据全丢重建」。不复活逐版本迁移链：每个新增原位升级都要显式
+/// 把来源版本登记进来，否则该版本会被重建（丢历史）。
+const IN_PLACE_UPGRADE_SOURCES: &[i64] = &[15, 16];
 
 const SCHEMA_MANIFEST: &[(&str, &[&str])] = &[
     (
@@ -110,6 +109,8 @@ const REQUIRED_INDEXES: &[&str] = &[
     "idx_session_state_snapshots_remote",
     "idx_deleted_sessions_state_deleted_at",
     "idx_deleted_sessions_session_id",
+    // #664：compact 跨度的部分覆盖索引（span 非空行）。
+    "idx_canonical_events_rollup_spans",
 ];
 
 /// 读主键列序。**不得 expect**（#654）：库损坏 / 被占用 / 非法文件时 `PRAGMA` 会报错，
@@ -260,7 +261,7 @@ fn migrate(conn: &mut Connection) -> Result<(), SessionError> {
     if current == SCHEMA_VERSION {
         return validate_schema_objects(conn);
     }
-    let rebuilding = current > 0 && current != LAST_IN_PLACE_VERSION;
+    let rebuilding = current > 0 && !IN_PLACE_UPGRADE_SOURCES.contains(&current);
     if rebuilding {
         tracing::warn!(
             found_version = current,

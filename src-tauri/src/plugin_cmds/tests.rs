@@ -126,6 +126,40 @@ fn binary_versions_pointer_and_data_retention() {
 }
 
 #[test]
+fn installed_descriptor_uses_directory_identity_and_metadata_scan() {
+    let base = temp("installed-descriptor");
+    let store = base.join("store");
+    let source = base.join("source");
+    fixture(&source, "1.0.0", &[7; 32]);
+    ensure_at(&store).unwrap();
+    let installed = install_at(&store, &source, "p.demo").unwrap();
+    let dir = packages(&store)
+        .join("p.demo")
+        .join(&installed.package.package_instance_id);
+
+    let listed = list_installed_at(&store).unwrap();
+    assert_eq!(listed.len(), 1);
+    let listed = &listed[0].package;
+    let hashed = describe_source(&dir).unwrap();
+
+    assert_eq!(
+        listed.package_instance_id, installed.package.package_instance_id,
+        "已安装包身份直接用目录名（安装期指纹分配），不重算"
+    );
+    assert_eq!(listed.plugin_id, "p.demo");
+    assert_eq!(listed.version, "1.0.0");
+    assert!(listed.active);
+    assert_eq!(
+        serde_json::to_value(&listed.files).unwrap(),
+        serde_json::to_value(&hashed.files).unwrap(),
+        "元数据扫描的清单与源哈希路径一致"
+    );
+    assert_eq!(listed.total_bytes, hashed.total_bytes);
+    assert_eq!(listed.manifest, hashed.manifest);
+    fs::remove_dir_all(base).ok();
+}
+
+#[test]
 fn v2_list_and_enablement_share_the_active_package_state() {
     let base = temp("list-enabled");
     let store = base.join("store");
