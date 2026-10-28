@@ -18,7 +18,7 @@ regex = "1"
 ringbuffer = "0.16"
 infer = "0.22"
 tracing = "0.1"
-agent-client-protocol = "2.2.0"
+agent-client-protocol = "3.5.0"
 pylon-core = { path = "../pylon-core" }
 pylon-foundations = { path = "../pylon-foundations" }
 

@@ -87,7 +87,7 @@ thiserror = "2"
 agent-client-protocol-schema = "1.9.1"
 # A1a：官方 SDK 连接引擎（D1=①）——引擎落点见施工书 §0（新 crate pylon-acp，纯逻辑不进主 crate）
 # A1a 时声明 2.1.0；#348 A2 起声明与 lock 实际解析一致（^2.2.0）。
-agent-client-protocol = "2.2.0"
+agent-client-protocol = "3.5.0"
 dashmap = "6.2.1"
 encoding_rs = "0.8.35"
 regex = "1.13.1"
