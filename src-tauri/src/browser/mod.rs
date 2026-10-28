@@ -120,21 +120,14 @@ pub(crate) fn is_allowed_browser_url(url: &url::Url) -> bool {
     }
 }
 
-/// 宿主窗口主 WebView 所用的 WebView2 附加浏览器参数（`tauri.conf.json` →
-/// `app.windows[].additionalBrowserArgs`，本仓内即调试端口那一串）。
+/// 宿主窗口主 WebView 所用的 WebView2 附加浏览器参数（权威来源
+/// `crate::MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS`；#330 起不含 CDP 调试端口，
+/// 调试端口由启动环境变量按需注入）。
 ///
 /// 子 WebView 必须带上同一串：WebView2 只允许**参数完全一致**的环境共享同一个
-/// user data folder，否则 `CreateCoreWebView2EnvironmentWithOptions` 直接失败。
-/// 交给 wry 默认参数（不含 tauri.conf 的值）就会与主 WebView 的环境不一致——见
-/// `open_tab_in` 里那段「失败会留下空壳原生窗口」的说明。
-///
-/// 主 WebView 的 WebView2 环境参数（CC-14：原从 `config().app.windows` 读
-/// additionalBrowserArgs；主窗口改代码创建、config windows 已清空后，改读
-/// `crate::MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS` 常量）。返回值恒 `Some`——
-/// 常量是唯一权威，不存在「取不到就退回默认参数」的路径。
-/// 同一 user data folder 下各 WebView 的环境参数必须逐字节一致，否则
-/// `CreateCoreWebView2EnvironmentWithOptions` 直接失败——见 `open_tab_in` 里
-/// 「失败会留下空壳原生窗口」的说明。
+/// user data folder，否则 `CreateCoreWebView2EnvironmentWithOptions` 直接失败——
+/// 见 `open_tab_in` 里「失败会留下空壳原生窗口」的说明。返回值恒 `Some`：常量是
+/// 唯一权威，不存在「取不到就退回 wry 默认参数」的路径。
 /// `pub(crate)`：Docs Sheet（#371）的子 WebView 受同一约束，共用本函数。
 #[cfg(windows)]
 pub(crate) fn host_additional_browser_args() -> Option<String> {
@@ -368,10 +361,9 @@ impl BrowserManager {
             page_this.note_page_load(tab_id, url, None);
         });
 
-        // 子 WebView 必须与宿主主 WebView 共用同一套 WebView2 环境参数。
-        // 不带这串就会退回 wry 的默认参数（`--disable-features=...`，不含 tauri.conf
-        // 的 `additionalBrowserArgs`），而主 WebView 的环境带这些参数；WebView2 要求共享
-        // 同一 user data folder 的环境参数完全一致，否则第二环境创建直接失败。失败时
+        // 子 WebView 必须与宿主主 WebView 共用同一套 WebView2 环境参数：不带这串就
+        // 退回 wry 的默认参数，与主 WebView 的环境不一致。WebView2 要求共享同一
+        // user data folder 的环境参数完全一致，否则第二环境创建直接失败。失败时
         // Tauri 在 `Message::CreateWebview` 里只 `log::error!`，却照样返回一个 Webview
         // 句柄——那个宿主窗口既不受 set_bounds/set_visible 控制也不会被 close 销毁，
         // 会一直盖在原生窗口栈顶层吃掉主区的鼠标与滚轮事件。
