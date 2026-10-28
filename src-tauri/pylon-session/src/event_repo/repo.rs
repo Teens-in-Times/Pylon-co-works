@@ -1162,48 +1162,77 @@ impl EventRepo {
         let pattern = format!("%{escaped}%");
         let mut stmt = conn
             .prepare_cached(
-                "SELECT owner_key, remote_session_id, sequence, event_type, occurred_at,
-                        NULLIF(instr(lower(raw_payload), lower(?2)), 0),
-                        NULLIF(instr(lower(COALESCE(typed_payload, '')), lower(?2)), 0)
+                // #668：只取轻量列 + 下推 LIMIT。排序表达式的结论与 Rust 侧
+                // `(profile, agent, local, sequence)` 元组序逐字节等价：owner_key 是
+                // JSON 数组，逐字段 `json_extract` 比较（BINARY 字节序 = Rust str Ord），
+                // `COALESCE(…, '')` 对齐 `owner_triple` 对畸形 owner 的空串回退。
+                // 旧写法无 LIMIT：整库命中时把两列 payload 与两次 instr 全部物化后
+                // 才截断（150k 命中 ≈ 1 s / 数百 MB）。
+                "SELECT owner_key, remote_session_id, sequence, event_type, occurred_at
                  FROM canonical_events
                  WHERE event_type LIKE ?1 ESCAPE '\\' COLLATE NOCASE
                     OR raw_payload LIKE ?1 ESCAPE '\\' COLLATE NOCASE
                     OR COALESCE(typed_payload, '') LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-                 ORDER BY owner_key, sequence",
+                 ORDER BY COALESCE(json_extract(owner_key, '$[0]'), ''),
+                          COALESCE(json_extract(owner_key, '$[1]'), ''),
+                          COALESCE(json_extract(owner_key, '$[2]'), ''),
+                          sequence
+                 LIMIT ?3",
             )
             .map_err(EventError::from)?;
         let rows = stmt
-            .query_map(params![pattern, query], |row| {
+            .query_map(params![pattern, query, i64::from(limit)], |row| {
                 let owner_key: String = row.get(0)?;
                 let (profile_id, agent_id, local_session_id) = owner_triple(&owner_key);
-                Ok(EventSearchHit {
-                    profile_id,
-                    agent_id,
-                    local_session_id,
-                    remote_session_id: row.get(1)?,
-                    sequence: row.get(2)?,
-                    event_type: row.get(3)?,
-                    occurred_at: row.get::<_, String>(4)?,
-                    match_offset: row
-                        .get::<_, Option<i64>>(5)?
-                        .or(row.get::<_, Option<i64>>(6)?),
-                })
+                Ok((
+                    owner_key,
+                    EventSearchHit {
+                        profile_id,
+                        agent_id,
+                        local_session_id,
+                        remote_session_id: row.get(1)?,
+                        sequence: row.get(2)?,
+                        event_type: row.get(3)?,
+                        occurred_at: row.get::<_, String>(4)?,
+                        match_offset: None,
+                    },
+                ))
             })
             .map_err(EventError::from)?;
-        let mut hits = Vec::new();
+        let mut located = Vec::new();
         for row in rows {
-            hits.push(row.map_err(EventError::from)?);
+            located.push(row.map_err(EventError::from)?);
         }
         // 与候选 owner 版（v15）一致的排序截断语义：按 (profile, agent, local) 排序
-        // 后截断；稳定排序保留 SQL 侧 owner 内 sequence 升序。
-        hits.sort_by(|a, b| {
+        // 后截断；稳定排序保留 SQL 侧 owner 内 sequence 升序。SQL 已按同一序截断，
+        // 这里保留兜底（行数 ≤ limit）。
+        located.sort_by(|(_, a), (_, b)| {
             (&a.profile_id, &a.agent_id, &a.local_session_id).cmp(&(
                 &b.profile_id,
                 &b.agent_id,
                 &b.local_session_id,
             ))
         });
-        hits.truncate(limit as usize);
+        located.truncate(limit as usize);
+        // matchOffset 只对返回行按主键补取（advisory 字段：与命中同源，用同一 query）。
+        let mut offset_stmt = conn
+            .prepare_cached(
+                "SELECT NULLIF(instr(lower(raw_payload), lower(?2)), 0),
+                        NULLIF(instr(lower(COALESCE(typed_payload, '')), lower(?2)), 0)
+                 FROM canonical_events WHERE owner_key = ?1 AND sequence = ?3",
+            )
+            .map_err(EventError::from)?;
+        let mut hits = Vec::with_capacity(located.len());
+        for (owner_key, mut hit) in located {
+            let offsets: Option<(Option<i64>, Option<i64>)> = offset_stmt
+                .query_row(params![owner_key, query, hit.sequence], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .optional()
+                .map_err(EventError::from)?;
+            hit.match_offset = offsets.and_then(|(raw, typed)| raw.or(typed));
+            hits.push(hit);
+        }
         Ok(hits)
     }
 }
