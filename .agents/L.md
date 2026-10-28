@@ -9,3 +9,4 @@
 - [DeepSeek] #602 Rust CI 门禁漏报（退出码被后续 build 覆盖）——一并修被其掩盖的 #601/#603/#617。文件域：`.github/workflows/ci.yml`、`src-tauri/pylon-foundations/src/{workspace,child_command}.rs`、`src-tauri/src/{runtime,test_utils}.rs`；本 spec 与对应 record。避让 TS 侧 #593/#600。
 - [DeepSeek] #613 terminalDelivery 全量时序 flake：文件域 `src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts`（仅补承重睡）；本 spec 与对应 record。
 
+- [AlchemistCxC] #664 event_repo 读路径 IO 放大：文件域 `src-tauri/pylon-session/src/event_repo/{repo,tests}.rs`、`src-tauri/pylon-session/src/msg_repo/{mod,migrations,tests}.rs`、`src-tauri/pylon-session/src/del01_schema_audit.rs`；本 spec 与对应 record。避让 #602/#607/#613。
