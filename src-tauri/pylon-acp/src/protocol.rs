@@ -88,17 +88,22 @@ impl SessionUpdateVariant {
 /// 解析失败落 raw-fallback（`from_str` 宽容别名）。未知变体返回 None
 /// （调用方按忽略处理——raw payload 照常 publish，与既有行为一致）。
 pub fn classify_session_update(update: &serde_json::Value) -> Option<SessionUpdateVariant> {
-    // 借用式解析：&Value 实现 Deserializer，internally-tagged derive 不做深拷贝
-    // ——dispatcher 每 chunk 一帧的热路径零分配增长（#316 审查采纳）。
-    if let Ok(typed) = agent_client_protocol_schema::v1::SessionUpdate::deserialize(update) {
-        return SessionUpdateVariant::from_typed(&typed);
+    // 先按判别串分类：internally-tagged 枚举的成功条件正是该 tag 命中已知变体，
+    // 且既有逻辑在 typed 失败时本就会落到 `from_str`——两条路径的结论集相同
+    // （已知 tag 恒 Some、未知/缺失 tag 恒 None）。逐 chunk 省一次整树反序列化
+    // （typed 值拥有 text 字符串，#666）。
+    let tag = update
+        .get("sessionUpdate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if let Some(variant) = SessionUpdateVariant::from_str(tag) {
+        return Some(variant);
     }
-    SessionUpdateVariant::from_str(
-        update
-            .get("sessionUpdate")
-            .and_then(|v| v.as_str())
-            .unwrap_or(""),
-    )
+    // 未知判别串仍走官方 typed：未来 schema 新增变体（tag 不在本枚举）在此得到
+    // 与 typed 一致的 None 结论；保留原 typed-first 的兼容面。
+    agent_client_protocol_schema::v1::SessionUpdate::deserialize(update)
+        .ok()
+        .and_then(|typed| SessionUpdateVariant::from_typed(&typed))
 }
 
 fn to_params<T: serde::Serialize>(req: &T, what: &str) -> Result<serde_json::Value, String> {
@@ -565,5 +570,38 @@ mod resume_capability_tests {
         assert!(!resume_capability_advertised(
             &json!({"sessionCapabilities":{"resume":null}})
         ));
+    }
+}
+
+#[cfg(test)]
+mod classify_tests {
+    use super::{classify_session_update, SessionUpdateVariant as Variant};
+    use serde_json::json;
+
+    #[test]
+    fn classifies_known_tags_without_typed_payload() {
+        // 判别串命中即可分类：body 缺失/畸形不改变结论（与 typed-first + raw-fallback
+        // 的既有结论集一致，#666）。
+        assert_eq!(
+            classify_session_update(&json!({"sessionUpdate": "agent_message_chunk"})),
+            Some(Variant::AgentMessageChunk)
+        );
+        assert_eq!(
+            classify_session_update(&json!({"sessionUpdate": "tool_call"})),
+            Some(Variant::ToolCall)
+        );
+    }
+
+    #[test]
+    fn keeps_peri_alias_and_unknown_tag_semantics() {
+        assert_eq!(
+            classify_session_update(&json!({"sessionUpdate": "agent_reasoning_chunk"})),
+            Some(Variant::AgentThoughtChunk)
+        );
+        assert_eq!(
+            classify_session_update(&json!({"sessionUpdate": "brand_new_thing"})),
+            None
+        );
+        assert_eq!(classify_session_update(&json!({"noTag": true})), None);
     }
 }
