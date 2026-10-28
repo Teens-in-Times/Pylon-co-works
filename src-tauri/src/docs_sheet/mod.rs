@@ -132,7 +132,12 @@ impl DocsSheetManager {
             .app_handle()
             .state::<crate::AppState>()
             .data_dirs_cloned()
-            .map_err(|e| format!("docs sheet host 未初始化 data dirs: {e}"))?;
+            .map_err(|error| {
+                format!(
+                    "docs sheet host 未初始化 data dirs: {}",
+                    error.raw_message()
+                )
+            })?;
         inner.phase = DocsPhase::Starting;
         inner.error = None;
 

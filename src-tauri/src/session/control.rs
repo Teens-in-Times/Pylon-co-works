@@ -343,7 +343,7 @@ pub(crate) async fn delete_agent_session(
     };
     // 能力 gate（#98 矩阵）：delete 必须 usable（广告 ∩ 消费者注册）才发送；
     // disconnected 客户端无广告，天然落此分支——不发注定失败的 RPC。
-    let snapshot = crate::acp::capture_negotiated_snapshot(&runtime)
+    let snapshot = crate::acp::capture_negotiated_snapshot(&runtime, &state.capability_consumers)
         .await
         .map_err(PylonError::Protocol)?;
     if !snapshot.usable("delete") {
@@ -481,13 +481,7 @@ mod delete_session_tests {
 
     /// #398：`delete_agent_session` 执行链 wire 级测试（`pylon-fake-agent
     /// --scenario delete-session` + trace 断言；fork.rs 同款 harness）。
-    /// 消费者注册是进程级全局，每个用例独立注册（fork 测试 CI 顺序教训）。
-    fn register_delete_consumer() {
-        crate::acp::negotiated::register_capability_consumer(
-            crate::acp::CapabilityConsumer::SessionDelete,
-        );
-    }
-
+    /// #684：能力消费者随 AppState 注入（默认含 SessionDelete），测试不再注册全局。
     async fn delete_runtime(
         name: &str,
         outcome: Option<&str>,
@@ -536,7 +530,6 @@ mod delete_session_tests {
     /// wire 原文经 fake agent trace 落证。
     #[tokio::test]
     async fn delete_sends_rpc_when_capability_usable() {
-        register_delete_consumer();
         let (runtime, agent, trace_path) = delete_runtime("delete-ok", None).await;
         let state = state_for("delete-ok", agent, &runtime);
         let outcome = delete_agent_session(&state, "delete-ok", "local:x", "remote-peri-1")
@@ -556,7 +549,6 @@ mod delete_session_tests {
     /// 能力未协商（disconnected runtime 无广告）⇒ 稳定 skipped、不发 RPC。
     #[tokio::test]
     async fn delete_skips_stably_without_negotiated_capability() {
-        register_delete_consumer();
         let runtime = AgentRuntime::new_disconnected();
         let state = crate::test_utils::TestStateBuilder::bare()
             .with_active_agent("delete-gate")
@@ -576,7 +568,6 @@ mod delete_session_tests {
     /// skipped/method_not_found，本地删除（已先行）不受影响。
     #[tokio::test]
     async fn delete_downgrades_method_not_found_to_skipped() {
-        register_delete_consumer();
         let (runtime, agent, _trace) = delete_runtime("delete-nf", Some("not-found")).await;
         let state = state_for("delete-nf", agent, &runtime);
         let outcome = delete_agent_session(&state, "delete-nf", "local:x", "remote-peri-1")
@@ -592,7 +583,6 @@ mod delete_session_tests {
     /// 能力协商通过但 agent 删除失败 ⇒ Err 上抛（失败可见，前端 reportError）。
     #[tokio::test]
     async fn delete_failure_propagates_after_capability_gate() {
-        register_delete_consumer();
         let (runtime, agent, _trace) = delete_runtime("delete-fail", Some("error")).await;
         let state = state_for("delete-fail", agent, &runtime);
         let error = delete_agent_session(&state, "delete-fail", "local:x", "remote-peri-1")
@@ -608,7 +598,6 @@ mod delete_session_tests {
     /// 不解析 runtime。
     #[tokio::test]
     async fn delete_skips_when_no_remote_session() {
-        register_delete_consumer();
         // 不注册任何 runtime：若尝试路由会返回 agent_runtime_unavailable 而非
         // no_remote_session——以此断言 periId 空分支先行短路。
         let state = crate::test_utils::TestStateBuilder::bare().build();

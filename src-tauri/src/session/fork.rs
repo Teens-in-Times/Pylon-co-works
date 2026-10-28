@@ -13,8 +13,7 @@
 //!   「从未发生」，测试断言）；
 //! - 能力不可用 → 稳定错误 `session_fork_unavailable`，不伪造成功。
 
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::Arc;
 
 use crate::error::PylonError;
 use crate::runtime::AgentRuntime;
@@ -29,9 +28,9 @@ pub(crate) const METHOD_SESSION_FORK: &str = "session/fork";
 /// bounded raw envelope：fork response 上限（session/new/load 响应量级）。
 const MAX_FORK_RESPONSE_BYTES: usize = 1_048_576;
 
-/// parent/child fork 关系（运行期契约 + 诊断）。持久化权威仍是 identity/journal
-/// 层——这里只承载本进程内 fork 链路与 snapshot 断言素材。
-static FORK_LINKS: OnceLock<RwLock<HashMap<String, ForkRecord>>> = OnceLock::new();
+/// #684：单 runtime 保留的 fork 关系上限——关系仅作诊断/快照素材，持久化权威
+/// 仍是 identity/journal 层；满额时淘汰最早创建的一条，保证长会话不无界增长。
+const MAX_FORK_LINKS: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,20 +42,37 @@ pub(crate) struct ForkRecord {
     pub created_at: Timestamp,
 }
 
-fn fork_links() -> &'static RwLock<HashMap<String, ForkRecord>> {
-    FORK_LINKS.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
 /// 查询 child source 的 fork 关系（wire trace/snapshot 断言与诊断用）。
-pub(crate) fn fork_link(child_source: &str) -> Option<ForkRecord> {
-    fork_links()
-        .read()
+/// #684：关系挂在本 runtime 上（随 runtime 生命周期回收），不再进程级全局。
+pub(crate) fn fork_link(runtime: &AgentRuntime, child_source: &str) -> Option<ForkRecord> {
+    runtime
+        .fork_links
+        .lock()
         .ok()
         .and_then(|links| links.get(child_source).cloned())
 }
 
-fn record_fork_link(child_source: &str, record: ForkRecord) {
-    if let Ok(mut links) = fork_links().write() {
+fn record_fork_link(runtime: &AgentRuntime, child_source: &str, record: ForkRecord) {
+    if let Ok(mut links) = runtime.fork_links.lock() {
+        if links.len() >= MAX_FORK_LINKS && !links.contains_key(child_source) {
+            // 同一时间粒度下 created_at 可能相等——用 child source 作确定性次序，
+            // 避免 HashMap 迭代序让淘汰对象随运行而变。
+            let oldest = links
+                .iter()
+                .min_by_key(|(child, existing)| (existing.created_at, child.as_str()))
+                .map(|(child, existing)| (child.clone(), existing.created_at));
+            if let Some((oldest_child, oldest_at)) = oldest {
+                // 来件本身更旧（时钟回拨/补登）：不挤掉更晚的记录，宁缺勿旧。
+                if (record.created_at, child_source) < (oldest_at, oldest_child.as_str()) {
+                    tracing::debug!(
+                        child_source,
+                        "fork link dropped: older than every retained record"
+                    );
+                    return;
+                }
+                links.remove(&oldest_child);
+            }
+        }
         links.insert(child_source.to_string(), record);
     }
 }
@@ -116,7 +132,7 @@ pub(crate) async fn fork_session_slot(
     let generation = state.current_generation(runtime);
     // 能力 gate（AC7）：fork 必须协商通过且消费者已注册（usable），否则稳定
     // unsupported——不因远端广告 true 就执行。
-    let snapshot = crate::acp::capture_negotiated_snapshot(runtime)
+    let snapshot = crate::acp::capture_negotiated_snapshot(runtime, &state.capability_consumers)
         .await
         .map_err(PylonError::Protocol)?;
     if !snapshot.fork_usable() {
@@ -163,6 +179,7 @@ pub(crate) async fn fork_session_slot(
         crate::agent::runtime::SessionSlotPolicy::default().max_sessions,
     )?;
     record_fork_link(
+        runtime,
         child_source,
         ForkRecord {
             parent_source: source.to_string(),
@@ -202,7 +219,7 @@ pub(crate) async fn fork_session_slot(
         "childSource": child_source,
         "periId": child_peri_id,
         "generation": generation,
-        "fork": fork_link(child_source),
+        "fork": fork_link(runtime, child_source),
         "rawResponse": response,
     }))
 }
@@ -316,9 +333,6 @@ mod tests {
     /// 未知扩展字段不破坏 sessionId 提取（raw 原文随事件回传）。
     #[tokio::test]
     async fn fork_session_slot_sends_raw_rpc_and_creates_child_with_link() {
-        crate::acp::negotiated::register_capability_consumer(
-            crate::acp::CapabilityConsumer::SessionFork,
-        );
         let (runtime, agent) = fork_runtime("fork-ok", false).await;
         seed_parent(&runtime, "local:parent");
         let state = crate::test_utils::TestStateBuilder::bare()
@@ -352,7 +366,7 @@ mod tests {
             "失败回滚前提：parent 映射只读"
         );
         drop(sessions);
-        let record = fork_link("local:child").expect("fork 关系已登记");
+        let record = fork_link(&runtime, "local:child").expect("fork 关系已登记");
         assert_eq!(record.parent_source, "local:parent");
         assert_eq!(record.parent_peri_id, "remote-parent");
         assert_eq!(record.child_peri_id, "remote-child");
@@ -361,14 +375,6 @@ mod tests {
     /// AC8 回滚：RPC 失败 ⇒ 稳定错误、无 child 槽位、无 fork 关系、parent 原样。
     #[tokio::test]
     async fn fork_failure_rolls_back_without_child_slot_or_link() {
-        // P1-2 修复（CI 顺序依赖）：消费者注册是进程级全局
-        // （`negotiated::CAPABILITY_CONSUMERS`），注册只在成功用例里做过——
-        // 本用例不能依赖「它先跑」这种调度偶然：runner 上并行调度一变，就会
-        // 提前被 gate 拦成 `fork advertised but consumer not registered`，
-        // 走不到 RPC 失败路径（实测单跑必红）。独立注册，与成功用例对齐。
-        crate::acp::negotiated::register_capability_consumer(
-            crate::acp::CapabilityConsumer::SessionFork,
-        );
         let (runtime, agent) = fork_runtime("fork-fail", true).await;
         seed_parent(&runtime, "local:parent");
         let state = crate::test_utils::TestStateBuilder::bare()
@@ -376,7 +382,6 @@ mod tests {
             .with_agent(agent)
             .with_runtime("fork-fail", runtime.clone())
             .build();
-        // 独立 child source：FORK_LINKS 是进程级全局注册表，避免与成功用例串名。
         let error = fork_session_slot(&state, &runtime, "local:parent", "local:child-fail")
             .await
             .expect_err("RPC 失败必须传播");
@@ -395,16 +400,16 @@ mod tests {
         );
         drop(sessions);
         assert!(
-            fork_link("local:child-fail").is_none(),
+            fork_link(&runtime, "local:child-fail").is_none(),
             "失败不得登记 fork 关系"
         );
     }
 
-    /// AC7：能力不可用（未广告/消费者未注册）⇒ 稳定 session_fork_unavailable，
-    /// 不发 RPC、不建 child。
+    /// AC7：能力不可用（未广告）⇒ 稳定 session_fork_unavailable，不发 RPC、不建 child。
+    /// #684：消费者集合随 AppState 注入（默认含 SessionFork），本用例靠「未广告」
+    /// 触发不可用——不再依赖进程级注册表是否被别的用例注册过。
     #[tokio::test]
     async fn fork_gate_stable_unsupported_without_negotiated_capability() {
-        // 不注册 SessionFork 消费者、连接为 disconnected（无广告）。
         let runtime = AgentRuntime::new_disconnected();
         seed_parent(&runtime, "local:parent");
         let state = crate::test_utils::TestStateBuilder::bare()
@@ -427,11 +432,14 @@ mod tests {
     }
 
     /// fork 关系登记/查询：child → parent 链路可断言（wire trace/snapshot 素材）。
+    /// #684：关系属于单个 runtime，用例自建 runtime 即天然隔离。
     #[test]
     fn fork_link_registry_round_trips() {
-        let child = format!("local:fork-test-{}", std::process::id());
+        let runtime = AgentRuntime::new_disconnected();
+        let child = "local:fork-test";
         record_fork_link(
-            &child,
+            &runtime,
+            child,
             ForkRecord {
                 parent_source: "local:parent".into(),
                 parent_peri_id: "remote-parent".into(),
@@ -440,10 +448,41 @@ mod tests {
                 created_at: Timestamp::now(),
             },
         );
-        let record = fork_link(&child).expect("fork 关系已登记");
+        let record = fork_link(&runtime, child).expect("fork 关系已登记");
         assert_eq!(record.parent_source, "local:parent");
         assert_eq!(record.parent_peri_id, "remote-parent");
         assert_eq!(record.child_peri_id, "remote-child");
         assert_eq!(record.generation, 4);
+    }
+
+    /// #684：满额淘汰最早一条——关系只作诊断，容量有界（长会话不无界增长）。
+    #[test]
+    fn fork_link_registry_is_bounded_and_evicts_oldest() {
+        let runtime = AgentRuntime::new_disconnected();
+        for index in 0..=MAX_FORK_LINKS {
+            record_fork_link(
+                &runtime,
+                &format!("local:child-{index}"),
+                ForkRecord {
+                    parent_source: "local:parent".into(),
+                    parent_peri_id: "remote-parent".into(),
+                    child_peri_id: format!("remote-child-{index}"),
+                    generation: 1,
+                    created_at: Timestamp::new(index as u64),
+                },
+            );
+        }
+        let links = runtime.fork_links.lock().expect("fork links 锁");
+        assert_eq!(links.len(), MAX_FORK_LINKS, "容量必须收敛在上限");
+        assert!(
+            !links.contains_key("local:child-0"),
+            "满额时淘汰最早创建的关系"
+        );
+        assert!(links.contains_key(&format!("local:child-{MAX_FORK_LINKS}")));
+        drop(links);
+        assert!(
+            fork_link(&runtime, "local:child-0").is_none(),
+            "被淘汰关系不可查询"
+        );
     }
 }

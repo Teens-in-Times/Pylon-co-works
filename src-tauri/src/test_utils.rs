@@ -138,6 +138,9 @@ pub(crate) struct TestStateBuilder {
     user_data_service: Option<Arc<crate::session::UserDataService>>,
     workspaces: Arc<Mutex<HashMap<String, crate::workspaces::Workspace>>>,
     data_dirs: Arc<OnceLock<crate::paths::DataDirs>>,
+    /// #684：能力消费者集合覆盖（None = 生产默认集合）。用例可据此构造
+    /// 「消费者未注册」的 gadget，不再借进程级注册表串状态。
+    capability_consumers: Option<std::collections::BTreeSet<crate::acp::CapabilityConsumer>>,
 }
 
 impl TestStateBuilder {
@@ -158,6 +161,7 @@ impl TestStateBuilder {
             user_data_service: None,
             workspaces: Arc::new(Mutex::new(HashMap::new())),
             data_dirs: Arc::new(OnceLock::new()),
+            capability_consumers: None,
         }
     }
 
@@ -217,6 +221,16 @@ impl TestStateBuilder {
         self
     }
 
+    /// #684：覆盖能力消费者集合（None = 生产默认）——「未注册消费者」的能力
+    /// 协商用例不再依赖进程级全局注册表。
+    pub(crate) fn with_capability_consumers(
+        mut self,
+        consumers: std::collections::BTreeSet<crate::acp::CapabilityConsumer>,
+    ) -> Self {
+        self.capability_consumers = Some(consumers);
+        self
+    }
+
     /// 同步构造（AppState 无 async 字段）；未覆盖字段经 build_app_state 与 run()
     /// 同源（P3a：E18 人肉同步退役——AppState 增字段时编译失败点仅 build_app_state）。
     pub(crate) fn build(self) -> AppState {
@@ -225,7 +239,7 @@ impl TestStateBuilder {
             .read()
             .expect("startup diagnostics lock")
             .clone();
-        let state = crate::build_app_state(crate::AppStateParts {
+        let mut state = crate::build_app_state(crate::AppStateParts {
             runtimes: self.runtimes,
             agents: Arc::into_inner(self.agents)
                 .expect("agents Arc must be unique")
@@ -238,6 +252,9 @@ impl TestStateBuilder {
             startup,
         });
         // 测试专属字段覆盖（build_app_state 只承载 run() 生产语义的公共部分）：
+        if let Some(consumers) = self.capability_consumers {
+            state.capability_consumers = Arc::new(consumers);
+        }
         *state.approval_mode.lock().expect("approval lock") = self.approval_mode;
         if let Some(service) = self.user_data_service {
             *state
@@ -483,19 +500,38 @@ mod tests {
         );
     }
 
-    /// P3a（#106）：install_process_registrations 幂等——重复调用不 panic，
-    /// 协议适配器仍可按 provider 解析（run() 与测试装配共用的前提）。
+    /// #684：能力消费者集合随构造注入——默认含 SessionFork（fork 可用的前提），
+    /// 用例可整体覆盖（不再有进程级可写注册表）。
+    #[test]
+    fn builder_capability_consumers_injected_and_overridable() {
+        use crate::acp::CapabilityConsumer;
+        let default_state = TestStateBuilder::bare().build();
+        assert!(
+            default_state
+                .capability_consumers
+                .contains(&CapabilityConsumer::SessionFork),
+            "生产默认集合必须包含 SessionFork 消费者"
+        );
+        let overridden = TestStateBuilder::bare()
+            .with_capability_consumers(std::collections::BTreeSet::new())
+            .build();
+        assert!(overridden.capability_consumers.is_empty());
+    }
+
+    /// P3a（#106）：install_process_registrations 幂等——重复调用不 panic；
+    /// #684 起协议适配器随 AppState 构造注入（内置注册表），不再进程级注册。
     #[test]
     fn install_process_registrations_is_idempotent() {
         crate::install_process_registrations();
         crate::install_process_registrations();
+        let registry = crate::protocol_adapter::ProtocolAdapterRegistry::with_builtin_adapters();
         assert!(
-            crate::protocol_adapter::get_protocol_adapter("peri").is_some(),
-            "peri adapter must resolve after install"
+            registry.get("peri").is_some(),
+            "peri adapter must resolve from builtin registry"
         );
         assert!(
-            crate::protocol_adapter::get_protocol_adapter("hermes").is_some(),
-            "hermes adapter must resolve after install"
+            registry.get("hermes").is_some(),
+            "hermes adapter must resolve from builtin registry"
         );
     }
 }

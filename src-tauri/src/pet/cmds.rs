@@ -9,7 +9,7 @@ use std::time::Duration;
 use tauri::Manager;
 
 /// 宠物状态落盘路径（统一从 AppState 的一次性 DataDirs 取）。
-pub(crate) fn pet_persist_path(state: &AppState) -> Result<std::path::PathBuf, String> {
+pub(crate) fn pet_persist_path(state: &AppState) -> Result<std::path::PathBuf, PylonError> {
     Ok(crate::paths::pet_persist_path(state.data_dirs()?))
 }
 
@@ -22,7 +22,7 @@ pub(crate) fn persist_pet_if_possible(app: &tauri::AppHandle, pet: &pet::PetStat
                 tracing::warn!("persist pet state failed: {error}");
             }
         }
-        Err(error) => tracing::warn!("resolve pet persist path failed: {error}"),
+        Err(error) => tracing::warn!("resolve pet persist path failed: {}", error.raw_message()),
     }
 }
 
@@ -37,7 +37,7 @@ pub(crate) async fn persist_pet_async(state: &AppState) -> bool {
     let path = match pet_persist_path(state) {
         Ok(path) => path,
         Err(error) => {
-            tracing::warn!("resolve pet persist path failed: {error}");
+            tracing::warn!("resolve pet persist path failed: {}", error.raw_message());
             return false;
         }
     };

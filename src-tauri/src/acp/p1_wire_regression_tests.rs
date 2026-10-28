@@ -114,18 +114,13 @@ fn fake_provider_agent(
 }
 
 /// state 构造：注入已连接的 AcpClient + 共享 RuntimeLogHub（stderr 证据源 #6 同 hub）。
-/// 镜像 obs03——单测进程不执行 run()，peri/hermes 协议适配器都要注册。
+/// #684：适配器注册表随 AppState 构造注入（TestStateBuilder 默认含 peri/hermes），
+/// 测试不再向进程级全局注册。
 async fn build_state_with_logs(
     agent: AgentDef,
     initial_acp: AcpClient,
     logs: Arc<RuntimeLogHub>,
 ) -> AppState {
-    crate::protocol_adapter::register_protocol_adapter(std::sync::Arc::new(
-        crate::protocol_adapter::RequestPermissionAdapter { provider: "peri" },
-    ));
-    crate::protocol_adapter::register_protocol_adapter(std::sync::Arc::new(
-        crate::protocol_adapter::RequestPermissionAdapter { provider: "hermes" },
-    ));
     let runtime = AgentRuntime::new_disconnected();
     runtime.install_acp(initial_acp);
     let mut state = crate::test_utils::TestStateBuilder::bare()

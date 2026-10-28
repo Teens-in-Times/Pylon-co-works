@@ -240,7 +240,14 @@ pub(crate) async fn do_connect_and_replace<R: tauri::Runtime>(
     if let Ok(mut state) = runtime.agent_runtime.lock() {
         state.activated_config_fingerprint = Some(agent.runtime_fingerprint());
     }
-    probe_unknown_session_continuity(runtime, agent, probe_candidates, activation.epoch.0).await;
+    probe_unknown_session_continuity(
+        runtime,
+        agent,
+        probe_candidates,
+        activation.epoch.0,
+        &handles.capability_consumers,
+    )
+    .await;
     if announce {
         handles.emit_agent_status(runtime, window, AgentLifecycleStatus::Connected, None);
     }

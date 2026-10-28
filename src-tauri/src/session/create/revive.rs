@@ -272,9 +272,10 @@ pub(super) async fn revive_session_slot(
     // provider 解析的 establishment_order（无 profile = 默认 resume→load→new，
     // 与旧行为一致）；广告侧 canonical 嵌套 object 优先、根级 alias 仅兼容表
     // 登记（load）生效。resume/load 任一不满足即跳过该通道，new 恒备。
-    let capability_snapshot = crate::acp::capture_negotiated_snapshot(runtime)
-        .await
-        .map_err(PylonError::Protocol)?;
+    let capability_snapshot =
+        crate::acp::capture_negotiated_snapshot(runtime, &state.capability_consumers)
+            .await
+            .map_err(PylonError::Protocol)?;
     let establishment_channels = capability_snapshot
         .establishment_channels()
         .map_err(PylonError::Protocol)?;

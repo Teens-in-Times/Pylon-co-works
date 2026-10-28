@@ -18,11 +18,16 @@ pub(crate) async fn reload_agents(
 ) -> Result<(), PylonError> {
     let runtime = state.inner().require_runtime()?;
     let _lifecycle_guard = HeldAcrossAwait::new(runtime.agent_lifecycle.lock().await);
-    let new_agents = if let Some(path) = config_path {
-        crate::agent_config::load_from_path(std::path::Path::new(&path))?
-    } else {
-        crate::agent_config::load()?
-    };
+    // #683：config 文件读 + 解析是同步 IO——移到 spawn_blocking，不占 async 运行时。
+    let new_agents = tokio::task::spawn_blocking(move || {
+        if let Some(path) = config_path {
+            crate::agent_config::load_from_path(std::path::Path::new(&path))
+        } else {
+            crate::agent_config::load()
+        }
+    })
+    .await
+    .map_err(|error| PylonError::Io(error.to_string()))??;
     crate::agent_config::default_agent_id(&new_agents)?;
     // O12：config 读（read_to_string + parse）在锁外完成（load_from_path/load
     // 在取得 agents 锁之前执行）；active 存在性检查 + 新旧表 diff + 原子替换

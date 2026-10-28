@@ -30,7 +30,7 @@ pub(crate) fn root<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, Plu
     let dirs = app
         .state::<AppState>()
         .data_dirs_cloned()
-        .map_err(PluginError::Io)?;
+        .map_err(|error| PluginError::Io(error.raw_message()))?;
     Ok(crate::paths::plugin_root(&dirs))
 }
 
@@ -456,7 +456,7 @@ pub(crate) fn ensure_plugin_dirs(app: &AppHandle) -> Result<(), PluginError> {
     let dirs = app
         .state::<AppState>()
         .data_dirs_cloned()
-        .map_err(PluginError::Io)?;
+        .map_err(|error| PluginError::Io(error.raw_message()))?;
     ensure_at(&crate::paths::plugin_root(&dirs))?;
     // Keep all consumers pinned to the paths module's package/data/runtime/transaction truth.
     for path in [

@@ -303,7 +303,7 @@ impl BrowserManager {
             .app_handle()
             .state::<crate::AppState>()
             .data_dirs_cloned()
-            .map_err(|error| format!("browser host 未初始化 data dirs: {error}"))?;
+            .map_err(|error| format!("browser host 未初始化 data dirs: {}", error.raw_message()))?;
         let bounds = inner
             .bounds
             .ok_or_else(|| "browser bounds 未注册（请先启动 Browser Sheet）".to_string())?;

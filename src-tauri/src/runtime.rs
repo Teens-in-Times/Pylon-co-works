@@ -121,6 +121,10 @@ pub struct AgentRuntime {
     /// Prompt terminal writes ask the dispatcher to close the preceding
     /// cross-window draft before allocating the terminal sequence.
     pub(crate) draft_flush_tx: DraftFlushSender,
+    /// #682：draft 收口通道换代计数——`install_draft_flush_channel` 换装时 +1。
+    /// 在途 `flush_draft_before_terminal` 订阅本信号，换装即立即收敛为
+    /// `Err("superseded")`，不再等满 5s 超时。
+    draft_flush_supersede: tokio::sync::watch::Sender<u64>,
     pub session_creation: Arc<tokio::sync::Mutex<()>>,
     pub agent_lifecycle: Arc<tokio::sync::Mutex<()>>,
     pub client_generation: Arc<AtomicU64>,
@@ -161,6 +165,10 @@ pub struct AgentRuntime {
     /// 由 `cold_mount_turn_snapshot` 查询时判定并累加（诊断读数：标记与终态事件
     /// 失配会造出更难自查的永久生成中，必须显形）。
     pub turn_in_flight_anomalies: AtomicU64,
+    /// #684：本 runtime 的 parent/child fork 关系（诊断/快照素材）。原先为进程级
+    /// 全局表（无 agent 作用域、无回收）：同名 source 跨 agent 串键，测试跨用例
+    /// 残留。现随 runtime 生命周期回收；容量有上限（见 `session::fork`）。
+    pub(crate) fork_links: Arc<Mutex<HashMap<String, crate::session::ForkRecord>>>,
 }
 
 impl AgentRuntime {
@@ -169,9 +177,22 @@ impl AgentRuntime {
         generation: u64,
     ) -> tokio::sync::mpsc::UnboundedReceiver<DraftFlushRequest> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        if let Ok(mut slot) = self.draft_flush_tx.lock() {
-            *slot = Some((generation, sender));
-        }
+        let mut slot = match self.draft_flush_tx.lock() {
+            Ok(slot) => slot,
+            Err(poison) => {
+                tracing::warn!("draft_flush_tx lock poisoned; recovering channel slot");
+                poison.into_inner()
+            }
+        };
+        *slot = Some((generation, sender));
+        // #682：换装即宣告旧代在途请求作废——订阅方立即拿到 superseded，
+        // 而非等 5s 超时（旧 sender 被替换后不再有接收端消费新请求）。
+        // 换代计数必须在槽锁内推进：若在解锁后推进，连续两次换装可能让
+        // 第一次的滞后 bump 落在「已订阅当前代」的 flush 之后，误判 superseded。
+        // 订阅方同样在槽锁内订阅（见 flush_draft_before_terminal）。
+        let next = self.draft_flush_supersede.borrow().wrapping_add(1);
+        self.draft_flush_supersede.send_replace(next);
+        drop(slot);
         receiver
     }
 
@@ -180,13 +201,22 @@ impl AgentRuntime {
         source: &str,
         generation: u64,
     ) -> Result<(), String> {
-        let sender = self
-            .draft_flush_tx
-            .lock()
-            .map_err(|_| "draft flush channel lock poisoned".to_string())?
-            .as_ref()
-            .filter(|(current, _)| *current == generation)
-            .map(|(_, sender)| sender.clone());
+        // #682：在槽锁内「订阅换代信号 + 读 sender」——与 install 的槽锁内
+        // 递增配对：要么读到换代后的新代（generation 不符 → 直接 Ok），要么
+        // 订阅到本代，之后不会再有属于旧代的 bump 落在订阅之后（避免伪
+        // superseded）。
+        let (mut supersede, sender) = {
+            let slot = self
+                .draft_flush_tx
+                .lock()
+                .map_err(|_| "draft flush channel lock poisoned".to_string())?;
+            let supersede = self.draft_flush_supersede.subscribe();
+            let sender = slot
+                .as_ref()
+                .filter(|(current, _)| *current == generation)
+                .map(|(_, sender)| sender.clone());
+            (supersede, sender)
+        };
         let Some(sender) = sender else {
             // There may be no dispatcher for a prompt with no live updates.
             // A stored draft, if any, is still guarded by draft_pending.
@@ -199,10 +229,17 @@ impl AgentRuntime {
                 reply,
             })
             .map_err(|_| "draft dispatcher is unavailable".to_string())?;
-        tokio::time::timeout(std::time::Duration::from_secs(5), received)
-            .await
-            .map_err(|_| "draft dispatcher flush timed out".to_string())?
-            .map_err(|_| "draft dispatcher closed before flush".to_string())?
+        tokio::select! {
+            result = received => result
+                .map_err(|_| "draft dispatcher closed before flush".to_string())?,
+            // #682：dispatcher 换代（或通道被替换）→ 旧代请求无权威可收口，
+            // 立即收敛，不依赖 5s 超时兜底。
+            _ = supersede.changed() => Err("superseded".to_string()),
+            // 兜底：dispatcher 存续但迟迟不应答（理应不可达，保留原预算）。
+            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+                Err("draft dispatcher flush timed out".to_string())
+            }
+        }
     }
 
     /// 以 disconnected 状态新建一个空 runtime（启动/降级路径用）。
@@ -211,6 +248,7 @@ impl AgentRuntime {
             acp: Arc::new(std::sync::RwLock::new(Arc::new(AcpClient::disconnected()))),
             notification_task: Arc::new(Mutex::new(None)),
             draft_flush_tx: Arc::new(Mutex::new(None)),
+            draft_flush_supersede: tokio::sync::watch::channel(0).0,
             session_creation: Arc::new(tokio::sync::Mutex::new(())),
             agent_lifecycle: Arc::new(tokio::sync::Mutex::new(())),
             client_generation: Arc::new(AtomicU64::new(0)),
@@ -231,6 +269,7 @@ impl AgentRuntime {
             turn_ledger: crate::acp::TurnLedger::new(),
             probe_sessions: Arc::new(crate::runtime::ProbeSessionRegistry::new()),
             turn_in_flight_anomalies: AtomicU64::new(0),
+            fork_links: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -536,6 +575,27 @@ mod tests {
         assert!(!waiting.is_finished(), "terminal must wait for commit");
         request.reply.send(Ok(())).unwrap();
         waiting.await.unwrap().unwrap();
+    }
+
+    /// #682：换装 draft 收口通道时，旧代在途请求立即收敛为 `superseded`，
+    /// 不再等满 5s 超时兜底。
+    #[tokio::test]
+    async fn draft_flush_request_is_superseded_when_channel_is_replaced() {
+        let runtime = AgentRuntime::new_disconnected();
+        let mut old_channel = runtime.install_draft_flush_channel(3);
+        let waiting = {
+            let runtime = runtime.clone();
+            tokio::spawn(async move { runtime.flush_draft_before_terminal("local:s", 3).await })
+        };
+        // 收到请求即证明 flush 已完成订阅并进入等待；此时换装才可被观测。
+        let request = old_channel.recv().await.expect("flush request");
+        let _replacement = runtime.install_draft_flush_channel(4);
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), waiting)
+            .await
+            .expect("换装必须立即收敛，而不是等 5s 超时")
+            .unwrap();
+        assert_eq!(result, Err("superseded".to_string()));
+        drop(request);
     }
 
     /// #99（评审 E2 回归锁）：冷挂载快照的真实 wire 形状——本测试钉住

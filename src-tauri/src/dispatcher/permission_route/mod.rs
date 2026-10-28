@@ -32,6 +32,7 @@ async fn handle_permission_request<R: tauri::Runtime>(
     sessions: &SessionsLock,
     hook_bridge: &Arc<HookBridge>,
     runtimes: &AgentRuntimeManager,
+    protocol_adapters: &crate::protocol_adapter::ProtocolAdapterRegistry,
     provider: &str,
     agent_id: &str,
     method: Option<&str>,
@@ -41,9 +42,7 @@ async fn handle_permission_request<R: tauri::Runtime>(
     // #98: method-driven dispatch - adapter lookup by ACP method, provider name
     // no longer a gate; unknown methods get a stable method_unsupported with the
     // raw params kept observable via the rejection event.
-    let Some(adapter) =
-        crate::protocol_adapter::get_protocol_adapter_for_method(method.unwrap_or(""))
-    else {
+    let Some(adapter) = protocol_adapters.get_for_method(method.unwrap_or("")) else {
         reject_interaction_request(
             window,
             acp,
@@ -222,6 +221,7 @@ pub(crate) async fn route_permission_request<R: tauri::Runtime>(
     sessions: &SessionsLock,
     hook_bridge: &Arc<HookBridge>,
     runtimes: &AgentRuntimeManager,
+    protocol_adapters: &crate::protocol_adapter::ProtocolAdapterRegistry,
     agents: &std::sync::Mutex<std::collections::HashMap<String, crate::agent_config::AgentDef>>,
     agent_id: &str,
     raw: crate::acp::RawMessage,
@@ -241,6 +241,7 @@ pub(crate) async fn route_permission_request<R: tauri::Runtime>(
             sessions,
             hook_bridge,
             runtimes,
+            protocol_adapters,
             &provider,
             agent_id,
             raw.method.as_deref(),

@@ -406,15 +406,15 @@ pub(crate) async fn respond_interaction(
         return Ok(());
     }
     // 兜底：permission 应答路径（方法驱动——不再要求 provider 注册）。
-    let adapter = crate::protocol_adapter::get_protocol_adapter_for_method(
-        crate::acp::METHOD_SESSION_REQUEST_PERMISSION,
-    )
-    .ok_or_else(|| {
-        PylonError::Protocol(
-            "interaction response unsupported: no adapter for session/request_permission"
-                .to_string(),
-        )
-    })?;
+    let adapter = state
+        .protocol_adapters
+        .get_for_method(crate::acp::METHOD_SESSION_REQUEST_PERMISSION)
+        .ok_or_else(|| {
+            PylonError::Protocol(
+                "interaction response unsupported: no adapter for session/request_permission"
+                    .to_string(),
+            )
+        })?;
     adapter
         .respond_interaction(&runtime, &identity, &kind, &answer)
         .await

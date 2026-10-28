@@ -192,6 +192,14 @@ macro_rules! declare_app_state {
                     $( $shared_field: state.$shared_field.clone(), )*
                 }
             }
+
+            /// 全字段克隆（dispatcher/崩溃重连按需复制一份自持有句柄）。
+            /// 同表生成，新增共享字段不可能漏拷贝。
+            pub(crate) fn clone_handles(&self) -> Self {
+                Self {
+                    $( $shared_field: self.$shared_field.clone(), )*
+                }
+            }
         }
     };
 }
@@ -225,6 +233,12 @@ declare_app_state! {
         message_service: Arc<Mutex<Option<Arc<crate::session::MessageService>>>>,
         /// P55：kernel hook 桥（pending oneshot 挂表 + ready 握手 + registry 闸）。
         hook_bridge: Arc<crate::hook_bridge::HookBridge>,
+        /// #684：能力消费者集合——启动装配时一次性注入（不再是 pylon-acp 的
+        /// 进程级全局注册表）；测试各自构造，互不泄漏。
+        capability_consumers: Arc<std::collections::BTreeSet<crate::acp::CapabilityConsumer>>,
+        /// #684：协议适配器注册表（method → provider 槽）——AppState 持有，
+        /// 启动装配时注入内置适配器；测试各自构造，互不泄漏。
+        protocol_adapters: Arc<crate::protocol_adapter::ProtocolAdapterRegistry>,
     }
     app_only {
         runtime_mcp: Mutex<Option<Vec<mcp::McpServerConfig>>>,
@@ -246,9 +260,13 @@ declare_app_state! {
         /// C7：switch/reconnect 串行锁——并发 switch 不交叉杀进程（一个 switch
         /// 未完成前另一个 switch 不得 kill 同一批旧进程）。
         switch_lock: tokio::sync::Mutex<()>,
-        /// C8：MCP 写序锁（tokio Mutex）——set_mcp_servers 写 runtime_mcp + 落盘
-        /// 全程持锁，并发设置时磁盘必为最后一次设置（重启不回滚到旧配置）。
+        /// C8：MCP 写序锁（tokio Mutex）——set_mcp_servers 写 runtime_mcp + wire 缓存
+        /// 并在锁内登记落盘序号，使内存提交顺序 = 序号顺序。磁盘写不再持本锁
+        /// （#683：由 mcp_persist_order 串行且只落最新序号）。
         mcp_write_lock: tokio::sync::Mutex<()>,
+        /// #683：MCP 落盘序号与串行闸——写盘在 spawn_blocking 内按此串行，
+        /// 且只让最新序号落盘；命令面不再持 mcp_write_lock 等待磁盘。
+        mcp_persist_order: Arc<crate::lifecycle::mcp::McpPersistOrder>,
         /// Phase 3：配置写序锁（tokio Mutex）——update_agents_config 读当前→生成候选→
         /// 校验→写盘→内存提交全程持锁，两个写请求不基于同一旧版本互相覆盖。
         config_write_lock: tokio::sync::Mutex<()>,
@@ -297,14 +315,20 @@ declare_app_state! {
 
 impl AppState {
     /// 读取本次启动解析一次的数据目录（未初始化 = 启动时序缺陷，显式报错）。
-    pub(crate) fn data_dirs(&self) -> Result<&crate::paths::DataDirs, String> {
-        self.data_dirs
-            .get()
-            .ok_or_else(|| "data dirs not initialized".to_string())
+    ///
+    /// #685：typed 错误——沿用既有 `protocol_error` 机器码（原 `String` 经
+    /// `From<String> for PylonError` 同样落 Protocol），message 逐字不变；
+    /// 调用方不再需要把字符串拼进各自的错误类型。
+    pub(crate) fn data_dirs(&self) -> Result<&crate::paths::DataDirs, crate::error::PylonError> {
+        self.data_dirs.get().ok_or_else(|| {
+            crate::error::PylonError::Protocol("data dirs not initialized".to_string())
+        })
     }
 
     /// DataDirs 克隆（路径消费者需要 owned 值跨 spawn_blocking/async 闭包时）。
-    pub(crate) fn data_dirs_cloned(&self) -> Result<crate::paths::DataDirs, String> {
+    pub(crate) fn data_dirs_cloned(
+        &self,
+    ) -> Result<crate::paths::DataDirs, crate::error::PylonError> {
         self.data_dirs().cloned()
     }
 }
@@ -408,16 +432,30 @@ impl AppStateHandles {
     }
 
     fn agent_status_payload(&self, runtime: Option<&AgentRuntime>) -> serde_json::Value {
+        self.agent_status_payload_for(runtime, None)
+    }
+
+    /// #680：显式 agent 身份的 payload——后台 runtime 的崩溃/重连公告必须标注
+    /// 自身 agentId，而不是当前 active（否则状态事件指向错误 agent）。
+    /// `None` = 沿用 active（既有事件形状与调用方行为不变）。
+    pub(crate) fn agent_status_payload_for(
+        &self,
+        runtime: Option<&AgentRuntime>,
+        agent_id: Option<&str>,
+    ) -> serde_json::Value {
         let (status, last_error, last_connected_at) = runtime
             .and_then(|runtime| runtime.agent_runtime.lock().ok().map(|state| state.clone()))
             .map(|state| (state.status, state.last_error, state.last_connected_at))
             .unwrap_or((AgentLifecycleStatus::Disconnected, None, None));
-        let active_agent_id = self
-            .active_agent
-            .lock()
-            .ok()
-            .map(|value| value.clone())
-            .unwrap_or_default();
+        let active_agent_id = match agent_id {
+            Some(agent_id) => agent_id.to_string(),
+            None => self
+                .active_agent
+                .lock()
+                .ok()
+                .map(|value| value.clone())
+                .unwrap_or_default(),
+        };
         let agent = self
             .agents
             .lock()
@@ -446,7 +484,14 @@ impl AppStateHandles {
         // generation 复用上方单次装载（原闭包内二次 Acquire 收敛为一）。
         let capability_snapshot = runtime.and_then(|runtime| {
             let acp = runtime.acp.try_read().ok()?;
-            Some(crate::acp::negotiated_snapshot_from_client(&acp, generation).wire_value())
+            Some(
+                crate::acp::negotiated_snapshot_from_client(
+                    &acp,
+                    generation,
+                    &self.capability_consumers,
+                )
+                .wire_value(),
+            )
         });
         // #98：pending 交互摘要（含事件载荷全文）——前端冷挂载/刷新只凭本快照
         // + generation 即可恢复 active 卡与 queued 深度，不依赖一次性 live event。
@@ -503,11 +548,23 @@ impl AppStateHandles {
         status: AgentLifecycleStatus,
         last_error: Option<String>,
     ) {
+        self.emit_agent_status_for(runtime, window, None, status, last_error);
+    }
+
+    /// #680：按 runtime 自身 agent 身份发状态事件（后台 runtime 崩溃/放弃重连）。
+    pub(crate) fn emit_agent_status_for<R: tauri::Runtime, W: tauri::Emitter<R>>(
+        &self,
+        runtime: &AgentRuntime,
+        window: &W,
+        agent_id: Option<&str>,
+        status: AgentLifecycleStatus,
+        last_error: Option<String>,
+    ) {
         self.set_agent_runtime_status(runtime, status, last_error.clone());
         // P2-3：崩溃检测在状态写入之后执行——acp 已死时崩溃状态优先于本次
         // announce 的状态（避免"status=reconnecting 但 crashed=true"的自我矛盾）。
         Self::detect_and_record_crashes(Some(runtime));
-        let mut payload = self.agent_status_payload(Some(runtime));
+        let mut payload = self.agent_status_payload_for(Some(runtime), agent_id);
         // P3-12：announce 后处理（payload 未报告崩溃时按 announce 覆写状态/错误）
         apply_announce_override(&mut payload, status, last_error);
         emit_event(window, event_names::AGENT_STATUS, payload);
@@ -788,37 +845,13 @@ pub fn startup_mark(phase: &str) {
     crate::startup_timing::mark(phase);
 }
 
-/// 会话过期判定（B10.3b，参考 Hermes reset policy）：返回过期原因，None = 未过期。
-///
-/// - reset="off"：永不过期
-/// - reset="daily"：按 UTC 日历天比较（updated_at 与 now 不同天 → 过期）
-/// - 其他（默认 idle）：`now - updated_at > idle_minutes` → 过期
-///   updated_at 缺失（历史数据）视为未过期（保守，防误杀）。
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-// P3a（#106）：进程级一次性注册提取（rustls provider + peri/hermes 协议适配器 +
-// #98 能力消费者）。全部幂等——生产 run() 与测试装配走同一入口，消灭
-// test_state_with_acp 对 run() 的手工镜像。
-pub(crate) fn install_process_registrations() {
-    // rustls 0.23 进程级 CryptoProvider：依赖树经 feature 统一同时启用
-    // aws-lc-rs 与 ring（reqwest/hyper-rustls 与 tokio-tungstenite 各拉其一），
-    // 自动探测必然失败——gateway QQ WSS 首次 TLS 握手即 panic（P78 真实平台
-    // 验收暴露；stub 测试不走 TLS 故未覆盖）。启动最早期显式安装默认 provider。
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-    // P0-3（R2-WI03）+ R2-WI06：注册协议适配器——Peri 与 Hermes 的审批 wire 逐字段
-    // 一致（均走 ACP session/request_permission + RequestPermissionResponse，已源码实证），
-    // 同一 request_permission 实现按 provider 注册；clarify/ask-user 无真实 wire 不注册。
-    // #424：method 表 per-provider 槽保留这组双注册事实（诊断位据此投影为真值）。
-    protocol_adapter::register_protocol_adapter(std::sync::Arc::new(
-        protocol_adapter::RequestPermissionAdapter { provider: "peri" },
-    ));
-    protocol_adapter::register_protocol_adapter(std::sync::Arc::new(
-        protocol_adapter::RequestPermissionAdapter { provider: "hermes" },
-    ));
-    // #98：能力消费者注册表——「声明—协商—消费者」矩阵第三列。只有注册了
-    // 消费者的能力才会被协商快照投影为 usable（IPC/UI 可点击 gate）；fork 与
-    // elicitation 的消费者在本切片落地（session/fork.rs / elicitation 桥）。
+/// #684：生产能力消费者集合（「声明—协商—消费者」矩阵第三列）。只有注册了
+/// 消费者的能力才会被协商快照投影为 usable（IPC/UI 可点击 gate）；fork 与
+/// elicitation 的消费者在本切片落地（session/fork.rs / elicitation 桥）。
+/// 集合随 AppState 一次性注入（不再进程级全局），测试可各自替换。
+fn default_capability_consumers() -> std::collections::BTreeSet<crate::acp::CapabilityConsumer> {
     use crate::acp::CapabilityConsumer as CC;
-    for consumer in [
+    [
         CC::SessionEstablishment,
         CC::SessionClose,
         CC::SessionDelete,
@@ -828,9 +861,21 @@ pub(crate) fn install_process_registrations() {
         CC::PromptImage,
         CC::McpHttp,
         CC::McpSse,
-    ] {
-        crate::acp::negotiated::register_capability_consumer(consumer);
-    }
+    ]
+    .into_iter()
+    .collect()
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+// P3a（#106）：进程级一次性注册提取（rustls provider）。
+// 全部幂等——生产 run() 与测试装配走同一入口。#684 起能力消费者与协议适配器
+// 不再是进程级注册：它们随 `AppState` 构造一次性注入（见 `build_app_state`）。
+pub(crate) fn install_process_registrations() {
+    // rustls 0.23 进程级 CryptoProvider：依赖树经 feature 统一同时启用
+    // aws-lc-rs 与 ring（reqwest/hyper-rustls 与 tokio-tungstenite 各拉其一），
+    // 自动探测必然失败——gateway QQ WSS 首次 TLS 握手即 panic（P78 真实平台
+    // 验收暴露；stub 测试不走 TLS 故未覆盖）。启动最早期显式安装默认 provider。
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
 /// P3a（#106）：config→AppState 组装的输入部件（run() 与 TestStateBuilder 同源）。
@@ -873,6 +918,7 @@ pub(crate) fn build_app_state(parts: AppStateParts) -> AppState {
         pet_write_lock: tokio::sync::Mutex::new(()),
         switch_lock: tokio::sync::Mutex::new(()),
         mcp_write_lock: tokio::sync::Mutex::new(()),
+        mcp_persist_order: Arc::new(crate::lifecycle::mcp::McpPersistOrder::default()),
         config_write_lock: tokio::sync::Mutex::new(()),
         browser: Arc::new(browser::BrowserManager::new()),
         docs_sheet: Arc::new(docs_sheet::DocsSheetManager::new()),
@@ -898,6 +944,10 @@ pub(crate) fn build_app_state(parts: AppStateParts) -> AppState {
         plugin_processes: Arc::new(crate::plugin_process::PluginProcessSupervisor::default()),
         pylon_cli: Arc::new(crate::pylon_cli::PylonCliBridge::default()),
         hook_bridge: Arc::new(crate::hook_bridge::HookBridge::default()),
+        capability_consumers: Arc::new(default_capability_consumers()),
+        protocol_adapters: Arc::new(
+            crate::protocol_adapter::ProtocolAdapterRegistry::with_builtin_adapters(),
+        ),
         verified_agent_fingerprints: Arc::new(lifecycle::verification::VerificationVouchers::new()),
     }
 }
@@ -986,7 +1036,10 @@ fn setup_install_data_dirs(
         .map_err(|_| "data dirs already initialized".to_string())?;
     // 后续 setup 路径消费者统一使用这份一次性解析结果；跨 async/spawn_blocking
     // 时按需 clone（PathBuf 拷贝成本可忽略）。
-    let dirs = app.state::<AppState>().data_dirs_cloned()?;
+    let dirs = app
+        .state::<AppState>()
+        .data_dirs_cloned()
+        .map_err(|error| std::io::Error::other(error.raw_message()))?;
     // #362：日志目录在 `main()`（`init_tracing`）就已解析，早于这里的 DataDirs。
     // 两边应当落在同一个 data_root 下；不一致说明路径推理漂移了（用户会按说明书
     // 去错地方找日志），所以显式说出来而不是静默分叉。
@@ -1287,19 +1340,24 @@ fn setup_spawn_default_agent_connect(app: &tauri::App, default_runtime_connectin
         return;
     }
     let inner = app.state::<AppState>().inner();
-    let active_id = inner
-        .active_agent
-        .lock()
-        .map(|id| id.clone())
-        .unwrap_or_default();
-    let agent = inner
+    // #681：setup 阶段只决定「是否要起后台连接」（用 active id 查注册表存在性）；
+    // AgentDef 与 runtime 一律在任务内、双锁之下按同一 id 重取，不再把 setup
+    // 时刻的 AgentDef 与执行时刻的 runtime 拼在一起。
+    let active_id = match inner.active_agent.lock() {
+        Ok(id) => id.clone(),
+        Err(poison) => {
+            tracing::warn!("active_agent lock poisoned during startup; recovering");
+            poison.into_inner().clone()
+        }
+    };
+    let has_agent = inner
         .agents
         .lock()
-        .ok()
-        .and_then(|agents| agents.get(&active_id).cloned());
-    let Some(agent) = agent else {
+        .map(|agents| agents.contains_key(&active_id))
+        .unwrap_or(false);
+    if !has_agent {
         return;
-    };
+    }
     let app_handle = app.handle().clone();
     let connect_window = app.get_webview_window("main");
     let handles = AppStateHandles::from_state(app.state::<AppState>().inner());
@@ -1309,9 +1367,34 @@ fn setup_spawn_default_agent_connect(app: &tauri::App, default_runtime_connectin
         let state = app_handle.state::<AppState>();
         // 锁序：switch_lock → agent_lifecycle（同 reconnect_agent/switch_agent）。
         let _switch_guard = HeldAcrossAwait::new(state.inner().switch_lock.lock().await);
-        let runtime = match handles.active_runtime() {
-            Some(runtime) => runtime,
-            None => return,
+        // #681：拿到 switch_lock 后重取 (active id, AgentDef, runtime) 三元组；
+        // active 在 setup 与我方拿锁之间被切走则放弃本次连接（与 switch/
+        // reconnect/restart 同形），避免 B 的 runtime 跑 A 的命令。
+        let active_id_now = state
+            .inner()
+            .active_agent
+            .lock()
+            .map(|id| id.clone())
+            .unwrap_or_else(|poison| poison.into_inner().clone());
+        if active_id_now != active_id {
+            tracing::info!(
+                "默认 agent 后台初始连接放弃：active agent 在启动连接前已切换（{active_id} → {active_id_now}）"
+            );
+            return;
+        }
+        let agent = state
+            .inner()
+            .agents
+            .lock()
+            .map(|agents| agents.get(&active_id_now).cloned())
+            .unwrap_or_else(|poison| poison.into_inner().get(&active_id_now).cloned());
+        let Some(agent) = agent else {
+            tracing::warn!("默认 agent 后台初始连接放弃：agent {active_id_now} 已不在注册表");
+            return;
+        };
+        let Some(runtime) = handles.runtimes.get(&active_id_now) else {
+            tracing::warn!("默认 agent 后台初始连接放弃：agent {active_id_now} 无 runtime");
+            return;
         };
         let _lifecycle_guard = HeldAcrossAwait::new(runtime.agent_lifecycle.lock().await);
         let Some(connect_window) = connect_window else {

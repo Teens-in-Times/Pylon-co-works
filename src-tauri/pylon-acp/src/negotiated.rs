@@ -20,7 +20,6 @@
 //! fail-closed 且不影响其他条目。
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{OnceLock, RwLock};
 
 use crate::capabilities::CapabilityRegistry;
 use crate::initialize_plan::EstablishmentChannel;
@@ -224,26 +223,9 @@ pub const CAPABILITY_MATRIX: &[CapabilityMatrixEntry] = &[
     },
 ];
 
-static CAPABILITY_CONSUMERS: OnceLock<RwLock<BTreeSet<CapabilityConsumer>>> = OnceLock::new();
-
-fn consumers_slot() -> &'static RwLock<BTreeSet<CapabilityConsumer>> {
-    CAPABILITY_CONSUMERS.get_or_init(|| RwLock::new(BTreeSet::new()))
-}
-
-/// 注册能力消费者（应用启动时；幂等）。只有注册后的能力才可投影为 usable。
-pub fn register_capability_consumer(consumer: CapabilityConsumer) {
-    if let Ok(mut consumers) = consumers_slot().write() {
-        consumers.insert(consumer);
-    }
-}
-
-/// 当前已注册消费者快照（测试可直构注入，生产走全局注册表）。
-pub fn registered_capability_consumers() -> BTreeSet<CapabilityConsumer> {
-    consumers_slot()
-        .read()
-        .map(|consumers| consumers.clone())
-        .unwrap_or_default()
-}
+// #684：消费者集合是宿主产品配置，由 AppState 在启动时一次性注入
+// （`NegotiatedCapabilitySnapshot::from_parts` 的 `consumers` 参数）——本 crate
+// 不再持有进程级可变注册表，测试各自构造集合，互不影响。
 
 /// 单条能力的协商结论。
 #[derive(Debug, Clone, PartialEq)]
