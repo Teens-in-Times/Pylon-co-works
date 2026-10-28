@@ -146,7 +146,7 @@ impl DocsSheetManager {
                 .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny);
 
         // 子 WebView 必须与宿主主 WebView 共用同一套 WebView2 环境参数（#308，
-        // 详见 browser::open_tab_in 的注释）；本应用窗口固定带调试端口那一串。
+        // 详见 browser::open_tab_in 的注释）。
         #[cfg(windows)]
         let builder = match crate::browser::host_additional_browser_args() {
             Some(args) => builder.additional_browser_args(&args),

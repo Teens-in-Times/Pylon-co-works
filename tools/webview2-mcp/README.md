@@ -69,6 +69,9 @@ pylon.exe
 ```
 
 WebView2 只在启动时读这个参数，运行中开不了——所以换端口、或忘了带，都得关掉重开。
+**#330 起产品二进制不再内置调试端口**（0.2.1–0.4.x 曾在 WebView2 环境参数里内嵌
+`--remote-debugging-port=9222`，发行包同样对同机进程开放）；环境变量是唯一开启通道，
+debug 与 release 构建一致。
 细节与验证见[四、拉起调试窗口](#四拉起调试窗口)。
 
 ### 2. 把服务器配进 MCP 客户端
@@ -393,7 +396,8 @@ MCP 侧则调 `webview_targets`：端点不可达时它**不报错**，而是返
 `msedgewebview2.exe` 的命令行里**同时**出现 Pylon 自己那组参数
 （`--autoplay-policy=...`、`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`）
 与 `--remote-allow-origins=* --remote-debugging-port=9222`。也就是说，运行时把环境变量的值
-**追加**在了 Pylon 原有参数之后。
+**追加**在了 Pylon 原有参数之后。Pylon 自己那组自 #330 起已不含调试端口，所以下面这条复核
+命令里 `remote-debugging` 只可能来自环境变量——缺了它就说明这次启动没带端口。
 
 这解释了第四节那条注意：既然是追加，就不需要（也不应该）把 `--disable-features=...` 抄进来
 ——那只会得到两串重复参数。

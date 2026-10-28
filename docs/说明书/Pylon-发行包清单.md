@@ -11,7 +11,8 @@
 
 - Pylon 主程序及启动所需的 Tauri/WebView2 loader；
 - Agent 检测器；
-- 自带的调试 MCP 服务器（`tools/webview2-mcp/`，2026-09-17 起随包分发）；
+- 自带的调试 MCP 服务器（`tools/webview2-mcp/`，2026-09-17 起随包分发；发行二进制**不内置**
+  WebView2 调试端口——#330 起需按该目录 README 用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 临时开启）；
 - 前端资源（字体等）；
 - 零 Agent 的 `agents.yaml` 配置模板（#372 起随包：打包时由 `resources/release/agents.template.yaml` 改名收取）和便携模式启动说明；
 - `portable.flag` 与空的 `data/` 目录（#482 起便携是唯一存储模式：`data/` 即唯一数据真源）；

@@ -82,8 +82,14 @@ use tauri::{Emitter, Manager, Runtime};
 /// 主窗口改代码创建后本常量是唯一权威）。browser / docs 子 WebView 经
 /// `host_additional_browser_args` 共用同串——同一 user data folder 下各 WebView 的
 /// 环境参数必须逐字节一致，否则第二环境创建直接失败（见 browser::open_tab_in 注释）。
+///
+/// #330：**不含 CDP 调试端口**。端口等于把该窗口的任意 JS 执行能力交给同机任何进程，
+/// 发行二进制不能编译期内嵌（旧值内置 `--remote-debugging-port=9222`）。调试期按需用
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 注入：实测 WebView2 运行时把该变量的值
+/// **追加**在本串之后（`tools/webview2-mcp/README.md` 附录 A），故此处不需要任何
+/// 构建档位分支，dev 与 release 行为一致。
 pub(crate) const MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS: &str =
-    "--remote-debugging-port=9222 --remote-allow-origins=* --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
 #[cfg(test)]
 use crate::time::Timestamp;
@@ -1859,5 +1865,31 @@ mod init_tracing_tests {
             .with_writer(std::io::stderr)
             .with_filter(tracing_subscriber::filter::LevelFilter::INFO);
         let _ = filtered.with_subscriber(base);
+    }
+}
+
+/// #330 回归守卫：CDP 调试端口不得再编译进产品二进制。
+///
+/// 内置端口 = 同机任何进程都能连上该窗口执行任意 JS（发行包也一样）。调试期改用
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 追加，见 `MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS` 注释。
+#[cfg(test)]
+mod window_browser_args_tests {
+    use super::MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS;
+
+    #[test]
+    fn built_in_browser_args_carry_no_cdp_port() {
+        assert!(
+            !MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS.contains("remote-debugging"),
+            "内置 WebView2 参数又带上了 CDP 端口（#330）：{MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS}"
+        );
+        assert!(
+            !MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS.contains("remote-allow-origins"),
+            "内置 WebView2 参数带上了 CDP 来源放行（#330）：{MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS}"
+        );
+        assert!(
+            MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS
+                .contains("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"),
+            "内置 WebView2 参数丢了原有的 --disable-features 组合：{MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS}"
+        );
     }
 }
