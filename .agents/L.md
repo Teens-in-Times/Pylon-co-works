@@ -9,4 +9,3 @@
 - [DeepSeek] #602 Rust CI 门禁漏报（退出码被后续 build 覆盖）——一并修被其掩盖的 #601/#603/#617。文件域：`.github/workflows/ci.yml`、`src-tauri/pylon-foundations/src/{workspace,child_command}.rs`、`src-tauri/src/{runtime,test_utils}.rs`；本 spec 与对应 record。避让 TS 侧 #593/#600。
 - [DeepSeek] #613 terminalDelivery 全量时序 flake：文件域 `src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts`（仅补承重睡）；本 spec 与对应 record。
 
-- [Qoder] #330 发行构建去掉内置 CDP 端口：文件域 `src-tauri/src/{lib,browser/mod}.rs`（`MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS` 常量 + 注释 + 一条回归单测）、`.agents/skills/webview2-acceptance/SKILL.md`、`tools/webview2-mcp/README.md`、`docs/说明书/Pylon-发行包清单.md`；本 spec 与对应 record。避让 #602 的 Rust 文件域与 #593/#600/#607 的 TS 面。
