@@ -17,7 +17,7 @@
 //!     session_id 只承担 legacy wildcard gate 与诊断，不再造成多 owner 冲突。
 //!   - `canonical_events` 已携带 owner 列（profile_id/agent_id/local_session_id/
 //!     remote_session_id/owner_key）——EVT-02 先行覆盖，作为 owner 化样板。
-//! - 索引：idx_canonical_events_session_seq + **DEL-02 新增**
+//! - 索引（v17）：idx_canonical_events_rollup_spans + DEL-02 新增
 //!   idx_deleted_sessions_state_deleted_at（§5.12 建议——deleting/deleted 列表过滤与
 //!   orphan cleanup 扫描）。无 (agent_id, profile_id, updated_at)（保留缺口）。
 //! - FK：active schema 无 messages/send_attempts；canonical_events 不设 FK（§5.12 注释——事件流
@@ -103,7 +103,7 @@ fn user_index_names(conn: &Connection) -> Vec<String> {
 }
 
 #[test]
-fn schema_version_is_v16_draft_storage_baseline() {
+fn schema_version_is_v17_rollup_index_baseline() {
     let conn = audit_db();
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -113,8 +113,8 @@ fn schema_version_is_v16_draft_storage_baseline() {
         "user_version 必须等于 SCHEMA_VERSION"
     );
     assert_eq!(
-        version, 16,
-        "审计基线 = v16（#155 T3：v15 canonical_events 不变，新增 canonical_draft_fragments；v15→v16 加表保留历史，旧于 v15 的库仍重建）。后续迁移必须显式递增并更新本基线"
+        version, 17,
+        "审计基线 = v17（#664：compact 跨度部分覆盖索引 idx_canonical_events_rollup_spans；v15/v16 原位加索引保留历史，旧于 v15 的库仍重建）。后续迁移必须显式递增并更新本基线"
     );
 }
 
@@ -214,13 +214,19 @@ fn index_inventory_baseline() {
     let conn = audit_db();
     // #155 T2（v15）：idx_canonical_events_session_seq 已删——(owner_key, sequence)
     // WITHOUT ROWID 聚簇主键本身就是 owner 前缀有序的访问路径，(local_session_id,
-    // sequence) 无生产查询面。canonical_events 的唯一索引即主键本身。
+    // sequence) 无生产查询面。v17（#664）另加 compact 跨度部分覆盖索引。
     let ce_indexes = index_names(&conn, "canonical_events");
     assert!(
         ce_indexes
             .iter()
             .any(|index| index.starts_with("sqlite_autoindex")),
         "canonical_events 主键聚簇以 sqlite_autoindex 形式登记；当前 {ce_indexes:?}"
+    );
+    assert!(
+        ce_indexes
+            .iter()
+            .any(|index| index == "idx_canonical_events_rollup_spans"),
+        "canonical_events 缺少 #664 compact 跨度覆盖索引；当前 {ce_indexes:?}"
     );
     // DEL-02：deleted_sessions 已新增 §5.12 建议的 (state, deleted_at) 复合索引
     // （deleting/deleted 列表过滤与 orphan cleanup 扫描）。
@@ -238,6 +244,7 @@ fn index_inventory_baseline() {
     // 缺口（保留）：无 (agent_id, profile_id, updated_at) 会话活动索引（§5.12 建议；owner 化后按 agent 过滤会话列表需要）。
     let user_indexes = user_index_names(&conn);
     let mut expected_indexes = vec![
+        "idx_canonical_events_rollup_spans".to_string(),
         "idx_deleted_sessions_state_deleted_at".to_string(),
         "idx_deleted_sessions_session_id".to_string(),
         "idx_session_state_snapshots_remote".to_string(),
@@ -245,7 +252,7 @@ fn index_inventory_baseline() {
     expected_indexes.sort();
     assert_eq!(
         user_indexes, expected_indexes,
-        "审计：v15 全库用户索引只剩 tombstone 与 state remote mapping；新增/删除索引必须更新本基线"
+        "审计：用户索引 = tombstone 两条 + state remote mapping + #664 跨度覆盖索引；新增/删除索引必须更新本基线"
     );
 }
 

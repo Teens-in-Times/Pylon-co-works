@@ -1560,6 +1560,97 @@ fn search_hits_orders_by_owner_triple_then_sequence_and_truncates() {
     );
 }
 
+/// #668：LIMIT 下推后，SQL 的 `json_extract(owner_key, '$[i]')` 元组序必须与 Rust
+/// 侧 `(profile, agent, local, sequence)` 序一致；matchOffset 改为返回行主键回查，
+/// 不能让截断或回查丢值。
+#[test]
+fn search_hits_orders_across_profiles_and_keeps_offsets_under_limit() {
+    let repo = repo();
+    let mut rows = Vec::new();
+    for (profile, agent, local) in [
+        ("p2", "alpha", "s1"),
+        ("p1", "zeta", "s1"),
+        ("p1", "alpha", "s2"),
+        ("p1", "alpha", "s1"),
+    ] {
+        let owner_key = serde_json::to_string(&[profile, agent, local]).unwrap();
+        rows.push(
+            parse_canonical_event(&serde_json::json!({
+                "eventId": format!("{owner_key}#1"),
+                "owner": {
+                    "profileId": profile,
+                    "agentId": agent,
+                    "localSessionId": local,
+                    "remoteSessionId": "remote-1",
+                },
+                "clientGeneration": 5,
+                "sequence": 1,
+                "occurredAt": "2026-08-14T00:00:00.000Z",
+                "receivedAt": "2026-08-14T00:00:00.000Z",
+                "eventType": "user.message",
+                "payloadVersion": 1,
+                "rawPayload": {"text": "needle"},
+            }))
+            .unwrap(),
+        );
+    }
+    rows.sort_by(|a, b| {
+        (&a.profile_id, &a.agent_id, &a.local_session_id).cmp(&(
+            &b.profile_id,
+            &b.agent_id,
+            &b.local_session_id,
+        ))
+    });
+    for group in rows.chunk_by(|a, b| a.owner_key == b.owner_key) {
+        repo.append_events(group, None).expect("append");
+    }
+
+    let hits = repo.search_hits("needle", 3).unwrap();
+    let seen: Vec<(String, String, String, i64)> = hits
+        .iter()
+        .map(|hit| {
+            (
+                hit.profile_id.clone(),
+                hit.agent_id.clone(),
+                hit.local_session_id.clone(),
+                hit.sequence,
+            )
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        vec![
+            ("p1".into(), "alpha".into(), "s1".into(), 1),
+            ("p1".into(), "alpha".into(), "s2".into(), 1),
+            ("p1".into(), "zeta".into(), "s1".into(), 1),
+        ],
+        "profile/agent/local 序在 LIMIT 之前生效，p2 owner 被截断"
+    );
+    assert!(
+        hits.iter().all(|hit| hit.match_offset == Some(10)),
+        "rawPayload `{{\"text\":\"needle\"}}` 中 needle 的 1-based 偏移"
+    );
+
+    let limited = repo.search_hits("needle", 2).unwrap();
+    let limited_seen: Vec<(String, String, i64)> = limited
+        .iter()
+        .map(|hit| {
+            (
+                hit.agent_id.clone(),
+                hit.local_session_id.clone(),
+                hit.sequence,
+            )
+        })
+        .collect();
+    assert_eq!(
+        limited_seen,
+        vec![
+            ("alpha".into(), "s1".into(), 1),
+            ("alpha".into(), "s2".into(), 1),
+        ]
+    );
+}
+
 /// #445 验收读数：单次搜索 IPC 载荷 = 命中行集，不再随会话行数线性放大——
 /// 300 行会话命中 2 行时，搜索返回 2 行（全量 compact 读是 300 行）。
 /// 行数是 IPC 载荷的代理读数（wire 载荷 ≈ 行数 × 单行大小），非字节级断言。
@@ -1942,6 +2033,57 @@ fn malformed_input_rejected_not_silently_dropped() {
     .unwrap();
     let err = repo.append_events(&[a, b], None).unwrap_err();
     assert!(matches!(err, EventError::Invalid(_)));
+}
+
+/// #664：分页读必须走主键范围 seek 与跨度覆盖索引——防止 `(?N IS NULL OR ...)`
+/// 或索引缺失时静默退回全 owner 扫表（130k 行实测 40–80ms/页的根因）。
+#[test]
+fn paging_queries_use_primary_key_range_seek_and_span_index() {
+    fn plan_for(conn: &rusqlite::Connection, sql: &str, params: &[&dyn rusqlite::ToSql]) -> String {
+        let mut stmt = conn.prepare(sql).expect("prepare plan query");
+        stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            row.get::<_, String>(3)
+        })
+        .expect("query plan")
+        .map(|row| row.expect("plan row"))
+        .collect::<Vec<_>>()
+        .join(" | ")
+    }
+
+    let repo = repo();
+    let conn = repo.conn.lock().unwrap();
+    let owner = r#"["p1","peri","local:s1"]"#;
+    let list_cursor = plan_for(
+        &conn,
+        "EXPLAIN QUERY PLAN SELECT sequence FROM canonical_events
+         WHERE owner_key = ?1 AND sequence < ?2 ORDER BY sequence DESC LIMIT ?3",
+        &[&owner, &10_i64, &5_i64],
+    );
+    assert!(
+        list_cursor.contains("sequence<?"),
+        "list_events 游标分支必须走主键范围 seek，实际 plan: {list_cursor}"
+    );
+    let metadata = plan_for(
+        &conn,
+        "EXPLAIN QUERY PLAN SELECT sequence, event_type FROM canonical_events
+         WHERE owner_key = ?1 AND sequence > ?2 ORDER BY sequence ASC LIMIT ?3",
+        &[&owner, &0_i64, &5_i64],
+    );
+    assert!(
+        metadata.contains("sequence>?"),
+        "compact 元数据扫描必须走主键范围 seek，实际 plan: {metadata}"
+    );
+    let spans = plan_for(
+        &conn,
+        "EXPLAIN QUERY PLAN SELECT rollup_seq_start, rollup_seq_end FROM canonical_events
+         WHERE owner_key = ?1 AND event_type = ?2 AND rollup_seq_end >= ?3
+           AND rollup_seq_start IS NOT NULL AND rollup_seq_end IS NOT NULL",
+        &[&owner, &"turn.unit", &0_i64],
+    );
+    assert!(
+        spans.contains("idx_canonical_events_rollup_spans"),
+        "compact 跨度查询必须走 #664 覆盖索引，实际 plan: {spans}"
+    );
 }
 
 #[test]
