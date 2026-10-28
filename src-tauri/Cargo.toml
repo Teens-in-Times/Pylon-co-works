@@ -126,7 +126,7 @@ rusqlite = { version = "0.40", default-features = false, features = ["bundled", 
 aes-gcm = "0.10"
 zeroize = { version = "1", features = ["derive"] }
 # P53 D6：zip/URL 安装源（仅 deflate，避免无用编解码器）
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
