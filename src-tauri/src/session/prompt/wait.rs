@@ -686,13 +686,18 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
             if acp.is_crashed() {
                 return;
             }
-            if let Err(error) = acp.kill() {
-                tracing::warn!("Hermes force recovery could not kill ACP child: {error}");
-            } else {
-                tracing::warn!(
+            // #656：`kill_and_wait` 无超时，放 spawn_blocking，不占 async worker。
+            match tokio::task::spawn_blocking(move || acp.kill()).await {
+                Ok(Ok(())) => tracing::warn!(
                     expected_generation,
                     "Hermes ACP child force-killed after cancel did not settle"
-                );
+                ),
+                Ok(Err(error)) => {
+                    tracing::warn!("Hermes force recovery could not kill ACP child: {error}")
+                }
+                Err(error) => {
+                    tracing::warn!("Hermes force recovery kill task failed: {error}")
+                }
             }
         },
     )
