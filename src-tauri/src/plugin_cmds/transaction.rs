@@ -10,9 +10,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
+use super::manifest::manifest_details;
 use super::store::{
-    copy_binary, data, describe_source, ensure_layout_at, packages, read_state, root, sorted_paths,
-    transactions, write_state,
+    copy_binary, data, describe_source, ensure_layout_at, packages, read_state, root,
+    scan_metadata, sorted_paths, transactions, write_state,
 };
 use super::validation::validate_plugin_id;
 use super::{
@@ -137,15 +138,24 @@ pub(crate) fn describe_installed(
     if !dir.is_dir() {
         return Err(PluginError::NotFound(package_id.into()));
     }
-    let mut descriptor = describe_source(&dir)?;
-    if descriptor.plugin_id != plugin_id {
+    // #670：已安装目录名就是安装期由源指纹分配的不可变身份；描述只需清单与
+    // 体积，不重算内容指纹（旧路径把指纹算出后立刻被 package_id 覆盖）。
+    let (manifest, id, version, _) = manifest_details(&dir)?;
+    if id != plugin_id {
         return Err(PluginError::ManifestInvalid(
             "directory/manifest id mismatch".into(),
         ));
     }
-    descriptor.package_instance_id = package_id.into();
-    descriptor.active = active;
-    Ok(descriptor)
+    let (files, total_bytes) = scan_metadata(&dir)?;
+    Ok(PluginPackageDescriptor {
+        package_instance_id: package_id.into(),
+        plugin_id: id,
+        version,
+        manifest,
+        files,
+        total_bytes,
+        active,
+    })
 }
 
 pub(crate) fn install_at(
@@ -384,45 +394,62 @@ pub(crate) async fn plugin_package_stage_abort(
     run_plugin_write(&app, move |root| abort_stage_at(&root, &operation_id)).await
 }
 
+/// 插件只读骨架：盘 IO 移出 reactor 线程（#670）。不取写锁——读路径与写事务的
+/// 可见性语义保持现状（写事务以 rename 原子发布包目录）。
+async fn run_plugin_read<T, F>(app: &AppHandle, op: F) -> Result<T, PylonError>
+where
+    F: FnOnce(PathBuf) -> Result<T, PluginError> + Send + 'static,
+    T: Send + 'static,
+{
+    let root = root(app)?;
+    Ok(tauri::async_runtime::spawn_blocking(move || op(root))
+        .await
+        .map_err(|error| PluginError::Io(format!("plugin read task failed: {error}")))??)
+}
+
 #[tauri::command]
 pub(crate) async fn plugin_package_versions(
     app: AppHandle,
     plugin_id: String,
 ) -> Result<Vec<PluginPackageDescriptor>, PylonError> {
     validate_plugin_id(&plugin_id)?;
-    let root = root(&app)?;
-    ensure_layout_at(&root)?;
-    let state = read_state(&root)?;
-    let dir = packages(&root).join(&plugin_id);
-    if !dir.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut result = Vec::new();
-    for path in sorted_paths(&dir)? {
-        if !path.is_dir() {
-            continue;
+    run_plugin_read(&app, move |root| {
+        ensure_layout_at(&root)?;
+        let state = read_state(&root)?;
+        let dir = packages(&root).join(&plugin_id);
+        if !dir.is_dir() {
+            return Ok(Vec::new());
         }
-        let package_id = path
-            .file_name()
-            .and_then(|v| v.to_str())
-            .ok_or_else(|| PluginError::SourceInvalid("non-UTF-8 package id".into()))?;
-        result.push(describe_installed(
-            &root,
-            &plugin_id,
-            package_id,
-            state.active_versions.get(&plugin_id).map(String::as_str) == Some(package_id),
-        )?);
-    }
-    Ok(result)
+        let mut result = Vec::new();
+        for path in sorted_paths(&dir)? {
+            if !path.is_dir() {
+                continue;
+            }
+            let package_id = path
+                .file_name()
+                .and_then(|v| v.to_str())
+                .ok_or_else(|| PluginError::SourceInvalid("non-UTF-8 package id".into()))?;
+            result.push(describe_installed(
+                &root,
+                &plugin_id,
+                package_id,
+                state.active_versions.get(&plugin_id).map(String::as_str) == Some(package_id),
+            )?);
+        }
+        Ok(result)
+    })
+    .await
 }
 
 #[tauri::command]
 pub(crate) async fn plugin_package_list(
     app: AppHandle,
 ) -> Result<Vec<InstalledPluginPackage>, PylonError> {
-    let root = root(&app)?;
-    ensure_layout_at(&root)?;
-    Ok(list_installed_at(&root)?)
+    run_plugin_read(&app, |root| {
+        ensure_layout_at(&root)?;
+        list_installed_at(&root)
+    })
+    .await
 }
 
 pub(crate) fn list_installed_at(root: &Path) -> Result<Vec<InstalledPluginPackage>, PluginError> {
