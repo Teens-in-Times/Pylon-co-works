@@ -10,3 +10,4 @@
 - [DeepSeek] #613 terminalDelivery 全量时序 flake：文件域 `src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts`（仅补承重睡）；本 spec 与对应 record。
 
 - [Qoder] #650 solid-dom 去隔离（`isolate: false`）：文件域 `vitest.config.ts`、`vitest.setup.ts`（跨文件收尾层：Tauri 运行时全局 / 原型 descriptor 基线 / 孤儿定时器账本）；本 spec 与对应 record。不改用例文件，避让 #613/#619 的用例面。
+- [Qoder] #654 启动期 schema 校验的 pk 清点去 expect：文件域 `src-tauri/pylon-session/src/msg_repo/migrations.rs`（`primary_key_columns` 返回 `Result` + 一条坏库用例）；本 spec 与对应 record。不动迁移链语义与其它 repo。
