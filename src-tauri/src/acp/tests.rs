@@ -1487,14 +1487,15 @@ async fn fake_acp_prompt_timeout_sends_cancel_and_waits_for_cancelled_response()
         }
     ));
     client.remove_pending(request_id);
-    let trace =
-        std::fs::read_to_string(&trace_path).expect("fake ACP must record prompt and cancel");
-    std::fs::remove_file(&trace_path).ok();
-    assert!(trace.lines().any(|line| {
-        let value: serde_json::Value = serde_json::from_str(line).unwrap();
+    // #663：cancel 写完只代表帧进了管道，agent 还要读 stdin 才落 trace；断言 agent 侧
+    // 效果就必须等它出现（有界轮询），读取也容忍正在追加的半行。
+    let saw_cancel = crate::test_utils::wait_for_trace_line(&trace_path, |value| {
         value.get("method").and_then(|method| method.as_str()) == Some(METHOD_SESSION_CANCEL)
             && value["params"]["sessionId"] == "fake-session-timeout"
-    }));
+    })
+    .await;
+    std::fs::remove_file(&trace_path).ok();
+    assert!(saw_cancel, "fake ACP must record session/cancel");
 }
 #[tokio::test]
 async fn writer_failure_signals_watch_and_pending_settles() {

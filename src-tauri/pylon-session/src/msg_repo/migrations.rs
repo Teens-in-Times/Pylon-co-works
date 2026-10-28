@@ -112,23 +112,25 @@ const REQUIRED_INDEXES: &[&str] = &[
     "idx_deleted_sessions_session_id",
 ];
 
-fn primary_key_columns(conn: &Connection, table: &str) -> Vec<String> {
+/// 读主键列序。**不得 expect**（#654）：库损坏 / 被占用 / 非法文件时 `PRAGMA` 会报错，
+/// 而本函数处在启动路径上——release 的 `panic = "abort"` 会把「库读不出来」变成闪退。
+fn primary_key_columns(conn: &Connection, table: &str) -> Result<Vec<String>, SessionError> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
-        .expect("prepare pk inventory");
+        .map_err(repo_err)?;
     let rows = stmt
         .query_map([], |row| {
             Ok((row.get::<_, String>(1)?, row.get::<_, i64>(5)?))
         })
-        .expect("query pk inventory")
-        .map(|row| row.expect("pk row"))
-        .collect::<Vec<_>>();
+        .map_err(repo_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(repo_err)?;
     let mut primary = rows
         .into_iter()
         .filter(|(_, order)| *order > 0)
         .collect::<Vec<_>>();
     primary.sort_by_key(|(_, order)| *order);
-    primary.into_iter().map(|(name, _)| name).collect()
+    Ok(primary.into_iter().map(|(name, _)| name).collect())
 }
 
 fn validate_schema_objects(conn: &Connection) -> Result<(), SessionError> {
@@ -166,10 +168,10 @@ fn validate_schema_objects(conn: &Connection) -> Result<(), SessionError> {
     }
     // v15：主键形状钉死——(owner_key, sequence) WITHOUT ROWID 聚簇取代 v14 的
     // event_id 主键 + UNIQUE(owner_key, sequence) + idx_session_seq 三棵重复 btree。
-    if primary_key_columns(conn, "canonical_events") != ["owner_key", "sequence"] {
+    if primary_key_columns(conn, "canonical_events")? != ["owner_key", "sequence"] {
         problems.push("canonical_events primary key must be (owner_key, sequence)".into());
     }
-    if primary_key_columns(conn, "canonical_draft_fragments")
+    if primary_key_columns(conn, "canonical_draft_fragments")?
         != ["owner_key", "draft_id", "fragment_index"]
     {
         problems.push(
@@ -177,7 +179,7 @@ fn validate_schema_objects(conn: &Connection) -> Result<(), SessionError> {
                 .into(),
         );
     }
-    if primary_key_columns(conn, "deleted_sessions") != ["owner_key"] {
+    if primary_key_columns(conn, "deleted_sessions")? != ["owner_key"] {
         problems.push("deleted_sessions primary key must be owner_key".into());
     }
     if problems.is_empty() {
@@ -339,4 +341,40 @@ pub fn connect(conn: &mut Connection) -> Result<(), SessionError> {
         .map_err(repo_err)?;
     validate_schema_objects(conn)?;
     validate_db_header(conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_temp_path() -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!(
+            "pylon-session-pk-inventory-{}-{}-{}.db",
+            std::process::id(),
+            n,
+            nanos
+        ))
+    }
+
+    /// #654：读不出主键清单时必须上抛 `SessionError`，而不是在启动路径上 expect 掉进程。
+    #[test]
+    fn primary_key_inventory_reports_unreadable_db() {
+        let path = unique_temp_path();
+        std::fs::write(&path, b"this is not a sqlite database").expect("write corrupt db");
+        let conn = Connection::open(&path).expect("open corrupt db");
+        let error = primary_key_columns(&conn, "canonical_events")
+            .expect_err("unreadable db must surface as Err");
+        assert!(
+            matches!(error, SessionError::Generic(ref message) if message.contains("message repo")),
+            "expected repo_err wrapping, got {error:?}"
+        );
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
 }
