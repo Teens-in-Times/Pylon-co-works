@@ -10,3 +10,4 @@
 - [DeepSeek] #613 terminalDelivery 全量时序 flake：文件域 `src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts`（仅补承重睡）；本 spec 与对应 record。
 
 - [Qoder] #650 solid-dom 去隔离（`isolate: false`）：文件域 `vitest.config.ts`、`vitest.setup.ts`（跨文件收尾层：Tauri 运行时全局 / 原型 descriptor 基线 / 孤儿定时器账本）；本 spec 与对应 record。不改用例文件，避让 #613/#619 的用例面。
+- [Qoder] #655 插件 stdin 写入背压与 terminate 不被写入卡住：文件域 `src-tauri/src/plugin_process/{mod,tests}.rs`（`SyncSender` + 专职写线程、队列满即报错；`kill` 改 async + `spawn_blocking` + 一条卡死子进程用例）；本 spec 与对应 record。不动 pylon-acp 的 ManagedChild 语义。
