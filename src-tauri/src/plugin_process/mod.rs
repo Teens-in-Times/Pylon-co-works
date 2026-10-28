@@ -768,11 +768,12 @@ fn process_stdout_lines<R: tauri::Runtime>(
         );
         return;
     }
-    while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
-        let mut line = buffer.drain(..=index).collect::<Vec<_>>();
-        while matches!(line.last(), Some(b'\n' | b'\r')) {
-            line.pop();
-        }
+    // #678：一行一行 `drain` + `collect::<Vec<_>>()` 会把剩余缓冲按行数反复前移、
+    // 并为每行分配一次；这里只记游标，逐个切片处理完后一次性回收已消费前缀。
+    let mut start = 0;
+    while let Some((line_end, next_start)) = next_line_bounds(&buffer, start) {
+        let line = &buffer[start..line_end];
+        start = next_start;
         if line.is_empty() {
             continue;
         }
@@ -781,11 +782,11 @@ fn process_stdout_lines<R: tauri::Runtime>(
                 app,
                 record,
                 "line",
-                json!({ "text": String::from_utf8_lossy(&line) }),
+                json!({ "text": String::from_utf8_lossy(line) }),
             );
             continue;
         }
-        match serde_json::from_slice::<Value>(&line) {
+        match serde_json::from_slice::<Value>(line) {
             Ok(value) => {
                 if record.recipe.options.protocol == ProcessProtocol::JsonRpc {
                     route_json_rpc(app, record, value);
@@ -801,6 +802,20 @@ fn process_stdout_lines<R: tauri::Runtime>(
             ),
         }
     }
+    if start > 0 {
+        buffer.drain(..start);
+    }
+}
+
+/// 从 `start` 起找一条完整行：返回 `(行尾, 下一行起点)`。行尾已剥掉行终止符
+/// （`\n` 及紧邻的 `\r`）——与逐行 `drain` 后 `pop` 终止符的旧实现等价。
+fn next_line_bounds(buffer: &[u8], start: usize) -> Option<(usize, usize)> {
+    let newline = start + buffer[start..].iter().position(|byte| *byte == b'\n')?;
+    let mut end = newline;
+    while end > start && matches!(buffer[end - 1], b'\r') {
+        end -= 1;
+    }
+    Some((end, newline + 1))
 }
 
 fn route_json_rpc<R: tauri::Runtime>(
