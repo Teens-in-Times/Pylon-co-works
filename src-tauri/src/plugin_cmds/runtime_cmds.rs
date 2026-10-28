@@ -17,9 +17,14 @@ pub(crate) async fn plugin_runtime_create(
 ) -> Result<(), PylonError> {
     validate_runtime_id(&runtime_instance_id)?;
     let root = root(&app)?;
-    ensure_layout_at(&root)?;
-    create_runtime_at(&root, &runtime_instance_id)?;
-    Ok(())
+    // #676：目录布局与创建是同步 IO，移出 reactor（与 #657/#670 同口径）。
+    tauri::async_runtime::spawn_blocking(move || {
+        ensure_layout_at(&root)?;
+        create_runtime_at(&root, &runtime_instance_id)
+    })
+    .await
+    .map_err(|error| PluginError::Io(format!("plugin runtime task failed: {error}")))?
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -28,8 +33,12 @@ pub(crate) async fn plugin_runtime_cleanup(
     runtime_instance_id: String,
 ) -> Result<(), PylonError> {
     validate_runtime_id(&runtime_instance_id)?;
-    cleanup_runtime_at(&root(&app)?, &runtime_instance_id)?;
-    Ok(())
+    let root = root(&app)?;
+    // #676：递归删目录可能跨多级/大量小文件，不得占用 reactor。
+    tauri::async_runtime::spawn_blocking(move || cleanup_runtime_at(&root, &runtime_instance_id))
+        .await
+        .map_err(|error| PluginError::Io(format!("plugin runtime task failed: {error}")))?
+        .map_err(Into::into)
 }
 
 pub(crate) fn create_runtime_at(root: &Path, runtime_instance_id: &str) -> Result<(), PluginError> {

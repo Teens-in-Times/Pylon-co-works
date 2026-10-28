@@ -216,7 +216,16 @@ pub(crate) async fn plugin_package_read_text(
     package_instance_id: String,
     path: String,
 ) -> Result<String, PylonError> {
-    let resource = resolve_resource(&root(&app)?, &package_instance_id, &path)?;
+    let root = root(&app)?;
+    // #676：canonicalize + 最多 8MB 的读是同步 IO，与 #657/#670 同口径移出 reactor。
+    tauri::async_runtime::spawn_blocking(move || read_text_at(&root, &package_instance_id, &path))
+        .await
+        .map_err(|error| PluginError::Io(format!("plugin read task failed: {error}")))?
+        .map_err(Into::into)
+}
+
+fn read_text_at(root: &Path, package_instance_id: &str, path: &str) -> Result<String, PluginError> {
+    let resource = resolve_resource(root, package_instance_id, path)?;
     let size = resource
         .metadata()
         .map_err(|e| PluginError::Io(e.to_string()))?
@@ -224,12 +233,10 @@ pub(crate) async fn plugin_package_read_text(
     if size > MAX_INVOKE_TEXT_BYTES {
         return Err(PluginError::ResourceInvalid(format!(
             "resource is {size} bytes; use resourceUrl/stream"
-        ))
-        .into());
+        )));
     }
     fs::read_to_string(resource)
         .map_err(|e| PluginError::ResourceInvalid(format!("not UTF-8: {e}")))
-        .map_err(Into::into)
 }
 
 pub(crate) fn encode_component(value: &str) -> String {
