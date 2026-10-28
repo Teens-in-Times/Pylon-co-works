@@ -9,3 +9,5 @@
 - [DeepSeek] #602 Rust CI 门禁漏报（退出码被后续 build 覆盖）——一并修被其掩盖的 #601/#603/#617。文件域：`.github/workflows/ci.yml`、`src-tauri/pylon-foundations/src/{workspace,child_command}.rs`、`src-tauri/src/{runtime,test_utils}.rs`；本 spec 与对应 record。避让 TS 侧 #593/#600。
 - [DeepSeek] #613 terminalDelivery 全量时序 flake：文件域 `src/application/agent-workbench/__tests__/agentWorkbenchSession.terminalDelivery.test.ts`（仅补承重睡）；本 spec 与对应 record。
 
+
+- [AlchemistCxC] #676 插件命令残余同步 IO：`plugin_package_read_text` / `plugin_runtime_{create,cleanup}` 移出 reactor；文件域 `src-tauri/src/plugin_cmds/{resource,runtime_cmds}.rs`；本 spec 与对应 record。避让 #593/#600/#607/#602/#613/#674。
