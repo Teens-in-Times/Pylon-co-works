@@ -18,7 +18,7 @@ description: 对 Pylon 做「实机运行验收」——把改动装进真实 Ta
    .\pylon.exe
    ```
 
-   自 0.2.1（`4ddff6a0`）起，`src-tauri/tauri.conf.json` 的 `additionalBrowserArgs` 已内置调试端口，所以**本仓本地构建默认就带**——这既是便利也是安全代价：开着端口等于把该窗口的任意 JS 执行能力交给同机任何进程，所以只在调试期运行，用完关掉 Pylon。一个端口只能被一个 WebView2 进程占用，多实例并行要给每个实例换端口号。
+   **#330 起产品二进制不再内置端口**（0.2.1 `4ddff6a0` 至 0.4.x 的 `additionalBrowserArgs` 内嵌 9222，发行包同样开放）；调试端口只能这样按需注入，debug 与 release 构建一视同仁。WebView2 运行时把该变量**追加**在应用自身参数之后（实测见 `tools/webview2-mcp/README.md` 附录 A），所以不要把 `--disable-features=...` 抄进来。开着端口等于把该窗口的任意 JS 执行能力交给同机任何进程，所以只在调试期运行，用完关掉 Pylon。一个端口只能被一个 WebView2 进程占用，多实例并行要给每个实例换端口号。
 
 2. **前端改动必须重编译 Rust 二进制。** `tauri.conf.json` 的 `frontendDist` 是**编译期内嵌**进 Rust 二进制的：只跑 `bunx vite build` 重建 `dist/`，再启动 `src-tauri/target/debug/pylon.exe`，读到的仍是**旧样式**。#154 有人因此误判过一次「修复无效」。正确顺序是构建前端 → `cargo build` → 重启 App。
 
