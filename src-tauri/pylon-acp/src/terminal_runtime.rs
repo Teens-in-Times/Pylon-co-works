@@ -8,13 +8,13 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::sync::{watch, Mutex, Notify};
 
 use super::terminal_policy::{
-    decode_available_utf8, default_platform_shell, enforce_output_limit,
-    output_limit as resolve_output_limit, shell_wrapper_args, TerminalCompletion,
+    decode_available_utf8, default_platform_shell, output_limit as resolve_output_limit,
+    shell_wrapper_args, TerminalCompletion, TerminalOutputBuffer,
 };
 use super::ManagedChild;
 
@@ -47,11 +47,17 @@ pub struct TerminalSnapshot {
     pub exit_status: Option<super::terminal_policy::TerminalExitStatus>,
 }
 
+/// 输出窗口与退出状态共用一个 std 锁：追加是同步短临界区，读快照只需一次性拷贝，
+/// 不再从 reader 线程 `block_on` 回异步运行时（#673）。
+struct TerminalState {
+    output: TerminalOutputBuffer,
+    exit_status: Option<super::terminal_policy::TerminalExitStatus>,
+}
+
 struct TerminalInstance {
     session_id: String,
-    output_limit: usize,
     child: Mutex<ManagedChild>,
-    snapshot: Mutex<TerminalSnapshot>,
+    state: StdMutex<TerminalState>,
     completion: watch::Sender<TerminalCompletion>,
     reader_handles: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     kill: Notify,
@@ -71,8 +77,7 @@ impl TerminalInstance {
             Ok(Some(status)) => {
                 if !retry.published_unknown {
                     self.drain_readers().await;
-                    self.mark_exited(super::terminal_policy::map_exit_status(status))
-                        .await;
+                    self.mark_exited(super::terminal_policy::map_exit_status(status));
                 }
                 None
             }
@@ -94,11 +99,9 @@ impl TerminalInstance {
                     tracing::error!(%error, "terminal wait error budget exhausted; owner continues reaping");
                     self.append_output(
                         "\n[terminal exit status unavailable: could not reap the process]\n",
-                    )
-                    .await;
+                    );
                     self.drain_readers().await;
-                    self.mark_exited(super::terminal_policy::TerminalExitStatus::default())
-                        .await;
+                    self.mark_exited(super::terminal_policy::TerminalExitStatus::default());
                 }
                 if retry.published_unknown {
                     Some(WAIT_ERROR_IDLE_RETRY)
@@ -113,31 +116,42 @@ impl TerminalInstance {
         let (completion, _) = watch::channel(TerminalCompletion::Running);
         Arc::new(Self {
             session_id,
-            output_limit,
             child: Mutex::new(child),
-            snapshot: Mutex::new(TerminalSnapshot::default()),
+            state: StdMutex::new(TerminalState {
+                output: TerminalOutputBuffer::new(output_limit),
+                exit_status: None,
+            }),
             completion,
             reader_handles: Mutex::new(Vec::new()),
             kill: Notify::new(),
         })
     }
 
-    async fn append_output(&self, text: &str) {
-        let mut snapshot = self.snapshot.lock().await;
-        snapshot.output.push_str(text);
-        let removed = enforce_output_limit(&mut snapshot.output, self.output_limit);
-        if removed > 0 {
-            snapshot.truncated = true;
-            snapshot.output_base_offset =
-                snapshot.output_base_offset.saturating_add(removed as u64);
-        }
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, TerminalState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    async fn mark_exited(&self, status: super::terminal_policy::TerminalExitStatus) {
-        self.snapshot.lock().await.exit_status = Some(status.clone());
+    fn append_output(&self, text: &str) {
+        self.lock_state().output.append(text);
+    }
+
+    fn mark_exited(&self, status: super::terminal_policy::TerminalExitStatus) {
+        self.lock_state().exit_status = Some(status.clone());
         let _ = self
             .completion
             .send_replace(TerminalCompletion::Exited(status));
+    }
+
+    fn snapshot(&self) -> TerminalSnapshot {
+        let state = self.lock_state();
+        TerminalSnapshot {
+            output: state.output.visible().to_string(),
+            output_base_offset: state.output.base_offset(),
+            truncated: state.output.truncated(),
+            exit_status: state.exit_status.clone(),
+        }
     }
 
     async fn drain_readers(&self) {
@@ -236,7 +250,7 @@ impl TerminalRegistry {
                             child.kill_and_wait()
                         }).await;
                         watcher.drain_readers().await;
-                        watcher.mark_exited(super::terminal_policy::TerminalExitStatus::default()).await;
+                        watcher.mark_exited(super::terminal_policy::TerminalExitStatus::default());
                         break;
                     }
                     _ = tokio::time::sleep(poll_delay) => {
@@ -299,13 +313,7 @@ impl TerminalRegistry {
     }
 
     pub async fn snapshot(&self, id: &str, session_id: &str) -> Result<TerminalSnapshot, String> {
-        Ok(self
-            .find(id, session_id)
-            .await?
-            .snapshot
-            .lock()
-            .await
-            .clone())
+        Ok(self.find(id, session_id).await?.snapshot())
     }
 
     pub async fn wait_for_exit(
@@ -370,7 +378,6 @@ fn spawn_reader<R: Read + Send + 'static>(
     mut reader: R,
     terminal: Arc<TerminalInstance>,
 ) -> tokio::task::JoinHandle<()> {
-    let handle = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
         let mut pending = Vec::new();
         let mut buf = [0_u8; 8192];
@@ -380,7 +387,7 @@ fn spawn_reader<R: Read + Send + 'static>(
                 Ok(n) => {
                     pending.extend_from_slice(&buf[..n]);
                     let text = decode_available_utf8(&mut pending);
-                    handle.block_on(terminal.append_output(&text));
+                    terminal.append_output(&text);
                 }
                 Err(_) => break,
             }
@@ -489,7 +496,7 @@ mod tests {
             instance.wait_for_exit().await.unwrap(),
             TerminalExitStatus::default()
         );
-        let output = instance.snapshot.lock().await.output.clone();
+        let output = instance.snapshot().output;
         assert!(output.contains("could not reap"));
         assert_eq!(
             instance
@@ -497,7 +504,7 @@ mod tests {
                 .await,
             Some(WAIT_ERROR_IDLE_RETRY)
         );
-        assert_eq!(instance.snapshot.lock().await.output, output);
+        assert_eq!(instance.snapshot().output, output);
     }
 
     #[tokio::test]
@@ -534,10 +541,26 @@ mod tests {
             .await;
         assert!(registry.snapshot(&id, "session-b").await.is_err());
         let instance = registry.find(&id, "session-a").await.unwrap();
-        instance.append_output("abcde").await;
+        instance.append_output("abcde");
         let snapshot = registry.snapshot(&id, "session-a").await.unwrap();
         assert_eq!(snapshot.output, "bcde");
         assert_eq!(snapshot.output_base_offset, 1);
+    }
+
+    #[tokio::test]
+    async fn streaming_output_stays_bounded_and_offsets_advance() {
+        let registry = TerminalRegistry::default();
+        let (id, instance) = registry
+            .insert("session-a".into(), 8192, ManagedChild::empty())
+            .await;
+        let chunk = "x".repeat(8192);
+        for _ in 0..64 {
+            instance.append_output(&chunk);
+        }
+        let snapshot = registry.snapshot(&id, "session-a").await.unwrap();
+        assert_eq!(snapshot.output.len(), 8192, "快照窗口恒等于 limit");
+        assert_eq!(snapshot.output_base_offset, 63 * 8192);
+        assert!(snapshot.truncated);
     }
 
     /// #653：insert 交出的就是注册表里的同一实例——调用方不再需要二次查找，也就
@@ -555,7 +578,7 @@ mod tests {
     #[tokio::test]
     async fn completion_watch_retains_exit_for_late_waiter() {
         let instance = TerminalInstance::new("session-a".into(), 100, ManagedChild::empty());
-        instance.mark_exited(TerminalExitStatus::default()).await;
+        instance.mark_exited(TerminalExitStatus::default());
         assert!(instance.wait_for_exit().await.is_ok());
     }
 
