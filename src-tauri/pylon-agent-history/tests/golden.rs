@@ -80,3 +80,30 @@ fn golden_clear_rollover() {
 fn golden_skip_noise() {
     assert_scene_matches_baseline("skip-noise");
 }
+
+/// `discover` 走只计数路径（不构事件载荷），摘要必须与 `read` 全量解析所得逐字段
+/// 一致——列表里的事件数/起止时间/跳过计数是导入决策的依据。
+#[test]
+fn discover_summaries_match_read_summaries() {
+    for scene in [
+        "basic-conversation",
+        "tool-roundtrip",
+        "usage-dedupe",
+        "clear-rollover",
+        "skip-noise",
+    ] {
+        let root = Path::new("tests/fixtures").join(scene);
+        let discovered = ClaudeCodeParser.discover(&root);
+        assert!(!discovered.is_empty(), "场景 {scene} 应至少一段");
+        for summary in discovered {
+            let record = ClaudeCodeParser
+                .read(&root, &summary.external_id)
+                .expect("discover 出现的段必须可 read");
+            assert_eq!(
+                record.summary, summary,
+                "场景 {scene} 段 {} 的 discover/read 摘要不一致",
+                summary.external_id
+            );
+        }
+    }
+}
