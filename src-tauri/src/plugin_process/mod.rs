@@ -9,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,12 @@ use crate::acp::ManagedChild;
 
 const MAX_WRITE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
+
+/// stdin 写队列深度（#655）。写入不在调用线程上直写管道：子进程不消费 stdin 时
+/// `write_all` 会在管道缓冲写满后永久阻塞。改为「入队 + 专职写线程」，队列满即以
+/// 错误返回（不排队、不阻塞），背压交给调用方而不是 tokio worker。
+/// 深度取 4：最坏驻留 4 × `MAX_WRITE_BYTES`，且不改变 JSON-RPC 小消息的常规时序。
+const STDIN_QUEUE_DEPTH: usize = 4;
 
 /// 进程退出轮询间隔（stop 等待回路与 spawn_monitor 监视线程共用）。
 ///
@@ -194,7 +201,9 @@ struct ProcessRecord {
     executable_id: String,
     recipe: SpawnRecipe,
     child: Mutex<ManagedChild>,
-    stdin: Mutex<Option<std::process::ChildStdin>>,
+    /// stdin 写队列（#655）：由专职写线程持有 `ChildStdin`，记录里只留发送端。
+    /// `take()` 即优雅 EOF 的起点——写线程排空队列后自然 drop stdin。
+    stdin: Mutex<Option<SyncSender<Vec<u8>>>>,
     status: Mutex<ProcessStatus>,
     pending: Mutex<HashMap<String, PendingRequest>>,
     stdout_line_buffer: Mutex<Vec<u8>>,
@@ -370,20 +379,30 @@ impl PluginProcessSupervisor {
         Ok(result)
     }
 
+    /// 入队即返回（#655）。真正的 `write_all` 在专职写线程上，调用方（含 async
+    /// command 与 `terminate` 的 shutdown 写入）不会被「子进程不读 stdin」拖住；
+    /// 队列满表示下游确实不消费，返回错误让调用方决定重试/终止。
     fn write(&self, process_id: &str, bytes: &[u8]) -> Result<(), String> {
         if bytes.len() > MAX_WRITE_BYTES {
             return Err(format!("process write exceeds {MAX_WRITE_BYTES} bytes"));
         }
         let record = self.get(process_id)?;
-        let mut slot = record
+        let slot = record
             .stdin
             .lock()
             .map_err(|_| "plugin process stdin lock poisoned".to_string())?;
-        let stdin = slot
-            .as_mut()
+        let sender = slot
+            .as_ref()
             .ok_or_else(|| format!("plugin process stdin closed: {process_id}"))?;
-        stdin.write_all(bytes).map_err(|error| error.to_string())?;
-        stdin.flush().map_err(|error| error.to_string())
+        match sender.try_send(bytes.to_vec()) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err(format!(
+                "plugin process write queue full (stdin not draining): {process_id}"
+            )),
+            Err(TrySendError::Disconnected(_)) => {
+                Err(format!("plugin process stdin closed: {process_id}"))
+            }
+        }
     }
 
     async fn request(
@@ -514,7 +533,7 @@ impl PluginProcessSupervisor {
                 let _ = self
                     .write_json_line(&record, &json!({ "jsonrpc": "2.0", "method": "shutdown" }));
             }
-            ShutdownMethod::Kill => return self.kill(&app, process_id),
+            ShutdownMethod::Kill => return self.kill(&app, process_id).await,
         }
         let deadline = tokio::time::Instant::now() + Duration::from_millis(shutdown.timeout_ms);
         while tokio::time::Instant::now() < deadline {
@@ -528,19 +547,33 @@ impl PluginProcessSupervisor {
             }
             tokio::time::sleep(EXIT_POLL_INTERVAL).await;
         }
-        self.kill(&app, process_id)
+        self.kill(&app, process_id).await
     }
 
-    fn kill<R: tauri::Runtime>(&self, app: &AppHandle<R>, process_id: &str) -> Result<(), String> {
+    /// 强杀并回收（#655）：`kill_and_wait` 内含 `taskkill /T` 与阻塞 `wait`，不得在
+    /// tokio worker 上跑——先摘下 child，再交给 `spawn_blocking`。
+    async fn kill<R: tauri::Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        process_id: &str,
+    ) -> Result<(), String> {
         let record = self.get(process_id)?;
         record.stopping.store(true, Ordering::SeqCst);
         record.stdin.lock().ok().and_then(|mut stdin| stdin.take());
-        let result = record
-            .child
-            .lock()
-            .map_err(|_| "plugin process child lock poisoned".to_string())?
-            .kill_and_wait()
-            .map_err(|error| error.to_string());
+        let child = {
+            let mut slot = record
+                .child
+                .lock()
+                .map_err(|_| "plugin process child lock poisoned".to_string())?;
+            std::mem::replace(&mut *slot, ManagedChild::empty())
+        };
+        let result = tokio::task::spawn_blocking(move || {
+            let mut child = child;
+            child.kill_and_wait()
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string());
         finish_record(app, &record, None, "killed");
         result
     }
@@ -641,11 +674,13 @@ fn launch<R: tauri::Runtime>(app: AppHandle<R>, record: Arc<ProcessRecord>) -> R
     let stdin = child.stdin.take().ok_or("spawned process has no stdin")?;
     let stdout = child.stdout.take().ok_or("spawned process has no stdout")?;
     let stderr = child.stderr.take().ok_or("spawned process has no stderr")?;
+    let (stdin_tx, stdin_rx) = sync_channel(STDIN_QUEUE_DEPTH);
+    spawn_stdin_writer(app.clone(), record.clone(), stdin, stdin_rx);
     {
         *record
             .stdin
             .lock()
-            .map_err(|_| "process stdin lock poisoned")? = Some(stdin);
+            .map_err(|_| "process stdin lock poisoned")? = Some(stdin_tx);
         *record
             .child
             .lock()
@@ -798,6 +833,30 @@ fn json_rpc_id(value: &Value) -> Option<String> {
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     }
+}
+
+/// stdin 专职写线程（#655）：`ChildStdin` 只在这里被写，进程记录里只留发送端。
+/// 子进程不消费 stdin 时本线程阻塞在 `write_all`，但不占用 tokio worker、也不持有
+/// 调用方要的锁；返回（发送端全丢）或写失败即 drop stdin，形成 EOF。
+fn spawn_stdin_writer<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    record: Arc<ProcessRecord>,
+    mut stdin: std::process::ChildStdin,
+    receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+) {
+    std::thread::spawn(move || {
+        for bytes in receiver {
+            if let Err(error) = stdin.write_all(&bytes).and_then(|()| stdin.flush()) {
+                emit_value(
+                    &app,
+                    &record,
+                    "stream-error",
+                    json!({ "stream": "stdin", "message": error.to_string() }),
+                );
+                break;
+            }
+        }
+    });
 }
 
 fn spawn_monitor<R: tauri::Runtime>(app: AppHandle<R>, record: Arc<ProcessRecord>) {
@@ -1051,6 +1110,7 @@ pub(crate) async fn plugin_process_kill(
     app.state::<crate::AppState>()
         .plugin_processes
         .kill(&app, &process_id)
+        .await
         .map_err(PylonError::Command)
 }
 
