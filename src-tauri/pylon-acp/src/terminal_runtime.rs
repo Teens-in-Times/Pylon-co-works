@@ -217,14 +217,7 @@ impl TerminalRegistry {
         let stdout = child.take_stdout().map_err(|e| e.to_string())?;
         let stderr = child.take_stderr().map_err(|e| e.to_string())?;
         let limit = resolve_output_limit(output_limit);
-        let id = self.insert(session_id, limit, child).await;
-        let terminal = self
-            .terminals
-            .lock()
-            .await
-            .get(&id)
-            .cloned()
-            .expect("terminal inserted before readers start");
+        let (id, terminal) = self.insert(session_id, limit, child).await;
         let watcher = terminal.clone();
         tokio::spawn(async move {
             let mut poll_delay = PROCESS_POLL_INTERVAL;
@@ -266,23 +259,27 @@ impl TerminalRegistry {
         Ok(id)
     }
 
-    pub async fn insert(
+    /// 插入终端并**同时交回实例**（#653）。调用方不得在插入后二次查找：那两次加锁
+    /// 之间 `clear()`（`stop_agent_runtime` → 切 Agent / reload / 空闲回收）可能已把
+    /// 该终端摘掉，二次查找落空在 release（`panic = "abort"`）下会直接终止进程。
+    async fn insert(
         &self,
         session_id: String,
         output_limit: usize,
         child: ManagedChild,
-    ) -> String {
+    ) -> (String, Arc<TerminalInstance>) {
         // id 计数锁卫不得跨过 terminals 锁的 await（#414：缩短临界区）。
         let id = {
             let mut next = self.next_id.lock().await;
             *next = next.saturating_add(1);
             format!("terminal-{}", *next)
         };
-        self.terminals.lock().await.insert(
-            id.clone(),
-            TerminalInstance::new(session_id, output_limit, child),
-        );
-        id
+        let terminal = TerminalInstance::new(session_id, output_limit, child);
+        self.terminals
+            .lock()
+            .await
+            .insert(id.clone(), terminal.clone());
+        (id, terminal)
     }
 
     async fn find(&self, id: &str, session_id: &str) -> Result<Arc<TerminalInstance>, String> {
@@ -397,12 +394,11 @@ mod tests {
     use crate::terminal_policy::TerminalExitStatus;
 
     async fn insert_exited(registry: &TerminalRegistry, session_id: &str) -> String {
-        let id = registry
+        let (id, terminal) = registry
             .insert(session_id.into(), 1024, ManagedChild::empty())
             .await;
         // 空 child 永远不会退出——预置已退出状态，让 release/clear 的 kill 走
         // 早退路径（测试只关心注册表清点与归属，不关心真实进程）。
-        let terminal = registry.find(&id, session_id).await.unwrap();
         terminal.completion.send_replace(TerminalCompletion::Exited(
             TerminalExitStatus::new().exit_code(0),
         ));
@@ -533,7 +529,7 @@ mod tests {
     #[tokio::test]
     async fn registry_confines_operations_to_session_owner() {
         let registry = TerminalRegistry::default();
-        let id = registry
+        let (id, _) = registry
             .insert("session-a".into(), 4, ManagedChild::empty())
             .await;
         assert!(registry.snapshot(&id, "session-b").await.is_err());
@@ -542,6 +538,18 @@ mod tests {
         let snapshot = registry.snapshot(&id, "session-a").await.unwrap();
         assert_eq!(snapshot.output, "bcde");
         assert_eq!(snapshot.output_base_offset, 1);
+    }
+
+    /// #653：insert 交出的就是注册表里的同一实例——调用方不再需要二次查找，也就
+    /// 不会被并发 `clear()` 挡在「查不到」的那条 panic 路径上。
+    #[tokio::test]
+    async fn insert_returns_registered_instance() {
+        let registry = TerminalRegistry::default();
+        let (id, inserted) = registry
+            .insert("session-a".into(), 1024, ManagedChild::empty())
+            .await;
+        let found = registry.find(&id, "session-a").await.unwrap();
+        assert!(std::sync::Arc::ptr_eq(&inserted, &found));
     }
 
     #[tokio::test]
