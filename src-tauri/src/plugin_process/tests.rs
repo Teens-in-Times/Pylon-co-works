@@ -571,3 +571,15 @@ async fn stalled_stdin_writer_rejects_instead_of_blocking() {
     );
     fs::remove_dir_all(base).ok();
 }
+
+/// #678：行边界只剥行终止符（`\n` 与紧邻的 `\r`），与逐行 drain+pop 的旧实现等价；
+/// 半行留在缓冲里等下一块。
+#[test]
+fn next_line_bounds_strips_terminators_and_keeps_partial_line() {
+    let buffer = b"alpha\r\r\nbeta\n";
+    assert_eq!(next_line_bounds(buffer, 0), Some((5, 8)), "多 \r 一并剥掉");
+    assert_eq!(next_line_bounds(buffer, 8), Some((12, 13)));
+    assert_eq!(next_line_bounds(buffer, 13), None, "无换行即半行");
+    assert_eq!(next_line_bounds(b"\r\n", 0), Some((0, 2)), "空行");
+    assert_eq!(next_line_bounds(b"tail", 0), None);
+}
