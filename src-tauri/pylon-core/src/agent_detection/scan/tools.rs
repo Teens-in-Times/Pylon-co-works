@@ -63,7 +63,17 @@ pub(crate) async fn attach_tool_evidence(
     // not of any one provider. The reading itself lives in
     // `agent_diagnostics` — the module that already owns environment evidence —
     // rather than a second implementation here.
-    let path_gap = crate::agent_diagnostics::persisted_path_gap();
+    // #657：Windows 下这次读取会同步跑两次 `reg.exe query`，放 spawn_blocking；
+    // 任务失败按 `PathGapReport::default()`（observed=false = 未观测）处理，
+    // 与「读不到就不报 gap」的既有语义一致。
+    let path_gap =
+        match tokio::task::spawn_blocking(crate::agent_diagnostics::persisted_path_gap).await {
+            Ok(report) => report,
+            Err(error) => {
+                tracing::warn!("persisted PATH probe task failed: {error}");
+                crate::agent_diagnostics::PathGapReport::default()
+            }
+        };
     for provider in providers.iter_mut() {
         provider.node = node.clone();
         provider.uv = uv.clone();

@@ -178,16 +178,19 @@ pub(crate) async fn export_session(
     )
     .await?;
     state.ensure_generation(&runtime, generation)?;
-    let sessions = runtime.sessions.lock().map_err(|error| error.to_string())?;
-    if sessions.get(&source).map(|session| {
-        session_mapping_matches(&session.peri_id, session.generation, &peri_id, generation)
-    }) != Some(true)
+    // #657：guard 只活在这个块里——后面有新加的 await（spawn_blocking 写文件），
+    // `MutexGuard` 不 Send，收在独立块中才能证明它在 await 前已 drop。
     {
-        return Err(PylonError::Protocol(
-            "export session became stale".to_string(),
-        ));
+        let sessions = runtime.sessions.lock().map_err(|error| error.to_string())?;
+        if sessions.get(&source).map(|session| {
+            session_mapping_matches(&session.peri_id, session.generation, &peri_id, generation)
+        }) != Some(true)
+        {
+            return Err(PylonError::Protocol(
+                "export session became stale".to_string(),
+            ));
+        }
     }
-    drop(sessions);
     if replay.metadata.truncated {
         return Err(PylonError::Storage(
             pylon_session::SessionError::ReplayTruncated {
@@ -204,7 +207,13 @@ pub(crate) async fn export_session(
         _ => serde_json::to_string_pretty(&safe_messages)
             .map_err(|error| format!("serialize export failed: {error}"))?,
     };
-    write_export_atomically(output, content.as_bytes())?;
+    // #657：写文件 + fsync 是同步 IO，且 `write_export_atomically` 带 create_new/
+    // 回滚清理语义；放 spawn_blocking，不让 fsync 占住 async worker。
+    let output = output.to_path_buf();
+    let bytes = content.into_bytes();
+    tokio::task::spawn_blocking(move || write_export_atomically(&output, &bytes))
+        .await
+        .map_err(|error| format!("export write task failed: {error}"))??;
     Ok(())
 }
 
