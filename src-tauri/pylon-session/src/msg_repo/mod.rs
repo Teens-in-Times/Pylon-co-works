@@ -45,13 +45,14 @@ use crate::error::SessionError;
 ///      （user_version < 15）不搬迁任何行：保留 user_data.profiles 与 retention_policy，
 ///      其余历史（canonical_events/墓碑/快照/user_data.sessions）丢弃重建。
 /// v16：#155 T3 临时片段表；v15 升版只加表，既有 canonical 历史原样保留。
-pub const SCHEMA_VERSION: i64 = 16;
+/// v17：#664 compact 读的 rollup 跨度部分覆盖索引；v15/v16 原位加索引，行不动。
+pub const SCHEMA_VERSION: i64 = 17;
 
 /// Pylon 数据库头标识（PRAGMA application_id，'PYLN' 大端）。诊断用途：文件被误认成
 /// 其他应用数据时可据此识别。
 pub const PYLON_APPLICATION_ID: i64 = 0x5059_4C4E;
 
-/// 当前 schema DDL（CREATE IF NOT EXISTS；v15→v16 仅加临时表，旧于 v15 仍重建）。
+/// 当前 schema DDL（CREATE IF NOT EXISTS；v15→v17 只加表/索引、不动行，旧于 v15 仍重建）。
 /// - session_state_snapshots：usage/commands 等可恢复快照（不是历史存储）。
 /// - user_data：versioned Profile/Session/activeProfileId（与会话同库）。
 /// - deleted_sessions：DEL-02 owner/deletion state tombstone（deleting/deleted）。
@@ -148,6 +149,12 @@ CREATE TABLE IF NOT EXISTS canonical_events (
     rollup_seq_end INTEGER,
     PRIMARY KEY (owner_key, sequence)
 ) WITHOUT ROWID;
+-- #664：compact 分页每次都要取该 owner 的 turn.unit 跨度（rollup_seq_start/end），
+-- 无索引时每页全 owner 扫表。部分索引只收录 span 非空的行（生产上仅 turn.unit），
+-- 覆盖 compact 的 (owner_key, event_type, end >= 游标) 查询且只读索引、不取表行。
+CREATE INDEX IF NOT EXISTS idx_canonical_events_rollup_spans
+    ON canonical_events(owner_key, event_type, rollup_seq_end, rollup_seq_start)
+    WHERE rollup_seq_start IS NOT NULL AND rollup_seq_end IS NOT NULL;
 -- #155 T3（ADR-0026）：仅供在途显示/恢复的追加片段。它们不是 canonical 历史，
 -- 不推进 evt_revision，不参与 evt_list/evt_load_compact。正式行提交时同事务删除。
 CREATE TABLE IF NOT EXISTS canonical_draft_fragments (
