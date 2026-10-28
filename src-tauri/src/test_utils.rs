@@ -32,6 +32,33 @@ pub(crate) fn unique_temp(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("pylon-{label}-{}-{nanos}", std::process::id()))
 }
 
+/// 等待 trace 文件出现满足 `predicate` 的一行（#663）。
+///
+/// fake agent 逐行 flush trace，但「客户端写 stdin 成功」不代表「agent 已读到并落盘」：
+/// 断言 agent 侧效果时必须等它出现，而不是读到即断言。读取容忍尾部半行（agent 正在
+/// 追加），超时返回 `false` 由调用方给出断言消息。
+pub(crate) async fn wait_for_trace_line(
+    path: &std::path::Path,
+    predicate: impl Fn(&serde_json::Value) -> bool,
+) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            let hit = text
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .any(|value| predicate(&value));
+            if hit {
+                return true;
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 /// 定位 `pylon-fake-agent` bin：`PYLON_FAKE_AGENT_BIN` 显式覆盖 →
 /// `current_exe()` 祖先目录找 `target/<profile>/pylon-fake-agent(.exe)`。
 /// 找不到即 panic 并提示构建命令（测试环境缺 bin 属配置错误，早失败优于静默）。

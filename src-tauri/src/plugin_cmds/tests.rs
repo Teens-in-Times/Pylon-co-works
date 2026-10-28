@@ -451,6 +451,34 @@ fn install_from_zip_installs_valid_package() {
     fs::remove_dir_all(base).ok();
 }
 
+#[tokio::test]
+async fn extract_zip_off_thread_surfaces_extraction_errors() {
+    let base = temp("zip-off-thread");
+    let good = base.join("good.zip");
+    let bad = base.join("bad.zip");
+    fs::create_dir_all(&base).unwrap();
+    write_test_zip(
+        &good,
+        &[
+            ("pylon-plugin.json", b"{\"schema\":1}"),
+            ("dist/entry.js", b"export default {};"),
+        ],
+    );
+    write_test_zip(&bad, &[("dist/entry.js", b"export default {};")]);
+    let extracted = base.join("extracted");
+    extract_zip_off_thread(good, &extracted).await.unwrap();
+    assert!(extracted.join("pylon-plugin.json").is_file());
+    // 阻塞线程池边界不改写错误类型：校验失败仍是 SourceInvalid，而非 task panic。
+    let error = extract_zip_off_thread(bad, &base.join("bad-out"))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        PluginError::SourceInvalid(message) if message.contains("pylon-plugin.json")
+    ));
+    fs::remove_dir_all(base).ok();
+}
+
 #[test]
 fn install_zip_rejects_symlink_entries() {
     let base = temp("zip-symlink");

@@ -82,8 +82,14 @@ use tauri::{Emitter, Manager, Runtime};
 /// 主窗口改代码创建后本常量是唯一权威）。browser / docs 子 WebView 经
 /// `host_additional_browser_args` 共用同串——同一 user data folder 下各 WebView 的
 /// 环境参数必须逐字节一致，否则第二环境创建直接失败（见 browser::open_tab_in 注释）。
+///
+/// #330：**不含 CDP 调试端口**。端口等于把该窗口的任意 JS 执行能力交给同机任何进程，
+/// 发行二进制不能编译期内嵌（旧值内置 `--remote-debugging-port=9222`）。调试期按需用
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 注入：实测 WebView2 运行时把该变量的值
+/// **追加**在本串之后（`tools/webview2-mcp/README.md` 附录 A），故此处不需要任何
+/// 构建档位分支，dev 与 release 行为一致。
 pub(crate) const MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS: &str =
-    "--remote-debugging-port=9222 --remote-allow-origins=* --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
 #[cfg(test)]
 use crate::time::Timestamp;
@@ -523,8 +529,10 @@ impl AppStateHandles {
         // and awaiting the task closes the consumer side of the old inbox, so
         // a kill-generated crash notification cannot schedule reconnect work
         // after this replacement has begun.  This is the task-level half of
-        // the no-overlap invariant; the ACP process is synchronously killed
-        // below before the replacement is published.
+        // the no-overlap invariant; the ACP process itself is retired to a
+        // disconnected placeholder under the write lock and killed right
+        // after the lock is released (#656: `kill_and_wait` has no timeout,
+        // so it must not run under a lock that read paths contend on).
         let old_dispatcher = runtime
             .notification_task
             .lock()
@@ -540,10 +548,11 @@ impl AppStateHandles {
         // 一致）——否则旧 source 条目随任意命名的 GUI source 无限累积。锁内先快照
         // 旧 source 键，映射清空后在锁外逐个清理（锁序单向：sessions → prompt_locks）。
         // 方案 8：sessions 迁移委托 SessionStore（migrate_or_clear 返回旧 source 键）。
-        let (stale_sources, probe_candidates) = {
-            // #549/ADR-0037：换装写锁——块内全为同步操作（激活应用/kill/赋值/
+        let (stale_sources, probe_candidates, old_acp) = {
+            // #549/ADR-0037：换装写锁——块内全为同步操作（激活应用/退役/赋值/
             // 代际落位），锁内无 await；检查→退役→暴露的整窗原子性由写锁承担，
-            // 与旧 tokio 锁语义一致（std 写锁同样排斥全部快照读）。
+            // 与旧 tokio 锁语义一致（std 写锁同样排斥全部快照读）。#656：旧进程
+            // kill 已移出本块（块后 spawn_blocking），锁只覆盖状态切换。
             let mut acp = runtime
                 .acp
                 .write()
@@ -576,15 +585,17 @@ impl AppStateHandles {
                 } else {
                     Vec::new()
                 };
-            // Retire the old process before exposing the replacement.  A plain
+            // Retire the old client before exposing the replacement.  A plain
             // `mem::replace` followed by a later kill leaves two live ACP
             // instances during dispatcher startup and allows old stdout to
             // race into the new generation.  The disconnected placeholder
             // keeps the runtime fail-closed while the old process is drained.
+            // #656：kill 移出写锁——`kill_and_wait` 在 job 路径关闭 Job Object 后
+            // `wait()`、非 job 路径还要 `taskkill /T /F` + `wait()`，均无超时；旧实现
+            // 在锁内等待，切换瞬间所有 acp 读方（状态快照/会话命令）一起排队。锁内只
+            // 保留「退役为 disconnected 占位 → 发布新连接」，回收旧进程在锁外
+            // `spawn_blocking`（见下方 old_acp）。
             let old_acp = std::mem::replace(&mut *acp, Arc::new(AcpClient::disconnected()));
-            if let Err(error) = old_acp.kill() {
-                tracing::warn!("kill replaced agent before activation: {}", error);
-            }
             *acp = Arc::new(new_acp);
             runtime
                 .client_generation
@@ -634,8 +645,20 @@ impl AppStateHandles {
                 emit_event(&window, crate::event_names::INTERACTION, resolved);
             }
             tracing::info!("ACP client activated; generation is now {}", new_generation);
-            (stale_sources, probe_candidates)
+            (stale_sources, probe_candidates, old_acp)
         };
+        // #656：旧连接已退役并发布新连接，写锁已释放——这里才回收旧进程，读方不再
+        // 被 `kill_and_wait` 的 wait 拖住。放在 dispatcher 启动之前，保留「旧进程先
+        // 死、新 dispatcher 后起」的原有时序。
+        match tokio::task::spawn_blocking(move || old_acp.kill()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!("kill replaced agent before activation: {}", error)
+            }
+            Err(error) => {
+                tracing::warn!("kill replaced agent task did not complete: {}", error)
+            }
+        }
         // 优化-1：sessions 锁已释放——清理旧 source 的 prompt 锁条目。
         // G2-08：lib.rs 本地 drop_stale_prompt_locks 删除，收敛为 runtime 方法。
         runtime.drop_prompt_locks(&stale_sources);
@@ -1842,5 +1865,31 @@ mod init_tracing_tests {
             .with_writer(std::io::stderr)
             .with_filter(tracing_subscriber::filter::LevelFilter::INFO);
         let _ = filtered.with_subscriber(base);
+    }
+}
+
+/// #330 回归守卫：CDP 调试端口不得再编译进产品二进制。
+///
+/// 内置端口 = 同机任何进程都能连上该窗口执行任意 JS（发行包也一样）。调试期改用
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 追加，见 `MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS` 注释。
+#[cfg(test)]
+mod window_browser_args_tests {
+    use super::MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS;
+
+    #[test]
+    fn built_in_browser_args_carry_no_cdp_port() {
+        assert!(
+            !MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS.contains("remote-debugging"),
+            "内置 WebView2 参数又带上了 CDP 端口（#330）：{MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS}"
+        );
+        assert!(
+            !MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS.contains("remote-allow-origins"),
+            "内置 WebView2 参数带上了 CDP 来源放行（#330）：{MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS}"
+        );
+        assert!(
+            MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS
+                .contains("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"),
+            "内置 WebView2 参数丢了原有的 --disable-features 组合：{MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS}"
+        );
     }
 }

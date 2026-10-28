@@ -269,6 +269,7 @@ async fn cancellation_settles_pending_request() {
     assert!(pending.await.unwrap().unwrap_err().contains("cancelled"));
     supervisor
         .kill(app.handle(), &descriptor.process_id)
+        .await
         .unwrap();
     fs::remove_dir_all(base).ok();
 }
@@ -410,6 +411,7 @@ async fn on_failure_restart_replaces_generation_and_recovers_rpc() {
     assert_eq!(recovered, "recovered");
     supervisor
         .kill(app.handle(), &descriptor.process_id)
+        .await
         .unwrap();
     fs::remove_dir_all(base).ok();
 }
@@ -436,6 +438,7 @@ async fn job_object_kills_descendant_process_tree() {
         .unwrap() as u32;
     supervisor
         .kill(app.handle(), &descriptor.process_id)
+        .await
         .unwrap();
     tokio::time::sleep(Duration::from_millis(TREE_REAP_WAIT_MS)).await;
     let output = Command::new("tasklist")
@@ -510,5 +513,61 @@ async fn checked_in_json_rpc_example_is_runnable() {
         .terminate(app.handle().clone(), &descriptor.process_id)
         .await
         .unwrap();
+    fs::remove_dir_all(base).ok();
+}
+
+/// #655：子进程不消费 stdin 时，写入不得在调用线程上挂死——队列满即报错；
+/// 且写入不长期持 stdin 锁，`terminate` 仍能在 shutdown 预算内强杀。
+#[tokio::test]
+async fn stalled_stdin_writer_rejects_instead_of_blocking() {
+    let base = temp("stdin-stall");
+    let app = app_for(&base);
+    let supervisor = app.state::<crate::AppState>().plugin_processes.clone();
+    // hang 场景在读循环之前驻留：一个字节都不消费 stdin，管道缓冲写满后
+    // 旧实现会永久阻塞在 write_all 上并一直持着 stdin 互斥。
+    let options = PluginProcessOptions {
+        args: vec!["--scenario".into(), "hang".into()],
+        ..Default::default()
+    };
+    let descriptor = supervisor
+        .spawn(
+            app.handle().clone(),
+            "p.process".into(),
+            "p.process@1.0.0-test#run-stall".into(),
+            None,
+            "service".into(),
+            options,
+        )
+        .unwrap();
+    let chunk = vec![b'x'; 256 * 1024];
+    let started = std::time::Instant::now();
+    let mut rejected = None;
+    for _ in 0..64 {
+        if let Err(error) = supervisor.write(&descriptor.process_id, &chunk) {
+            rejected = Some(error);
+            break;
+        }
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "写满管道也不能让写入调用挂住"
+    );
+    let error = rejected.expect("下游不消费 stdin 时队列必须报满，而不是无限排队");
+    assert!(error.contains("queue full"), "unexpected error: {error}");
+    let terminated = tokio::time::timeout(
+        Duration::from_secs(15),
+        supervisor.terminate(app.handle().clone(), &descriptor.process_id),
+    )
+    .await
+    .expect("terminate 不得被卡住的写入拖住");
+    assert!(terminated.is_ok(), "terminate failed: {terminated:?}");
+    assert_eq!(
+        supervisor
+            .get(&descriptor.process_id)
+            .unwrap()
+            .descriptor()
+            .status,
+        ProcessStatus::Exited
+    );
     fs::remove_dir_all(base).ok();
 }

@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use tokio::io::AsyncWriteExt;
 
 use super::store::{describe_source, ensure_layout_at, root};
 use super::transaction::{install_at, write_lock};
@@ -152,6 +153,26 @@ pub(crate) fn extract_zip_archive(
     Ok(extracted_files)
 }
 
+/// #657：`extract_zip_archive` 是纯同步磁盘 IO（最多 256 MiB 展开），
+/// 在 async 命令里放到阻塞线程池执行，不占 async worker。
+pub(crate) async fn extract_zip_off_thread(
+    zip_path: PathBuf,
+    dest: &Path,
+) -> Result<(), PluginError> {
+    let dest = dest.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        extract_zip_archive(
+            &zip_path,
+            &dest,
+            MAX_INSTALL_ZIP_BYTES,
+            MAX_INSTALL_EXTRACT_BYTES,
+        )
+    })
+    .await
+    .map_err(|error| PluginError::Io(format!("zip extraction task failed: {error}")))?
+    .map(|_extracted_files| ())
+}
+
 pub(crate) fn unique_install_temp(prefix: &str) -> PathBuf {
     let unique = format!(
         "{prefix}-{}-{}",
@@ -217,7 +238,11 @@ pub(crate) async fn download_install_zip(
             )));
         }
     }
-    let mut file = File::create(dest).map_err(|e| PluginError::Io(e.to_string()))?;
+    // #657：下载循环在 async 上下文里，落盘与 fsync 走 tokio::fs——std File 的
+    // write_all/sync_all 会阻塞 worker（fsync 是几百毫秒量级的同步系统调用）。
+    let mut file = tokio::fs::File::create(dest)
+        .await
+        .map_err(|e| PluginError::Io(e.to_string()))?;
     let mut stream = response;
     let mut bytes_done: u64 = 0;
     let mut next_progress = INSTALL_PROGRESS_CHUNK;
@@ -232,13 +257,16 @@ pub(crate) async fn download_install_zip(
                 "download exceeds size limit: > {MAX_INSTALL_ZIP_BYTES}"
             )));
         }
-        std::io::Write::write_all(&mut file, &chunk).map_err(|e| PluginError::Io(e.to_string()))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| PluginError::Io(e.to_string()))?;
         if bytes_done >= next_progress {
             next_progress += INSTALL_PROGRESS_CHUNK;
             emit_install_progress(app, plugin_id, "downloading", bytes_total, bytes_done);
         }
     }
     file.sync_all()
+        .await
         .map_err(|e| PluginError::Io(e.to_string()))?;
     emit_install_progress(app, plugin_id, "downloaded", Some(bytes_done), bytes_done);
     Ok(())
@@ -271,24 +299,14 @@ async fn install_from_zip_source(
                     .into());
                 }
                 emit_install_progress(&app, expected_id, "extracting", None, 0);
-                extract_zip_archive(
-                    &zip_path,
-                    &extract_dir,
-                    MAX_INSTALL_ZIP_BYTES,
-                    MAX_INSTALL_EXTRACT_BYTES,
-                )?;
+                extract_zip_off_thread(zip_path, &extract_dir).await?;
                 Ok(())
             }
             InstallZipSource::Url(url) => {
                 let zip_download = work.join("package.zip");
                 download_install_zip(&app, url, &zip_download, expected_id).await?;
                 emit_install_progress(&app, expected_id, "extracting", None, 0);
-                extract_zip_archive(
-                    &zip_download,
-                    &extract_dir,
-                    MAX_INSTALL_ZIP_BYTES,
-                    MAX_INSTALL_EXTRACT_BYTES,
-                )?;
+                extract_zip_off_thread(zip_download, &extract_dir).await?;
                 Ok(())
             }
         }
@@ -347,12 +365,7 @@ pub(crate) async fn plugin_package_inspect_zip(
     let work = unique_install_temp("pylon-plugin-inspect");
     let extract_dir = work.join("extracted");
     let result = async {
-        extract_zip_archive(
-            &zip_path,
-            &extract_dir,
-            MAX_INSTALL_ZIP_BYTES,
-            MAX_INSTALL_EXTRACT_BYTES,
-        )?;
+        extract_zip_off_thread(zip_path, &extract_dir).await?;
         describe_source(&extract_dir)
     }
     .await;
@@ -373,12 +386,7 @@ pub(crate) async fn plugin_package_inspect_url(
     let result = async {
         let plugin_hint = format!("inspect:{}", parsed.host_str().unwrap_or("remote"));
         download_install_zip(&app, &url, &zip_download, &plugin_hint).await?;
-        extract_zip_archive(
-            &zip_download,
-            &extract_dir,
-            MAX_INSTALL_ZIP_BYTES,
-            MAX_INSTALL_EXTRACT_BYTES,
-        )?;
+        extract_zip_off_thread(zip_download.clone(), &extract_dir).await?;
         describe_source(&extract_dir)
     }
     .await;
