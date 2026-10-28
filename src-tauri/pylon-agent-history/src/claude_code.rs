@@ -38,7 +38,8 @@ impl ExternalHistoryParser for ClaudeCodeParser {
     fn discover(&self, projects_root: &Path) -> Vec<ExternalSessionSummary> {
         let mut summaries = Vec::new();
         for file in jsonl_files(projects_root) {
-            for segment in parse_file(&file) {
+            // 扫描只要摘要与事件计数，不构事件载荷（工具输出可达 MB 级）。
+            for segment in parse_file(&file, false) {
                 summaries.push(segment.summary);
             }
         }
@@ -51,8 +52,30 @@ impl ExternalHistoryParser for ClaudeCodeParser {
         projects_root: &Path,
         external_id: &str,
     ) -> Result<ExternalSessionRecord, ExternalHistoryError> {
-        for file in jsonl_files(projects_root) {
-            for segment in parse_file(&file) {
+        let files = jsonl_files(projects_root);
+        // 常规布局的文件名就是首段 sessionId：只解析这一个文件，避免为单会话
+        // 重解析整段历史（导入全部时曾是 O(会话数 × 历史字节)）。
+        if let Some(stem_match) = files
+            .iter()
+            .find(|file| file.file_stem().is_some_and(|stem| stem == external_id))
+        {
+            if let Some(record) = read_segment_from_file(stem_match, external_id) {
+                return Ok(record);
+            }
+        }
+        for file in files {
+            if file.file_stem().is_some_and(|stem| stem == external_id) {
+                continue;
+            }
+            // 滚动链（`/clear` 在同一文件追加新 sessionId）与改名文件：先按原始
+            // 字节过滤，命中才解析——误命中只多一次解析，不会漏。
+            let Ok(content) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            if !content.contains(external_id) {
+                continue;
+            }
+            for segment in parse_content(&file, &content, true) {
                 if segment.summary.external_id == external_id {
                     return Ok(ExternalSessionRecord {
                         summary: segment.summary,
@@ -65,6 +88,18 @@ impl ExternalHistoryParser for ClaudeCodeParser {
             external_id.to_string(),
         ))
     }
+}
+
+fn read_segment_from_file(path: &Path, external_id: &str) -> Option<ExternalSessionRecord> {
+    for segment in parse_file(path, true) {
+        if segment.summary.external_id == external_id {
+            return Some(ExternalSessionRecord {
+                summary: segment.summary,
+                events: segment.events,
+            });
+        }
+    }
+    None
 }
 
 /// 会话根下的 `*/*.jsonl` 两层布局（一层 munged-cwd 目录 + 一层会话文件）。
@@ -107,14 +142,17 @@ struct SegmentBuilder {
     started_at: Option<String>,
     last_activity_at: Option<String>,
     skipped: u64,
+    /// `false` 时只计数不物化载荷（`discover` 用）。
+    emit_events: bool,
     events: Vec<ExternalEvent>,
+    event_count: u64,
     first_user_text: Option<String>,
     /// 按 id 保序的未终结 assistant 消息（换 id 前与段尾 flush）。
     pending: Vec<(String, PendingMessage)>,
 }
 
 impl SegmentBuilder {
-    fn new(external_id: &str, source_path: &str) -> Self {
+    fn new(external_id: &str, source_path: &str, emit_events: bool) -> Self {
         Self {
             external_id: external_id.to_string(),
             source_path: source_path.to_string(),
@@ -122,18 +160,23 @@ impl SegmentBuilder {
             started_at: None,
             last_activity_at: None,
             skipped: 0,
+            emit_events,
             events: Vec::new(),
+            event_count: 0,
             first_user_text: None,
             pending: Vec::new(),
         }
     }
 
-    fn push_event(&mut self, update: Value, timestamp: &str) {
+    fn push_event(&mut self, timestamp: &str, update: impl FnOnce() -> Value) {
         self.note_activity(timestamp);
-        self.events.push(ExternalEvent {
-            occurred_at: timestamp.to_string(),
-            payload: json!({ "update": update }),
-        });
+        self.event_count += 1;
+        if self.emit_events {
+            self.events.push(ExternalEvent {
+                occurred_at: timestamp.to_string(),
+                payload: json!({ "update": update() }),
+            });
+        }
     }
 
     fn note_activity(&mut self, timestamp: &str) {
@@ -159,20 +202,18 @@ impl SegmentBuilder {
                     if text.is_empty() {
                         continue;
                     }
-                    self.push_event(
-                        json!({ "sessionUpdate": "agent_message_chunk", "content": { "text": text } }),
-                        timestamp,
-                    );
+                    self.push_event(timestamp, || {
+                        json!({ "sessionUpdate": "agent_message_chunk", "content": { "text": text } })
+                    });
                 }
                 Some("thinking") => {
                     let text = block.get("thinking").and_then(Value::as_str).unwrap_or("");
                     if text.is_empty() {
                         continue;
                     }
-                    self.push_event(
-                        json!({ "sessionUpdate": "agent_thought_chunk", "content": { "text": text } }),
-                        timestamp,
-                    );
+                    self.push_event(timestamp, || {
+                        json!({ "sessionUpdate": "agent_thought_chunk", "content": { "text": text } })
+                    });
                 }
                 Some("tool_use") => {
                     let tool_call_id = block.get("id").and_then(Value::as_str).unwrap_or("");
@@ -180,16 +221,15 @@ impl SegmentBuilder {
                     if tool_call_id.is_empty() || name.is_empty() {
                         continue;
                     }
-                    self.push_event(
+                    self.push_event(timestamp, || {
                         json!({
                             "sessionUpdate": "tool_call",
                             "toolCallId": tool_call_id,
                             "title": name,
                             "kind": "call",
                             "rawInput": block.get("input").cloned().unwrap_or(Value::Null),
-                        }),
-                        timestamp,
-                    );
+                        })
+                    });
                 }
                 _ => {}
             }
@@ -214,7 +254,7 @@ impl SegmentBuilder {
                 title,
                 started_at: self.started_at.unwrap_or_default(),
                 last_activity_at: self.last_activity_at.unwrap_or_default(),
-                event_count: self.events.len() as u64,
+                event_count: self.event_count,
                 source_path: self.source_path,
                 skipped_line_count: self.skipped,
             },
@@ -234,10 +274,14 @@ fn truncate_title(text: &str) -> String {
 
 /// 解析单个 JSONL 文件为段列表（`/clear` 滚动链 ⇒ 多段）。
 /// summary 行的标题记为 pending，赋给其后换出的首个段（文件级摘要语义）。
-fn parse_file(path: &Path) -> Vec<Segment> {
+fn parse_file(path: &Path, emit_events: bool) -> Vec<Segment> {
     let Ok(content) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
+    parse_content(path, &content, emit_events)
+}
+
+fn parse_content(path: &Path, content: &str, emit_events: bool) -> Vec<Segment> {
     let source_path = path.to_string_lossy().to_string();
     let mut segments: Vec<Segment> = Vec::new();
     let mut builder: Option<SegmentBuilder> = None;
@@ -284,7 +328,7 @@ fn parse_file(path: &Path) -> Vec<Segment> {
             let id = session_id
                 .map(str::to_string)
                 .unwrap_or_else(|| fallback_segment_id(&segments));
-            let mut fresh = SegmentBuilder::new(&id, &source_path);
+            let mut fresh = SegmentBuilder::new(&id, &source_path, emit_events);
             if let Some(title) = pending_title.take() {
                 fresh.title = Some(title);
             }
@@ -346,8 +390,8 @@ fn parse_user_line(line: &Value, timestamp: &str, builder: &mut SegmentBuilder) 
                 builder.first_user_text = Some(text.clone());
             }
             builder.push_event(
-                json!({ "sessionUpdate": "user_message_chunk", "content": { "text": text } }),
                 timestamp,
+                || json!({ "sessionUpdate": "user_message_chunk", "content": { "text": text } }),
             );
         }
         Some(Value::Array(blocks)) => {
@@ -362,10 +406,9 @@ fn parse_user_line(line: &Value, timestamp: &str, builder: &mut SegmentBuilder) 
                         if builder.first_user_text.is_none() {
                             builder.first_user_text = Some(text.to_string());
                         }
-                        builder.push_event(
-                            json!({ "sessionUpdate": "user_message_chunk", "content": { "text": text } }),
-                            timestamp,
-                        );
+                        builder.push_event(timestamp, || {
+                            json!({ "sessionUpdate": "user_message_chunk", "content": { "text": text } })
+                        });
                         produced = true;
                     }
                     Some("tool_result") => {
@@ -376,15 +419,14 @@ fn parse_user_line(line: &Value, timestamp: &str, builder: &mut SegmentBuilder) 
                         if tool_call_id.is_empty() {
                             continue;
                         }
-                        builder.push_event(
+                        builder.push_event(timestamp, || {
                             json!({
                                 "sessionUpdate": "tool_call_update",
                                 "toolCallId": tool_call_id,
                                 "status": "completed",
                                 "rawOutput": block.get("content").cloned().unwrap_or(Value::Null),
-                            }),
-                            timestamp,
-                        );
+                            })
+                        });
                         produced = true;
                     }
                     _ => {}
@@ -419,7 +461,10 @@ fn parse_assistant_line(
     };
     if let Some(usage) = message.get("usage") {
         // 流式快照后行覆盖前行：同 id 只留终值（usage 去重，#364）。
-        usage_by_message.insert(message_id.to_string(), usage.clone());
+        // 只计数模式下 usage 不参与输出，省掉每行的 Value 克隆。
+        if builder.emit_events {
+            usage_by_message.insert(message_id.to_string(), usage.clone());
+        }
     }
     let has_stop = message
         .get("stop_reason")
@@ -466,14 +511,16 @@ fn emit_terminal_message(
 ) {
     builder.emit_message_blocks(message, timestamp);
     if let Some(stop_reason) = message.get("stop_reason").and_then(Value::as_str) {
-        let mut done = json!({ "sessionUpdate": "done", "stopReason": stop_reason });
-        if let Some(usage) = usage.map(translate_usage) {
-            done["usage"] = usage;
-        }
-        if let Some(model) = message.get("model").and_then(Value::as_str) {
-            done["model"] = Value::String(model.to_string());
-        }
-        builder.push_event(done, timestamp);
+        builder.push_event(timestamp, || {
+            let mut done = json!({ "sessionUpdate": "done", "stopReason": stop_reason });
+            if let Some(usage) = usage.map(translate_usage) {
+                done["usage"] = usage;
+            }
+            if let Some(model) = message.get("model").and_then(Value::as_str) {
+                done["model"] = Value::String(model.to_string());
+            }
+            done
+        });
     }
 }
 
