@@ -3158,7 +3158,7 @@ checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
 name = "pylon"
-version = "0.4.3-AGP"
+version = "0.4.4-KXP"
 dependencies = [
  "aes-gcm",
  "agent-client-protocol",
@@ -3217,7 +3217,7 @@ dependencies = [
 
 [[package]]
 name = "pylon-acp"
-version = "0.4.3-AGP"
+version = "0.4.4-KXP"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
@@ -3247,7 +3247,7 @@ dependencies = [
 
 [[package]]
 name = "pylon-canonical-types"
-version = "0.4.3-AGP"
+version = "0.4.4-KXP"
 dependencies = [
  "serde",
  "serde_json",
@@ -3255,7 +3255,7 @@ dependencies = [
 
 [[package]]
 name = "pylon-compute"
-version = "0.4.3-AGP"
+version = "0.4.4-KXP"
 dependencies = [
  "serde",
  "serde-wasm-bindgen",
@@ -3302,7 +3302,7 @@ dependencies = [
 
 [[package]]
 name = "pylon-markdown"
-version = "0.4.3-AGP"
+version = "0.4.4-KXP"
 dependencies = [
  "comrak",
  "serde",
@@ -3322,7 +3322,7 @@ dependencies = [
 
 [[package]]
 name = "pylon-session"
-version = "0.4.3-AGP"
+version = "0.4.4-KXP"
 dependencies = [
  "chrono",
  "pylon-canonical-types",
