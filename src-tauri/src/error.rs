@@ -123,6 +123,23 @@ impl PylonError {
             Self::AcpDomain(error) => error.code(),
         }
     }
+
+    /// 变体载荷原文（不含统一前缀）。仅用于把错误嵌入既有字符串/日志时保持
+    /// 历史文案逐字不变（如 `data_dirs` 未初始化的 message）；wire 序列化仍走
+    /// Display（`{code, message}` 契约不变）。
+    pub(crate) fn raw_message(&self) -> String {
+        match self {
+            Self::Acp(message)
+            | Self::Serialize(message)
+            | Self::Io(message)
+            | Self::Protocol(message)
+            | Self::Workspace(message)
+            | Self::Prism(message)
+            | Self::Git(message)
+            | Self::Command(message) => message.clone(),
+            other => other.to_string(),
+        }
+    }
 }
 
 // Display/Error 由 thiserror derive（R2）；错误文案与手写 impl 逐字一致（契约不变）。

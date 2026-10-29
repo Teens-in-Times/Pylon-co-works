@@ -663,7 +663,7 @@ pub(crate) async fn browser_agent_save_page(
                 .map_err(|error| PylonError::Protocol(format!("MHTML 存档任务失败: {error}")))
                 .and_then(std::convert::identity)
             }
-            Err(error) => Err(PylonError::Protocol(error)),
+            Err(error) => Err(error),
         };
         match save_result {
             Ok(path) => {

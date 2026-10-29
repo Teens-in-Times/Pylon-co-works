@@ -17,8 +17,11 @@ use crate::{emit_event, AppStateHandles};
 /// 崩溃处理 + 自动重连权威。字段与原闭包捕获一一对应（见 mod.rs setup 克隆段）。
 /// `reactions` 为产品反应订阅缝（#416 W2 步骤③）——原 `pet::on_agent_crashed`
 /// 直呼点改经 sink（独立方法，非 PetEvent 变体；R2 修正）。
+/// `agent_id` 是**本 runtime 自身**的注册身份（泵以 `Arc::ptr_eq` 解析，见
+/// `NotificationPump::new`）——#680：不再从全局 `active_agent` 反推。
 pub(crate) struct CrashReconnectHandler<R: tauri::Runtime> {
     handles: AppStateHandles,
+    agent_id: String,
     agent_runtime: Arc<std::sync::Mutex<crate::agent::runtime::AgentRuntimeState>>,
     window: tauri::Window<R>,
     runtime_for_reconnect: Arc<AgentRuntime>,
@@ -29,6 +32,7 @@ pub(crate) struct CrashReconnectHandler<R: tauri::Runtime> {
 impl<R: tauri::Runtime> CrashReconnectHandler<R> {
     pub(crate) fn new(
         handles: AppStateHandles,
+        agent_id: String,
         agent_runtime: Arc<std::sync::Mutex<crate::agent::runtime::AgentRuntimeState>>,
         window: tauri::Window<R>,
         runtime_for_reconnect: Arc<AgentRuntime>,
@@ -37,6 +41,7 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
     ) -> Self {
         Self {
             handles,
+            agent_id,
             agent_runtime,
             window,
             runtime_for_reconnect,
@@ -77,9 +82,20 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
                 ]),
             );
         }
-        if let Ok(mut runtime_state) = self.agent_runtime.lock() {
-            runtime_state.status = AgentLifecycleStatus::Crashed;
-            runtime_state.last_error = Some(last_error);
+        match self.agent_runtime.lock() {
+            Ok(mut runtime_state) => {
+                runtime_state.status = AgentLifecycleStatus::Crashed;
+                runtime_state.last_error = Some(last_error);
+            }
+            Err(poison) => {
+                tracing::warn!(
+                    agent_id = %self.agent_id,
+                    "agent_runtime lock poisoned on crash; recovering state"
+                );
+                let mut runtime_state = poison.into_inner();
+                runtime_state.status = AgentLifecycleStatus::Crashed;
+                runtime_state.last_error = Some(last_error);
+            }
         }
         // 崩溃感知经订阅缝（原 `pet::on_agent_crashed` 直呼点；调用位置不变——
         // 状态置 Crashed 之后、AGENT_STATUS 事件之前；sink 实现内单次锁 +
@@ -88,23 +104,16 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
         // P2-4：崩溃 payload 复用 agent_status_payload（状态已置 Crashed，
         // 读出的形状与旧手工构造一致：status=crashed/available=false/
         // crashed=true/lastError 注入），不再双份维护同一形状。
-        let reconnect_handles = AppStateHandles {
-            runtimes: self.handles.runtimes.clone(),
-            agents: self.handles.agents.clone(),
-            active_agent: self.handles.active_agent.clone(),
-            pet: self.handles.pet.clone(),
-            runtime_logs: self.handles.runtime_logs.clone(),
-            gateway: self.handles.gateway.clone(),
-            approval_mode: self.handles.approval_mode.clone(),
-            approval_mode_persisted: self.handles.approval_mode_persisted.clone(),
-            event_service: self.handles.event_service.clone(),
-            message_service: self.handles.message_service.clone(),
-            hook_bridge: self.handles.hook_bridge.clone(),
-        };
+        // #680：身份用本 runtime 的注册 id 显式注入——非 active runtime 的
+        // 崩溃事件不得被标成当前 active agent。
+        let reconnect_handles = self.handles.clone_handles();
         emit_event(
             &self.window,
             crate::event_names::AGENT_STATUS,
-            reconnect_handles.agent_status_payload(Some(self.runtime_for_reconnect.as_ref())),
+            reconnect_handles.agent_status_payload_for(
+                Some(self.runtime_for_reconnect.as_ref()),
+                Some(&self.agent_id),
+            ),
         );
         // R7：每次崩溃通知推进 reconnect_epoch（防重入标志无论是否持有）——
         // 被吸收的重复通知也会改变 epoch，重连循环据此感知"新一轮崩溃到来"。
@@ -122,18 +131,15 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
             let reconnect_runtime = self.runtime_for_reconnect.clone();
             let window_for_reconnect = self.window.clone();
             let epoch_for_reconnect = self.reconnect_epoch.clone();
+            // #680：身份来自本 runtime 的注册 id（pump 以 Arc::ptr_eq 解析），
+            // 不再是全局 active_agent 的快照。
+            let reconnect_agent_id = self.agent_id.clone();
             // 调度时读当前 epoch：本循环的 ticket。
             let mut scheduled_epoch = self.reconnect_epoch.load(Ordering::Acquire);
             tokio::spawn(async move {
                 // 手动 switch 会 abort 本 runtime 的 dispatcher，但不会
-                // cancel 自动重连闭包——每轮用 active_agent 复查拦截，
-                // 防止重连成功后把 active_agent 顶回本 agent。
-                let reconnect_agent_id = reconnect_handles
-                    .active_agent
-                    .lock()
-                    .ok()
-                    .map(|v| v.clone())
-                    .unwrap_or_default();
+                // cancel 自动重连闭包——每轮复查 active_agent 是否仍是本
+                // runtime 的 agent，防止重连成功后把 active_agent 顶回本 agent。
                 // R7：remaining_attempts 局部预算 + attempt 退避指数。
                 // G2-07：重连策略参数化（默认值 = 现值 5/2000/30000，行为零变化）。
                 let mut remaining_attempts =
@@ -174,11 +180,17 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
                             let runtime_guard = reconnect_runtime
                                 .agent_runtime
                                 .lock()
-                                .unwrap_or_else(|p| p.into_inner());
+                                .unwrap_or_else(|poison| poison.into_inner());
                             let active_guard = reconnect_handles
                                 .active_agent
                                 .lock()
-                                .unwrap_or_else(|p| p.into_inner());
+                                .unwrap_or_else(|poison| {
+                                    tracing::warn!(
+                                        agent_id = %reconnect_agent_id,
+                                        "active_agent lock poisoned during auto-reconnect; recovering"
+                                    );
+                                    poison.into_inner()
+                                });
                             (
                                 runtime_guard.status == AgentLifecycleStatus::Crashed,
                                 active_guard.as_str() == reconnect_agent_id,
@@ -189,12 +201,26 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
                             // 否则后续崩溃将永远不再自动重连。
                             break;
                         }
-                        let agent = reconnect_handles
-                            .agents
-                            .lock()
-                            .ok()
-                            .and_then(|a| a.get(&reconnect_agent_id).cloned());
+                        // #680：AgentDef 按本 runtime 的 agent id 取（reload 可能
+                        // 已删除该 agent）；取不到时不再裸 break，见 abandon_reconnect。
+                        let agent = match reconnect_handles.agents.lock() {
+                            Ok(agents) => agents.get(&reconnect_agent_id).cloned(),
+                            Err(poison) => {
+                                tracing::warn!(
+                                    agent_id = %reconnect_agent_id,
+                                    "agents lock poisoned during auto-reconnect; recovering registry view"
+                                );
+                                poison.into_inner().get(&reconnect_agent_id).cloned()
+                            }
+                        };
                         let Some(agent) = agent else {
+                            abandon_reconnect(
+                                &reconnect_handles,
+                                &reconnect_agent_id,
+                                &reconnect_runtime,
+                                &window_for_reconnect,
+                                "agent 已不在注册表（配置 reload 删除？）",
+                            );
                             break;
                         };
                         let _lifecycle_guard =
@@ -207,12 +233,36 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
                         // 连接；此时再 do_connect_and_replace 会连续第二次连接。
                         // 手动操作（switch/reconnect）同样在锁内改状态，锁串行后
                         // 此处必能看到其结果。
-                        let still_stale = reconnect_runtime
-                            .agent_runtime
-                            .lock()
-                            .map(|r| r.status == AgentLifecycleStatus::Crashed)
-                            .unwrap_or(false);
-                        if !still_stale {
+                        // #680：同样要复查 active——排队等锁期间用户可能已 switch 到
+                        // 别的 agent（改 active 不要求本 runtime 的生命周期锁先到手），
+                        // 此时重连成功会把 active 顶回本 agent。
+                        let (still_stale, still_active) = {
+                            let runtime_guard = reconnect_runtime
+                                .agent_runtime
+                                .lock()
+                                .unwrap_or_else(|poison| {
+                                    tracing::warn!(
+                                        agent_id = %reconnect_agent_id,
+                                        "agent_runtime lock poisoned after lifecycle lock; recovering"
+                                    );
+                                    poison.into_inner()
+                                });
+                            let active_guard = reconnect_handles
+                                .active_agent
+                                .lock()
+                                .unwrap_or_else(|poison| {
+                                    tracing::warn!(
+                                        agent_id = %reconnect_agent_id,
+                                        "active_agent lock poisoned after lifecycle lock; recovering"
+                                    );
+                                    poison.into_inner()
+                                });
+                            (
+                                runtime_guard.status == AgentLifecycleStatus::Crashed,
+                                active_guard.as_str() == reconnect_agent_id,
+                            )
+                        };
+                        if !(still_stale && still_active) {
                             break;
                         }
                         match crate::lifecycle::do_connect_and_replace(
@@ -278,4 +328,27 @@ impl<R: tauri::Runtime> CrashReconnectHandler<R> {
             });
         }
     }
+}
+
+/// #680：放弃自动重连的显式出口——warn + 一条 agent-status 诊断。
+///
+/// 背景：循环里的提前退出（用户 reconnect/switch）是正常语义；但「注册表里
+/// 找不到本 runtime 的 agent」属于异常，如果只 `break`，会出现「承诺 5 次
+/// 自动重连、实际一次没跑且无痕」。此出口把原因写进日志与 lastError/事件，
+/// 事件身份同样显式用本 runtime 的 agent id（不是 active）。
+fn abandon_reconnect<R: tauri::Runtime>(
+    handles: &AppStateHandles,
+    agent_id: &str,
+    runtime: &AgentRuntime,
+    window: &tauri::Window<R>,
+    reason: &str,
+) {
+    tracing::warn!(agent_id, "auto-reconnect abandoned: {reason}");
+    handles.emit_agent_status_for(
+        runtime,
+        window,
+        Some(agent_id),
+        AgentLifecycleStatus::Crashed,
+        Some(format!("自动重连已放弃：{reason}")),
+    );
 }

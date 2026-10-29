@@ -325,6 +325,10 @@ impl DetectionSnapshotStore {
     }
 }
 
+/// #684：检测快照缓存按**进程**单例——产品语义即"整个应用共享一份探测结果"
+/// （TTL 缓存 + 单飞，见 [`DetectionSnapshotStore`]）。这是显式的进程级产品状态，
+/// 不是遗漏的全局注册表；单元测试不读本单例，而是各自构造
+/// [`DetectionSnapshotStore`]（同一进程并行测试互不共享缓存）。
 static SNAPSHOT_STORE: OnceLock<DetectionSnapshotStore> = OnceLock::new();
 
 fn snapshot_store() -> &'static DetectionSnapshotStore {

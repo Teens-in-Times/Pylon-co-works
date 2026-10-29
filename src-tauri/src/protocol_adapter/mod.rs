@@ -19,7 +19,7 @@ pub(crate) mod private_ext;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
@@ -262,19 +262,94 @@ type MethodAdapterTable = HashMap<String, ProviderSlots>;
 
 /// #98/#424：method 键控 dispatch 注册表——**单一注册面**。值是 per-provider
 /// 槽（method → provider → adapter），保留同 method 多 provider 注册事实
-/// （run() 里 peri/hermes 双注册 `session/request_permission`，旧
-/// last-writer-wins 形态会把它坍缩成一条）。core dispatch（请求受理与应答
-/// 路由）按 ACP method 查找，provider 名称不是 gate；catalog 诊断投影与
-/// provider 视图（`get_protocol_adapter`）自本表反向派生——#416 时反向投影
-/// 因坍缩翻假而被搁置，per-provider 槽使其还原为无损。
-static PROTOCOL_METHOD_ADAPTERS: OnceLock<Mutex<MethodAdapterTable>> = OnceLock::new();
+/// （内置 `with_builtin_adapters` 为 peri/hermes 双注册
+/// `session/request_permission`，旧 last-writer-wins 形态会把它坍缩成一条）。
+/// core dispatch（请求受理与应答路由）按 ACP method 查找，provider 名称不是
+/// gate；catalog 诊断投影与 provider 视图（`get`）自本表反向派生——#416 时
+/// 反向投影因坍缩翻假而被搁置，per-provider 槽使其还原为无损。
+///
+/// #684：注册表由 `AppState` 持有并在启动时一次性注入（不再进程级
+/// `OnceLock`）；测试构造各自的 `ProtocolAdapterRegistry`，注册互不泄漏。
+#[derive(Default)]
+pub(crate) struct ProtocolAdapterRegistry {
+    by_method: Mutex<MethodAdapterTable>,
+}
 
-fn method_registry() -> &'static Mutex<MethodAdapterTable> {
-    PROTOCOL_METHOD_ADAPTERS.get_or_init(|| Mutex::new(HashMap::new()))
+impl ProtocolAdapterRegistry {
+    /// 生产内置适配器（Peri 与 Hermes 的审批 wire 逐字段一致，均走
+    /// `session/request_permission`；clarify/ask-user 无真实 wire 不注册）。
+    pub(crate) fn with_builtin_adapters() -> Self {
+        let registry = Self::default();
+        registry.register(Arc::new(RequestPermissionAdapter { provider: "peri" }));
+        registry.register(Arc::new(RequestPermissionAdapter { provider: "hermes" }));
+        registry
+    }
+
+    /// 注册协议适配器（同 method 同 provider 重复注册覆盖，幂等）。
+    /// 注册面是 method 表 per-provider 槽：适配器按其 `interaction_methods()`
+    /// 逐 method 占槽；`interaction_methods()` 为空的适配器无协议面、不占任何槽。
+    pub(crate) fn register(&self, adapter: AdapterRef) {
+        if let Ok(mut by_method) = self.by_method.lock() {
+            let provider = normalize_provider(adapter.provider());
+            for method in adapter.interaction_methods() {
+                by_method
+                    .entry((*method).to_string())
+                    .or_default()
+                    .insert(provider.clone(), adapter.clone());
+            }
+        }
+    }
+
+    /// 按 provider 取适配器（测试/诊断视图用；dispatch 不经此路径）。
+    /// 自 method 表槽扫描派生：provider 持有任何 method 槽即视为已注册。
+    #[cfg(test)]
+    pub(crate) fn get(&self, provider: &str) -> Option<AdapterRef> {
+        let provider = normalize_provider(provider);
+        self.by_method.lock().ok().and_then(|registry| {
+            registry
+                .values()
+                .flat_map(|slots| slots.get(&provider))
+                .next()
+                .cloned()
+        })
+    }
+
+    /// #98：按 ACP method 取适配器——dispatch 真源。任何 agent 的请求只要方法
+    /// 已注册即受理，与 provider 名称无关。#424 起同 method 多 provider 槽并存，
+    /// 取键序首槽确定性应答——现网 peri/hermes 审批 wire 逐字段一致（R2-WI06
+    /// 源码实证），槽选择不进入 wire；provider 键序同时保证 catalog 投影可复现。
+    pub(crate) fn get_for_method(&self, method: &str) -> Option<AdapterRef> {
+        self.by_method.lock().ok().and_then(|adapters| {
+            adapters
+                .get(method)
+                .and_then(|slots| slots.values().next().cloned())
+        })
+    }
 }
 
 fn normalize_provider(provider: &str) -> String {
     provider.trim().to_lowercase()
+}
+
+/// 分隔符/大小写不敏感的 compact key（如 `session/request_permission` →
+/// `sessionrequestpermission`）。#685：支持方法表的 compact 形态启动时预计算，
+/// 帧热路径不再逐帧重建约 10 个候选字符串。
+fn compact_method_key(method: &str) -> String {
+    method
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
+}
+
+fn compact_supported_client_methods() -> &'static [String] {
+    static COMPACT: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    COMPACT.get_or_init(|| {
+        SUPPORTED_ACP_CLIENT_REQUEST_METHODS
+            .iter()
+            .map(|candidate| compact_method_key(candidate))
+            .collect()
+    })
 }
 
 /// Conservative interaction-method probe used by the dispatcher for requests that
@@ -296,22 +371,8 @@ pub(crate) fn looks_like_interaction_method(method: Option<&str>) -> bool {
     // method using camelCase (`terminal/waitForExit`).  Compare a compact,
     // separator/case-insensitive key against the official v1 client methods so
     // these requests are rejected/observed instead of silently dropped.
-    let compact = method
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
-        .map(|ch| ch.to_ascii_lowercase())
-        .collect::<String>();
-    if SUPPORTED_ACP_CLIENT_REQUEST_METHODS
-        .iter()
-        .map(|candidate| {
-            candidate
-                .chars()
-                .filter(|ch| ch.is_ascii_alphanumeric())
-                .map(|ch| ch.to_ascii_lowercase())
-                .collect::<String>()
-        })
-        .any(|candidate| candidate == compact)
-    {
+    let compact = compact_method_key(method);
+    if compact_supported_client_methods().contains(&compact) {
         return true;
     }
     let normalized = method
@@ -351,48 +412,6 @@ pub(crate) fn looks_like_interaction_method(method: Option<&str>) -> bool {
     ]
     .iter()
     .any(|needle| words.iter().any(|word| word == needle))
-}
-
-/// 注册协议适配器（应用启动时；同 method 同 provider 重复注册覆盖，幂等）。
-/// 注册面是 method 表 per-provider 槽：适配器按其 `interaction_methods()`
-/// 逐 method 占槽；`interaction_methods()` 为空的适配器无协议面、不占任何槽
-/// （现状生产无此类适配器，trait 默认值仅为第三方源兼容保留）。
-pub(crate) fn register_protocol_adapter(adapter: AdapterRef) {
-    if let Ok(mut by_method) = method_registry().lock() {
-        let provider = normalize_provider(adapter.provider());
-        for method in adapter.interaction_methods() {
-            by_method
-                .entry((*method).to_string())
-                .or_default()
-                .insert(provider.clone(), adapter.clone());
-        }
-    }
-}
-
-/// 按 provider 取适配器（诊断/catalog 视图与测试用；dispatch 不再经此路径）。
-/// 自 method 表槽扫描派生：provider 持有任何 method 槽即视为已注册。
-#[allow(dead_code)] // dispatch 已方法键控（#98）；provider 视图保留给测试与诊断
-pub(crate) fn get_protocol_adapter(provider: &str) -> Option<AdapterRef> {
-    let provider = normalize_provider(provider);
-    method_registry().lock().ok().and_then(|registry| {
-        registry
-            .values()
-            .flat_map(|slots| slots.get(&provider))
-            .next()
-            .cloned()
-    })
-}
-
-/// #98：按 ACP method 取适配器——dispatch 真源。任何 agent 的请求只要方法
-/// 已注册即受理，与 provider 名称无关。#424 起同 method 多 provider 槽并存，
-/// 取键序首槽确定性应答——现网 peri/hermes 审批 wire 逐字段一致（R2-WI06
-/// 源码实证），槽选择不进入 wire；provider 键序同时保证 catalog 投影可复现。
-pub(crate) fn get_protocol_adapter_for_method(method: &str) -> Option<AdapterRef> {
-    method_registry().lock().ok().and_then(|adapters| {
-        adapters
-            .get(method)
-            .and_then(|slots| slots.values().next().cloned())
-    })
 }
 
 /// Stable list used by both the dispatcher probe and the diagnostics command.
@@ -452,6 +471,7 @@ fn dedup_sorted(values: impl IntoIterator<Item = String>) -> Vec<String> {
 /// configured agent providers.  This pure-ish seam accepts a borrowed map so it
 /// can be tested without creating a Tauri WebView or starting an ACP process.
 pub(crate) fn build_protocol_adapter_catalog(
+    registry: &ProtocolAdapterRegistry,
     configured_agents: Option<&HashMap<String, crate::agent_config::AgentDef>>,
 ) -> Result<ProtocolAdapterCatalog, String> {
     let baselines = pylon_core::agent_catalog::protocol_profiles()?;
@@ -475,7 +495,8 @@ pub(crate) fn build_protocol_adapter_catalog(
     }
     let mut registered: BTreeMap<String, RegisteredProviderView> = BTreeMap::new();
     {
-        let by_method = method_registry()
+        let by_method = registry
+            .by_method
             .lock()
             .map_err(|error| error.to_string())?;
         for (method, slots) in by_method.iter() {
@@ -608,7 +629,8 @@ pub(crate) fn protocol_adapter_catalog(
         .agents
         .lock()
         .map_err(|error| PylonError::Protocol(error.to_string()))?;
-    build_protocol_adapter_catalog(Some(&agents)).map_err(PylonError::Protocol)
+    build_protocol_adapter_catalog(&state.protocol_adapters, Some(&agents))
+        .map_err(PylonError::Protocol)
 }
 
 #[cfg(test)]
@@ -628,19 +650,21 @@ mod tests {
 
     #[test]
     fn registry_returns_only_registered_providers() {
-        // 探测 provider 专用名——避免与 peri/hermes（run()/test_state_with_acp 注册、
-        // 其他测试并发注册）冲突；本测试不调用全局 clear（防跨测试注册表 wipe 竞态）。
-        register_protocol_adapter(Arc::new(RequestPermissionAdapter {
+        // #684：每用例自建注册表——不再向进程级全局注册（测试间零泄漏）。
+        let registry = ProtocolAdapterRegistry::default();
+        registry.register(Arc::new(RequestPermissionAdapter {
             provider: "test-probe",
         }));
-        let adapter = get_protocol_adapter("test-probe").expect("注册的 provider 必须可取");
+        let adapter = registry
+            .get("test-probe")
+            .expect("注册的 provider 必须可取");
         assert_eq!(adapter.provider(), "test-probe");
         assert!(
-            get_protocol_adapter("nope").is_none(),
+            registry.get("nope").is_none(),
             "未注册 provider 必须明确 unsupported"
         );
         assert!(
-            get_protocol_adapter("TEST-PROBE").is_some(),
+            registry.get("TEST-PROBE").is_some(),
             "provider 查找必须大小写不敏感"
         );
     }
@@ -726,8 +750,9 @@ mod tests {
     fn protocol_catalog_separates_baseline_from_runtime_registration() {
         // Hermes' shared baseline intentionally says permissionRequests=false,
         // while the runtime registry has a proven request_permission adapter.
-        register_protocol_adapter(Arc::new(RequestPermissionAdapter { provider: "hermes" }));
-        let catalog = build_protocol_adapter_catalog(None).expect("catalog must build");
+        let registry = ProtocolAdapterRegistry::default();
+        registry.register(Arc::new(RequestPermissionAdapter { provider: "hermes" }));
+        let catalog = build_protocol_adapter_catalog(&registry, None).expect("catalog must build");
         let hermes = catalog
             .providers
             .iter()
@@ -755,9 +780,10 @@ mod tests {
     /// 时曾因坍缩翻假而搁置反向投影，本用例钉住其不再回退。
     #[test]
     fn catalog_reverse_projection_keeps_both_providers_registered() {
-        register_protocol_adapter(Arc::new(RequestPermissionAdapter { provider: "peri" }));
-        register_protocol_adapter(Arc::new(RequestPermissionAdapter { provider: "hermes" }));
-        let catalog = build_protocol_adapter_catalog(None).expect("catalog must build");
+        let registry = ProtocolAdapterRegistry::default();
+        registry.register(Arc::new(RequestPermissionAdapter { provider: "peri" }));
+        registry.register(Arc::new(RequestPermissionAdapter { provider: "hermes" }));
+        let catalog = build_protocol_adapter_catalog(&registry, None).expect("catalog must build");
         for provider in ["peri", "hermes"] {
             let entry = catalog
                 .providers
@@ -781,8 +807,8 @@ mod tests {
                 .any(|kind| kind == "approval"));
         }
         // method 表本身保留双槽（分派真源与诊断同表，不再互相坍缩）。
-        assert!(get_protocol_adapter("peri").is_some());
-        assert!(get_protocol_adapter("hermes").is_some());
+        assert!(registry.get("peri").is_some());
+        assert!(registry.get("hermes").is_some());
     }
 
     #[test]
@@ -791,7 +817,9 @@ mod tests {
         agent.provider = Some("Acme-ACP".to_string());
         let mut agents = HashMap::new();
         agents.insert("custom-agent".to_string(), agent);
-        let catalog = build_protocol_adapter_catalog(Some(&agents)).expect("catalog must build");
+        let registry = ProtocolAdapterRegistry::default();
+        let catalog =
+            build_protocol_adapter_catalog(&registry, Some(&agents)).expect("catalog must build");
         let custom = catalog
             .providers
             .iter()

@@ -104,7 +104,10 @@ pub(crate) use interaction_route::resolve_agent_provider;
 /// 而是检测 `\n\n---\n\n` 分隔符——它是 Pylon 发送首条消息时的固定分隔。存在
 /// 则取分隔符后的原文；不存在（后续轮次消息无前缀）原样返回。用户原文若自身
 /// 含该分隔符会误剥，但概率极低且仅影响重放去重。
-pub(crate) fn strip_persona_prefix(text: &str, _persona: &str) -> String {
+///
+/// #685：不带 persona 参数——实现从不使用它，签名不再暗示调用方可通过 persona
+/// 改变结果。
+pub(crate) fn strip_persona_prefix(text: &str) -> String {
     const SEP: &str = "\n\n---\n\n";
     match text.find(SEP) {
         Some(idx) => {
@@ -308,13 +311,7 @@ async fn handle_session_update<R: tauri::Runtime>(
                 {
                     None
                 } else {
-                    text.map(|text| {
-                        let persona = items
-                            .get(&source)
-                            .map(|session| session.persona.clone())
-                            .unwrap_or_default();
-                        strip_persona_prefix(&text, &persona)
-                    })
+                    text.map(|text| strip_persona_prefix(&text))
                 };
             }
         } else if let Some(session) = items.get_mut(&source) {
@@ -472,7 +469,20 @@ pub(crate) fn start_notification_dispatcher<R: tauri::Runtime>(
     }
     // 装配在 spawn 前同步完成（new 仅克隆字段，原克隆段同样在任务复位后、
     // 首次 poll 前执行，无可观察时序差异）；pump 所有权移入任务。
-    let pump = NotificationPump::new(handles, runtime, window);
+    // #681：身份解析失败时 fail-closed——不启动泵、拒收全部帧，并写 error 诊断；
+    // 否则 canonical 事件会落进 "unknown" owner（对真实 agent 永不可见）。
+    let Some(pump) = NotificationPump::new(handles, runtime, window) else {
+        tracing::error!("notification dispatcher not started: runtime has no registered agent id");
+        handles.runtime_logs.push(
+            crate::time::Timestamp::now(),
+            "error",
+            "dispatcher",
+            None,
+            "notification dispatcher not started: runtime has no registered agent id",
+            serde_json::Map::new(),
+        );
+        return;
+    };
     *task = Some(tokio::spawn(async move {
         pump.run().await;
     }));
@@ -519,6 +529,8 @@ struct NotificationPump<R: tauri::Runtime> {
     client_generation: Arc<std::sync::atomic::AtomicU64>,
     agent_id: String,
     agents: Arc<std::sync::Mutex<std::collections::HashMap<String, crate::agent_config::AgentDef>>>,
+    /// #684：方法键控适配器注册表（AppState 注入；本泵按 ACP method 派发）。
+    protocol_adapters: Arc<crate::protocol_adapter::ProtocolAdapterRegistry>,
     runtimes: Arc<crate::runtime::AgentRuntimeManager>,
     gateway: Arc<crate::gateway::GatewayCore>,
     approval_mode: Arc<std::sync::Mutex<String>>,
@@ -546,33 +558,31 @@ struct NotificationPump<R: tauri::Runtime> {
 impl<R: tauri::Runtime> NotificationPump<R> {
     /// 原主循环前置克隆段（O8 复位之后的句柄准备）原样收敛：字段逐一对应原
     /// 局部变量；agent_id 解析、CrashReconnectHandler 装配原样保留。
+    /// #681：解析不到 runtime 的注册 id → None（调用方 fail-closed，不启动泵）。
     fn new(
         handles: &AppStateHandles,
         runtime: &Arc<AgentRuntime>,
         window: tauri::Window<R>,
-    ) -> Self {
+    ) -> Option<Self> {
         let acp = runtime.acp.clone();
         let sessions = runtime.sessions.clone();
         let binding_health = runtime.binding_health.clone();
         let pet = handles.pet.clone();
         // #416 W2 步骤③：宿主装配——pet 状态包成 KernelReactionSink 唯一实现；
         // 泵/崩溃处理器/handle_session_update 全走 trait 对象（kernel 不点名 pet）。
-        let reactions: Arc<dyn KernelReactionSink> = Arc::new(PetReactionSink::new(pet.clone()));
+        let reactions: Arc<dyn KernelReactionSink> = Arc::new(PetReactionSink::new(pet));
         let generation = runtime
             .client_generation
             .load(std::sync::atomic::Ordering::Acquire);
         let client_generation = runtime.client_generation.clone();
         let agents = handles.agents.clone();
-        let active_agent = handles.active_agent.clone();
+        let protocol_adapters = handles.protocol_adapters.clone();
         let agent_runtime = runtime.agent_runtime.clone();
-        let runtime_logs = handles.runtime_logs.clone();
         let runtimes = handles.runtimes.clone();
         let gateway = handles.gateway.clone();
         let approval_mode = handles.approval_mode.clone();
-        let approval_mode_persisted = handles.approval_mode_persisted.clone();
         let event_service_slot = handles.event_service.clone();
         let event_service = event_service_slot.lock().ok().and_then(|slot| slot.clone());
-        let message_service_slot = handles.message_service.clone();
         let message_service = handles
             .message_service
             .lock()
@@ -581,13 +591,14 @@ impl<R: tauri::Runtime> NotificationPump<R> {
         let hook_bridge = handles.hook_bridge.clone();
         let terminal_registry = runtime.terminal_registry.clone();
         let host_tools_policy = runtime.host_tools_policy.clone();
+        // #681：解析不到本 runtime 的注册 id 时 fail-closed——new 返回 None，
+        // 调用方不启动泵并写 error 诊断；绝不以外来的 "unknown" owner 落库。
         let agent_id = handles
             .runtimes
             .all_with_ids()
             .into_iter()
             .find(|(_, candidate)| Arc::ptr_eq(candidate, runtime))
-            .map(|(id, _)| id)
-            .unwrap_or_else(|| "unknown".to_string());
+            .map(|(id, _)| id)?;
         // P1-3（R2-WI03）：provider 不再启动时捕获——每次 PermissionRequest 从活配置解析
         // （见主循环对应分支），reload 修改实例 provider 后新请求即用新 provider。
         let runtime_for_reconnect = runtime.clone();
@@ -608,19 +619,8 @@ impl<R: tauri::Runtime> NotificationPump<R> {
         // CrashReason::as_str）——不再硬编码 stdout closed；用户可读文案保留原始 code
         // （不覆盖诊断字段）。
         let handle_crash = CrashReconnectHandler::new(
-            AppStateHandles {
-                runtimes: runtimes.clone(),
-                agents: agents.clone(),
-                active_agent,
-                pet,
-                runtime_logs,
-                gateway: gateway.clone(),
-                approval_mode: approval_mode.clone(),
-                approval_mode_persisted,
-                event_service: event_service_slot,
-                message_service: message_service_slot,
-                hook_bridge: hook_bridge.clone(),
-            },
+            handles.clone_handles(),
+            agent_id.clone(),
             agent_runtime,
             window.clone(),
             runtime_for_reconnect,
@@ -630,7 +630,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
         // #155 T3：prompt 终态写路径经本通道请求 dispatcher 先收口在途 draft
         // 再分配终态序列。装配时点与拆分前一致（任务复位后、spawn 前）。
         let draft_flush_rx = runtime.install_draft_flush_channel(generation);
-        Self {
+        Some(Self {
             acp,
             sessions,
             binding_health,
@@ -639,6 +639,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
             client_generation,
             agent_id,
             agents,
+            protocol_adapters,
             runtimes,
             gateway,
             approval_mode,
@@ -654,7 +655,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
             pending_batch: Vec::new(),
             draft_flush_rx,
             draft_run: None,
-        }
+        })
     }
 
     /// 主循环骨架（#336/U2b）：代际复核 → 泵取一帧 → 代际复核 → 路由分支；
@@ -813,23 +814,26 @@ impl<R: tauri::Runtime> NotificationPump<R> {
             },
             // Lower priority than queued ACP updates: the response task
             // must not overtake delta notifications preceding its response.
+            // #682：发送端全部 drop 后 `recv()` 立即返回 None——必须 Stop，
+            // 否则该分支每轮恒 ready，主循环空转并饥饿其它分支。
             request = self.draft_flush_rx.recv() => {
-                if let Some(request) = request {
-                    tracing::debug!(source = %request.source, "closing canonical draft before prompt terminal");
-                    if !self.pending_batch.is_empty() {
-                        let batch = std::mem::take(&mut self.pending_batch);
-                        if !absorb_window(&pump_flush_context!(self), &mut self.draft_run, batch).await
-                        {
-                            let _ = request.reply.send(Err("draft window flush failed".into()));
-                            return PumpStep::Stop;
-                        }
-                    }
-                    if !commit_open_draft(&pump_flush_context!(self), &mut self.draft_run).await {
-                        let _ = request.reply.send(Err("draft commit failed".into()));
+                let Some(request) = request else {
+                    return PumpStep::Stop;
+                };
+                tracing::debug!(source = %request.source, "closing canonical draft before prompt terminal");
+                if !self.pending_batch.is_empty() {
+                    let batch = std::mem::take(&mut self.pending_batch);
+                    if !absorb_window(&pump_flush_context!(self), &mut self.draft_run, batch).await
+                    {
+                        let _ = request.reply.send(Err("draft window flush failed".into()));
                         return PumpStep::Stop;
                     }
-                    let _ = request.reply.send(Ok(()));
                 }
+                if !commit_open_draft(&pump_flush_context!(self), &mut self.draft_run).await {
+                    let _ = request.reply.send(Err("draft commit failed".into()));
+                    return PumpStep::Stop;
+                }
+                let _ = request.reply.send(Ok(()));
                 PumpStep::Skipped
             }
             _ = tokio::time::sleep(PENDING_CANONICAL_FLUSH_INTERVAL), if !self.pending_batch.is_empty() => {
@@ -929,6 +933,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
                 &self.sessions,
                 &self.hook_bridge,
                 &self.runtimes,
+                &self.protocol_adapters,
                 &self.agents,
                 &self.agent_id,
                 raw,
@@ -1125,31 +1130,30 @@ mod tests {
     fn strip_persona_prefix_removes_separator_prefix() {
         let persona = "你是测试 Agent，用于验收 persona 前缀剥离。";
         let text = format!("{persona}\n\n---\n\n你好");
-        assert_eq!(strip_persona_prefix(&text, persona), "你好");
+        assert_eq!(strip_persona_prefix(&text), "你好");
     }
 
     #[test]
     fn strip_persona_prefix_works_for_session_prompt_too() {
         // session_prompt 场景：persona 不匹配 session_prompt，但分隔符剥离不依赖 persona
-        let persona = "profile persona";
         let session_prompt = "自定义会话提示";
         let text = format!("{session_prompt}\n\n---\n\n你好");
-        assert_eq!(strip_persona_prefix(&text, persona), "你好");
+        assert_eq!(strip_persona_prefix(&text), "你好");
     }
 
     #[test]
     fn strip_persona_prefix_keeps_non_prefixed_text() {
         // 后续轮次消息无前缀（无分隔符）→ 原样返回
-        assert_eq!(strip_persona_prefix("你好", "persona"), "你好");
-        // persona 为空也剥离分隔符（分隔符才是依据）
-        assert_eq!(strip_persona_prefix("p\n\n---\n\n你好", ""), "你好");
+        assert_eq!(strip_persona_prefix("你好"), "你好");
+        // 空前缀也剥离分隔符（分隔符才是依据）
+        assert_eq!(strip_persona_prefix("p\n\n---\n\n你好"), "你好");
     }
 
     #[test]
     fn strip_persona_prefix_keeps_text_with_trailing_separator() {
         // 分隔符后为空 → 原样返回（防误剥成空串）
         assert_eq!(
-            strip_persona_prefix("persona\n\n---\n\n", "persona"),
+            strip_persona_prefix("persona\n\n---\n\n"),
             "persona\n\n---\n\n"
         );
     }

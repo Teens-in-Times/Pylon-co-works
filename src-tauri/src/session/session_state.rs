@@ -7,7 +7,10 @@
 use super::model::SessionInfo;
 
 pub(crate) struct SessionStateEntry {
-    pub(crate) capture: fn(&mut SessionInfo, &serde_json::Value),
+    /// `None` = 该状态量在 `SessionInfo::apply_session_response` 的响应入口统一解析
+    /// 并写入 typed 字段，这里无需重复捕获；restore 仍从 typed 字段回填。
+    /// （#685：删除了两个只写 `let _ = session;` 的空捕获函数。）
+    pub(crate) capture: Option<fn(&mut SessionInfo, &serde_json::Value)>,
     pub(crate) restore: fn(&SessionInfo, &mut serde_json::Value),
 }
 
@@ -57,12 +60,6 @@ fn restore_commands(session: &SessionInfo, response: &mut serde_json::Value) {
     }
 }
 
-fn capture_config_options(session: &mut SessionInfo, _response: &serde_json::Value) {
-    // config_options 已在 SessionInfo::apply_session_response 中解析并写入 typed 字段；
-    // 这里保持为空实现，restore 从 typed 字段回填。
-    let _ = session;
-}
-
 fn restore_config_options(session: &SessionInfo, response: &mut serde_json::Value) {
     if response.get("configOptions").is_some() || session.config_options.is_empty() {
         return;
@@ -73,11 +70,6 @@ fn restore_config_options(session: &SessionInfo, response: &mut serde_json::Valu
             serde_json::json!(session.config_options),
         );
     }
-}
-
-fn capture_mode(session: &mut SessionInfo, _response: &serde_json::Value) {
-    // mode 已在 SessionInfo::apply_session_response 中解析并写入 typed 字段。
-    let _ = session;
 }
 
 fn restore_mode(session: &SessionInfo, response: &mut serde_json::Value) {
@@ -97,26 +89,29 @@ fn restore_mode(session: &SessionInfo, response: &mut serde_json::Value) {
 
 pub(crate) static SESSION_STATE_ENTRIES: &[SessionStateEntry] = &[
     SessionStateEntry {
-        capture: capture_usage,
+        capture: Some(capture_usage),
         restore: restore_usage,
     },
     SessionStateEntry {
-        capture: capture_commands,
+        capture: Some(capture_commands),
         restore: restore_commands,
     },
+    // configOptions / modes 由 apply_session_response 在入口解析，捕获为 None。
     SessionStateEntry {
-        capture: capture_config_options,
+        capture: None,
         restore: restore_config_options,
     },
     SessionStateEntry {
-        capture: capture_mode,
+        capture: None,
         restore: restore_mode,
     },
 ];
 
 pub(crate) fn capture_session_state(session: &mut SessionInfo, response: &serde_json::Value) {
     for entry in SESSION_STATE_ENTRIES {
-        (entry.capture)(session, response);
+        if let Some(capture) = entry.capture {
+            capture(session, response);
+        }
     }
 }
 

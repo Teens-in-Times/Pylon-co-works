@@ -43,20 +43,21 @@ impl From<pylon_acp::AcpError> for crate::error::PylonError {
 pub(crate) fn negotiated_snapshot_from_client(
     acp: &AcpClient,
     generation: u64,
+    consumers: &std::collections::BTreeSet<negotiated::CapabilityConsumer>,
 ) -> NegotiatedCapabilitySnapshot {
     let declared: Vec<String> = acp.establishment_order().to_vec();
-    let consumers = negotiated::registered_capability_consumers();
-    NegotiatedCapabilitySnapshot::from_parts(acp.capabilities(), &declared, generation, &consumers)
+    NegotiatedCapabilitySnapshot::from_parts(acp.capabilities(), &declared, generation, consumers)
 }
 
 /// 从运行时现场捕获能力协商快照（#247 自 pylon-acp::negotiated 迁入——
 /// 它持有 &AgentRuntime 的锁序约定，属宿主编排面）。
 pub async fn capture_negotiated_snapshot(
     runtime: &crate::runtime::AgentRuntime,
+    consumers: &std::collections::BTreeSet<negotiated::CapabilityConsumer>,
 ) -> Result<NegotiatedCapabilitySnapshot, String> {
     let generation = runtime
         .client_generation
         .load(std::sync::atomic::Ordering::Acquire);
     let acp = runtime.snapshot_acp();
-    Ok(negotiated_snapshot_from_client(&acp, generation))
+    Ok(negotiated_snapshot_from_client(&acp, generation, consumers))
 }

@@ -195,6 +195,13 @@ pub(crate) fn acp_instance_overview() -> serde_json::Value {
 }
 
 /// 生产路径的进程级注册表（预算 [`MAX_INSTANCES`]）。
+///
+/// #684：这是**显式的进程级产品状态**——ACP 实例并发预算（`instance_limit`）
+/// 按进程记账，`acp_instance_overview` 诊断视图也读同一份，因此不引入任何
+/// 「测试模式旁路」。只验证预算语义的用例各自构造 [`InstanceRegistry::new`]
+/// （如预算用例）；而走 `do_connect_and_replace` / 连接测试的真实连接路径
+/// 仍会计账到本全局表——同进程并行用例若同时建立真实实例会共享同一 8 份
+/// 配额，这是产品语义而非隔离缺陷（预算耗尽时同样得到稳定的 `instance_limit`）。
 static INSTANCE_REGISTRY: OnceLock<Arc<InstanceRegistry>> = OnceLock::new();
 
 pub(crate) fn instance_registry() -> Arc<InstanceRegistry> {

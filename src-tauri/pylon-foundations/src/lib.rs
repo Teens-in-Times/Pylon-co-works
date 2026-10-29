@@ -11,6 +11,7 @@ pub mod await_guard;
 pub mod child_command;
 pub mod event_names;
 pub mod git;
+pub mod home;
 pub mod job_object;
 pub mod sanitize;
 pub mod time;

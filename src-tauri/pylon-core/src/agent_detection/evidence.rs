@@ -312,12 +312,10 @@ pub fn configured_executable_key(executable: &str) -> String {
     path_key(path)
 }
 
+/// #685：home 解析收敛到 `pylon-foundations::home` 单一实现（与宿主
+/// `external_history` 共用；本函数保留为检测域的薄别名）。
 pub(crate) fn resolved_home_dir(explicit: Option<&Path>) -> Option<PathBuf> {
-    explicit.map(Path::to_path_buf).or_else(|| {
-        std::env::var_os("USERPROFILE")
-            .or_else(|| std::env::var_os("HOME"))
-            .map(PathBuf::from)
-    })
+    pylon_foundations::home::resolve_home_dir(explicit)
 }
 
 pub(crate) fn field_present(value: &serde_json::Value, field_path: &str) -> bool {

@@ -17,13 +17,9 @@ use serde::Serialize;
 use crate::error::PylonError;
 use crate::AppState;
 
-/// home 解析（与 pylon-core `resolved_home_dir` 同语义：USERPROFILE 优先、HOME
-/// 兜底——Windows / Unix 各取其一）。
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
-}
+// #685：home 解析收敛到 `pylon-foundations::home` 单一实现（`USERPROFILE`
+// 优先、`HOME` 兜底；与 pylon-core 检测证据共用，杜绝两份副本漂移）。
+use pylon_foundations::home::home_dir;
 
 /// 首版 tracer：Claude Code（第二家接入时换成 Vec<dyn ExternalHistoryParser>）。
 fn parser() -> ClaudeCodeParser {
