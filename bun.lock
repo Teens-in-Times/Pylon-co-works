@@ -30,7 +30,7 @@
         "@tauri-apps/cli": "^2.11.4",
         "@testing-library/dom": "^10.4.2",
         "@testing-library/jest-dom": "^7.0.0",
-        "@types/node": "26.4.0",
+        "@types/node": "26.6.5",
         "@vitest/coverage-v8": "^4.1.10",
         "esbuild": "^0.25.12",
         "eslint": "^10.8.0",
@@ -560,7 +560,7 @@
 
     "@types/mdurl": ["@types/mdurl@2.0.0", "https://registry.npmmirror.com/@types/mdurl/-/mdurl-2.0.0.tgz", {}, "sha512-RGdgjQUZba5p6QEFAVx2OGb8rQDL/cPRG7GiedRzMcJ1tYnUANBncjbSB1NRGwbvjcPeikRABz2nshyPk1bhWg=="],
 
-    "@types/node": ["@types/node@26.4.0", "https://registry.npmmirror.com/@types/node/-/node-26.4.0.tgz", { "dependencies": { "undici-types": "8.3.0" } }, "sha512-faiGnoIrLH/V8cibOMEAZ8pMw6oXqSukl29ra4mN8GdaB2ZewzeaLj+INpV5N+Z1eKWzY+IzaIZH2EIR6YZRNQ=="],
+    "@types/node": ["@types/node@26.6.5", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg=="],
 
     "@types/unist": ["@types/unist@3.0.3", "https://registry.npmmirror.com/@types/unist/-/unist-3.0.3.tgz", {}, "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="],
 
@@ -1088,7 +1088,7 @@
 
     "undici": ["undici@8.10.0", "https://registry.npmmirror.com/undici/-/undici-8.10.0.tgz", {}, "sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ=="],
 
-    "undici-types": ["undici-types@8.3.0", "https://registry.npmmirror.com/undici-types/-/undici-types-8.3.0.tgz", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
+    "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
     "unist-util-is": ["unist-util-is@6.0.1", "https://registry.npmmirror.com/unist-util-is/-/unist-util-is-6.0.1.tgz", { "dependencies": { "@types/unist": "^3.0.0" } }, "sha512-LsiILbtBETkDz8I9p1dQ0uyRUWuaQzd/cuEeS1hoRSyW5E5XGmTzlwY1OrNzzakGowI9Dr/I8HVaw4hTtnxy8g=="],
 
@@ -1158,6 +1158,8 @@
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "https://registry.npmmirror.com/eslint-visitor-keys/-/eslint-visitor-keys-3.4.3.tgz", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 
+    "@jest/types/@types/node": ["@types/node@26.4.0", "https://registry.npmmirror.com/@types/node/-/node-26.4.0.tgz", { "dependencies": { "undici-types": "8.3.0" } }, "sha512-faiGnoIrLH/V8cibOMEAZ8pMw6oXqSukl29ra4mN8GdaB2ZewzeaLj+INpV5N+Z1eKWzY+IzaIZH2EIR6YZRNQ=="],
+
     "@solidjs/testing-library/@testing-library/dom": ["@testing-library/dom@10.4.1", "https://registry.npmmirror.com/@testing-library/dom/-/dom-10.4.1.tgz", { "dependencies": { "@babel/code-frame": "7.29.7", "@babel/runtime": "7.29.7", "@types/aria-query": "5.0.4", "aria-query": "5.3.0", "dom-accessibility-api": "0.5.16", "lz-string": "1.5.0", "picocolors": "1.1.1", "pretty-format": "27.0.2" } }, "sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg=="],
 
     "@tailwindcss/node/lightningcss": ["lightningcss@1.32.0", "https://registry.npmmirror.com/lightningcss/-/lightningcss-1.32.0.tgz", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.32.0", "lightningcss-darwin-arm64": "1.32.0", "lightningcss-darwin-x64": "1.32.0", "lightningcss-freebsd-x64": "1.32.0", "lightningcss-linux-arm-gnueabihf": "1.32.0", "lightningcss-linux-arm64-gnu": "1.32.0", "lightningcss-linux-arm64-musl": "1.32.0", "lightningcss-linux-x64-gnu": "1.32.0", "lightningcss-linux-x64-musl": "1.32.0", "lightningcss-win32-arm64-msvc": "1.32.0", "lightningcss-win32-x64-msvc": "1.32.0" } }, "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="],
@@ -1221,6 +1223,8 @@
     "wrap-ansi-cjs/string-width": ["string-width@4.2.0", "https://registry.npmmirror.com/string-width/-/string-width-4.2.0.tgz", { "dependencies": { "emoji-regex": "8.0.0", "is-fullwidth-code-point": "3.0.0", "strip-ansi": "6.0.1" } }, "sha512-zUz5JD+tgqtuDjMhwIg5uFVV3dtqZ9yQJlZVfq4I01/K5Paj5UHj7VyrQOJvzawSVlKpObApbfD0Ed6yJc+1eg=="],
 
     "wrap-ansi-cjs/strip-ansi": ["strip-ansi@6.0.1", "https://registry.npmmirror.com/strip-ansi/-/strip-ansi-6.0.1.tgz", { "dependencies": { "ansi-regex": "5.0.1" } }, "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A=="],
+
+    "@jest/types/@types/node/undici-types": ["undici-types@8.3.0", "https://registry.npmmirror.com/undici-types/-/undici-types-8.3.0.tgz", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
 
     "@tailwindcss/node/lightningcss/lightningcss-android-arm64": ["lightningcss-android-arm64@1.32.0", "https://registry.npmmirror.com/lightningcss-android-arm64/-/lightningcss-android-arm64-1.32.0.tgz", { "os": "android", "cpu": "arm64" }, "sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg=="],
 
