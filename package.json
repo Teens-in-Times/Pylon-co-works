@@ -1,7 +1,7 @@
 {
   "name": "pylon",
   "private": true,
-  "version": "0.4.3-AGP",
+  "version": "0.4.4-KXP",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
