@@ -6,7 +6,7 @@
 
 - issue：#699
 - 分支：`feat/chat-modern-ui`
-- 提交范围：`9358efbc..<head>`
+- 提交范围：`9358efbc..06b84544`（`5f7556eb` L.md 声明 + `06b84544` 实现）
 - 日期：2026-10-30
 - 署名：Miyaki Kumo
 
@@ -98,9 +98,12 @@
 
 ## 证据
 
-- commit：本记录随 #699 代码一并提交（见 PR）。
+- commit：`06b84544`（实现与记录）。
 - 测试：`bun run test` → `Test Files 692 passed | 1 skipped (693)`，`Tests 5433 passed | 1 skipped (5434)`，退出码 0。
-- 门禁：`bun run lint`、`bun run check:solid`、`bun run check:clippy`、`bun run check:frontend:static` 退出码 0（详见 PR 描述）。
+- 门禁（均退出码 0）：
+  - `bun run check:frontend:static`（`check:clippy` 之外的 15 段：lint / csp / canonical-types / retention / export-vocab / ipc / first-party-styles / tailwind-tokens / example-plugin / wasm / build / bundle / solid-smoke / docs / immer）；
+  - `bun run check:solid` → `CSS 类名可达性审计通过（类名 1260：可达 1107 / 豁免 153，不可达 0）`、`CSS 消费审计通过（注入 105 / 消费 340 / 声明 360，死注入与悬空引用均为 0）`；
+  - `bun run check:clippy` → `check-await-holding: 通过（17 文件 / 55 处）`、各 crate `added: []`。
 - 实机：`bun run build` → `cargo build` → `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222 --remote-allow-origins=*"` 启动 `.exe` → `node G:/TEMP/cdp.mjs eval "$(cat G:/TEMP/probe-modern.js)"`。探针脚本在仓外 `G:/TEMP/`，不随提交入库。
 
 ## 与 spec 的偏差
