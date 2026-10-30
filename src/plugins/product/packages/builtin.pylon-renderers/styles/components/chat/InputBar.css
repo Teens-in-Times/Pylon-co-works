@@ -207,6 +207,34 @@
   font-weight:400; padding:0 8px 0 4px; line-height:1.4;
 }
 
+/* #699：输入区附件。终端版式保持安静——chip 只用最细描边，按钮默认无底色，
+   悬停才浮出；现代版式在 ChatView.modern.css 里另给圆角与强调色。 */
+.input-attachments { display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding:2px 0 4px; }
+.input-attachment {
+  display:inline-flex; align-items:center; gap:6px; max-width:min(100%,320px);
+  padding:1px 2px 1px 8px;
+  color:var(--text-dim); background:var(--bg-panel);
+  border:1px solid var(--border); border-radius:6px;
+  font-size:12px; line-height:1.7;
+}
+.input-attachment-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
+.input-attachment-remove {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; padding:0;
+  color:var(--text-dim); background:transparent; border:none; border-radius:4px;
+  font-size:14px; line-height:1; cursor:pointer;
+}
+.input-attachment-remove:hover { color:var(--text); background:var(--bg-hover); }
+.input-attach-btn {
+  display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; align-self:center;
+  width:26px; height:26px; margin-inline-start:2px; padding:0;
+  color:var(--text-dim); background:transparent;
+  border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.input-attach-btn:hover:not(:disabled) { color:var(--text); background:var(--bg-hover); border-color:var(--border); }
+.input-attach-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.input-attach-btn:disabled { opacity:.35; cursor:default; }
+
 @media (prefers-reduced-motion:reduce) {
   .input-bar,
   .input-bar * {

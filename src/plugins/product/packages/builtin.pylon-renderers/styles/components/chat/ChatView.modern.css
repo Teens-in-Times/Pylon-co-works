@@ -1,0 +1,263 @@
+/* #699 现代 GUI 聊天样式层。
+   全部规则限定 `.app[data-interface-mode="modern-gui"]`：终端模式继续走 ChatView.css 的行式结构，
+   这里只负责现代模式的气泡/头像/工具卡/推理块与分组节奏。加载顺序在 ChatView.css 之后（styleAssets）。 */
+
+.app[data-interface-mode="modern-gui"] .term {
+  --modern-avatar-size: 28px;
+  --modern-avatar-gap: 10px;
+  --modern-row-gap: 20px;
+  --modern-inline-gap: 8px;
+}
+
+/* ── 行节奏：组首 20px、组内 8px。用 padding 而非 margin，行高测量（offsetHeight）
+   才包含间距，虚拟化的 estimate 不会因为间距而偏小。终端模式的 .term-row + .term-row
+   margin-top 必须先归零，否则会和这里的 padding 叠加成双倍间距。 ── */
+.app[data-interface-mode="modern-gui"] :is(.term-row, .term-row + .term-row) { margin-block: 0; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not(:first-child) {
+  padding-block-start: var(--modern-inline-gap);
+}
+.app[data-interface-mode="modern-gui"] .plain-message-list__row[data-group-start]:not(:first-child) {
+  padding-block-start: var(--modern-row-gap);
+}
+
+/* ── 元信息：头像缩写 + 名称 + 时间 ── */
+.app[data-interface-mode="modern-gui"] .term-row-time {
+  display: inline;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+/* ── 用户消息：右对齐气泡 + 右侧头像 ── */
+.app[data-interface-mode="modern-gui"] .term-user {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--modern-avatar-size);
+  grid-template-areas:
+    'meta avatar'
+    'bubble avatar';
+  align-items: start;
+  justify-items: end;
+  column-gap: var(--modern-avatar-gap);
+  row-gap: 4px;
+  padding: var(--ui-space-1) 2px;
+}
+.app[data-interface-mode="modern-gui"] .term-user-avatar {
+  grid-area: avatar;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--modern-avatar-size);
+  height: var(--modern-avatar-size);
+  border-radius: 50%;
+  border: var(--line-width-1) solid var(--stroke-subtle);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+/* ChatView.css 为了让终端行保持原 DOM，把这两层默认压成 display:contents；
+   现代模式必须显式取回盒子，否则 grid-area 不生效、气泡会消失。 */
+.app[data-interface-mode="modern-gui"] .term-user-meta {
+  grid-area: meta;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--ui-space-2);
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.app[data-interface-mode="modern-gui"] .term-user-name {
+  color: var(--text);
+  font-weight: 600;
+}
+/* 头像已经承担「谁在说」，现代模式不再重复终端的前缀符号 */
+.app[data-interface-mode="modern-gui"] .term-user-prefix { display: none; }
+.app[data-interface-mode="modern-gui"] .term-user-bubble {
+  grid-area: bubble;
+  display: block;
+  justify-self: end;
+  max-width: min(78%, 720px);
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: var(--line-width-1) solid var(--stroke-subtle);
+  background: var(--message-user-bg, var(--surface-raised));
+  color: var(--msg-text, var(--chat-text, var(--text)));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent);
+}
+.app[data-interface-mode="modern-gui"] .term-user-bubble .term-user-content { display: block; }
+/* 组内续行不重复头像与 meta（保留头像格位，气泡右缘不跳） */
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-user-avatar {
+  visibility: hidden;
+}
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-user-meta {
+  display: none;
+}
+
+/* ── 助手消息：无气泡阅读列 + 左侧头像槽位 ── */
+.app[data-interface-mode="modern-gui"] .term-assistant { padding: var(--ui-space-1) 2px; }
+.app[data-interface-mode="modern-gui"] .term-assistant-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-space-2);
+  min-width: 0;
+  margin-bottom: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant-name {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant.has-dot {
+  display: grid;
+  grid-template-columns: var(--modern-avatar-size) minmax(0, 1fr);
+  grid-template-areas:
+    'avatar meta'
+    'avatar body';
+  align-items: start;
+  column-gap: var(--modern-avatar-gap);
+}
+.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot,
+.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot-img {
+  grid-area: avatar;
+  justify-self: center;
+  flex: none;
+  width: auto;
+  height: auto;
+  margin-top: 0;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot {
+  font-size: 16px;
+  line-height: 22px;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot-img {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-meta {
+  grid-area: meta;
+  margin-bottom: 2px;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-body {
+  grid-area: body;
+  min-width: 0;
+  max-width: 78ch;
+}
+/* 组内续行：保留头像列宽、隐藏头像与 meta */
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-assistant.has-dot > :is(.term-assistant-dot, .term-assistant-dot-img) {
+  visibility: hidden;
+}
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-assistant-meta {
+  display: none;
+}
+/* 复制按钮：悬浮在 meta 行右端，不侵入正文 */
+.app[data-interface-mode="modern-gui"] .term-assistant .copy-btn {
+  top: 0;
+  right: 2px;
+  border-radius: 8px;
+  border-color: var(--stroke-subtle);
+  background: var(--surface-raised);
+}
+.app[data-interface-mode="modern-gui"] .term-assistant .copy-btn:focus-visible { opacity: 1; }
+
+/* ── 推理块：灰底 + 左强调边 ── */
+.app[data-interface-mode="modern-gui"] .term-reasoning {
+  padding: 6px 10px;
+  border-left: var(--line-width-2) solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-dim) 7%, transparent);
+}
+.app[data-interface-mode="modern-gui"] .term-row-reasoning {
+  padding-left: calc(var(--modern-avatar-size) + var(--modern-avatar-gap));
+}
+.app[data-interface-mode="modern-gui"] .term-reasoning-head { min-height: 24px; }
+.app[data-interface-mode="modern-gui"] .term-reasoning-body {
+  margin: var(--ui-space-1) 0 0;
+  padding: 0;
+  border-left: 0;
+}
+
+/* ── 工具卡：卡片化 + 状态 pill ── */
+.app[data-interface-mode="modern-gui"] .term-tool {
+  padding: 0;
+  margin: 2px 0;
+  border: var(--line-width-1) solid var(--stroke-subtle);
+  border-radius: 10px;
+  background: var(--surface-panel);
+  overflow: hidden;
+}
+.app[data-interface-mode="modern-gui"] .term-tool-head {
+  min-height: 36px;
+  padding: 0 12px;
+  gap: var(--ui-space-2);
+  align-items: center;
+}
+.app[data-interface-mode="modern-gui"] .term-tool-head:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.app[data-interface-mode="modern-gui"] .term-tool-state-label {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.app[data-interface-mode="modern-gui"] .term-tool[data-status="ok"] .term-tool-state-label {
+  color: var(--tool-ok, var(--success));
+  background: color-mix(in srgb, var(--tool-ok, var(--success)) 12%, transparent);
+}
+.app[data-interface-mode="modern-gui"] .term-tool[data-status="err"] .term-tool-state-label {
+  color: var(--tool-err, var(--danger));
+  background: color-mix(in srgb, var(--tool-err, var(--danger)) 12%, transparent);
+}
+.app[data-interface-mode="modern-gui"] .term-tool[data-status="run"] .term-tool-state-label {
+  color: var(--tool-run, var(--accent));
+  background: color-mix(in srgb, var(--tool-run, var(--accent)) 14%, transparent);
+}
+.app[data-interface-mode="modern-gui"] .term-tool-body {
+  margin-left: 0;
+  padding: 8px 12px;
+  border-top: var(--line-width-1) solid var(--stroke-subtle);
+  background: var(--surface-sunken);
+}
+
+/* ── 错误 / 系统行：警示卡片 ── */
+.app[data-interface-mode="modern-gui"] .term-row-error {
+  padding: 8px 12px;
+  border: var(--line-width-1) solid var(--danger-edge);
+  border-radius: 8px;
+  background: var(--state-danger-surface);
+}
+
+/* ── 搜索命中：圆角与气泡一致，避免方框压在气泡上 ── */
+.app[data-interface-mode="modern-gui"] .term-row-search-active { border-radius: 12px; }
+
+/* ── 输入区附件：现代版式给圆角与强调色，chip 从输入行上沿浮起 ── */
+.app[data-interface-mode="modern-gui"] .input-attachments { gap: 8px; padding: 0 0 8px; }
+.app[data-interface-mode="modern-gui"] .input-attachment {
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  border-color: var(--stroke-subtle);
+  background: var(--surface-raised);
+  color: var(--text-dim);
+}
+.app[data-interface-mode="modern-gui"] .input-attachment-remove { border-radius: 999px; }
+.app[data-interface-mode="modern-gui"] .input-attach-btn { width: 28px; height: 28px; border-radius: 8px; }
+.app[data-interface-mode="modern-gui"] .input-attach-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--stroke-default);
+  background: var(--accent-soft);
+}
+
+/* ── 终端模式小幅改良：只提操作按钮对比度（间距在 ChatView.css 的 cadence 段，结构不变） ── */
+.app[data-interface-mode="terminal-like"] .term-assistant .copy-btn,
+.app[data-interface-mode="terminal-like"] .term-assistant .copy-btn:focus-visible {
+  color: var(--text);
+  border-color: var(--stroke-default);
+}

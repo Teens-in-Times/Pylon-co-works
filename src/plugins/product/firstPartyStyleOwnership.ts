@@ -88,6 +88,7 @@ export const FIRST_PARTY_STYLE_OWNERSHIP: readonly FirstPartyStyleOwnershipEntry
   entry('src/plugins/product/packages/builtin.pylon-workspace/styles/sheets/file/FileSheet.css', 'builtin.pylon-workspace', 'plugin-scope', [WORKSPACE_STYLE_ASSETS], 'file 域内部样式：tree/tab/CodeMirror/git/dispatch；共享词汇已剥至 SheetVocabulary.css（issue #83）'),
 
   entry('src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/ChatView.css', 'builtin.pylon-renderers', 'plugin-scope', [RENDERER_STYLE_ASSETS]),
+  entry('src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/ChatView.modern.css', 'builtin.pylon-renderers', 'plugin-scope', [RENDERER_STYLE_ASSETS], '#699：modern-gui 模式的消息层覆写（分组间距/气泡/工具卡/附件 chip），全部选择器限定 data-interface-mode'),
   entry('src/plugins/product/packages/builtin.pylon-renderers/styles/adaptive.css', 'builtin.pylon-renderers', 'adaptive', [RENDERER_STYLE_ASSETS], '渲染包自适应残量：reduced-motion 通用后代规则（绞杀地基 20260914）'),
   entry('src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/InputBar.css', 'builtin.pylon-renderers', 'plugin-scope', [RENDERER_STYLE_ASSETS]),
   entry('src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/StatusBar.css', 'builtin.pylon-renderers', 'plugin-scope', [RENDERER_STYLE_ASSETS]),

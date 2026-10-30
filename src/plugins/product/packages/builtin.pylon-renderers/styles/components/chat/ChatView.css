@@ -32,6 +32,13 @@
 .term-user-prefix,
 .term-user-name { flex:0 0 auto; }
 .term-user-content { min-width:0; flex:1 1 auto; }
+/* #699：分组元信息与气泡是结构化标记。终端模式用 display:contents 让它们不参与布局，
+   头像/时间默认不占位；现代模式的布局由 ChatView.modern.css 接管。 */
+.term-user-meta,
+.term-user-bubble { display:contents; }
+.term-user-avatar,
+.term-row-time,
+.term-assistant-meta { display:none; }
 .term-user-content > p,
 .term-user-content > ul,
 .term-user-content > ol,

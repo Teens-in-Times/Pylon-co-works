@@ -1461,7 +1461,9 @@ describe('mountSolidWorkbench', () => {
     expect(screen.queryByRole('combobox', { name: '新会话工作区' })).toBeNull()
     expect(screen.getByRole('textbox', { name: '消息输入' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '开始新会话' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '添加附件' })).toBeNull()
+    // #699：附件是输入区的功能件而非装饰，空态也保留（首条消息就能带附件）；
+    // 其余快捷键提示类 chrome 仍不在空态出现。
+    expect(screen.getByRole('button', { name: '添加附件' })).toBeInTheDocument()
     expect(screen.queryByLabelText('输入快捷键提示')).toBeNull()
     expect(host.querySelector('.control-center')).toBe(emptyState)
     expect(host.querySelectorAll('.input-textarea')).toHaveLength(1)

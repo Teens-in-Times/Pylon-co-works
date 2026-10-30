@@ -15,6 +15,8 @@ function descriptor(message: Message): ChatRowDescriptor {
     renderMessage: toRenderMessage(message),
     showConnector: false,
     isSearchMatch: false,
+    groupStart: true,
+    groupEnd: true,
   }
 }
 

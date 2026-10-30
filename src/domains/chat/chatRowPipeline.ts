@@ -9,6 +9,7 @@
 
 import type { Message, RenderMessage } from './messageTypes.ts'
 import type { MessageLookups } from './messageLookups.ts'
+import { parseMessageTime } from './messageTime.ts'
 import { normalizeToolStatus, resolveToolPresentationState } from '../tool/status.ts'
 import { toolIdFromMessage } from '../tool/id.ts'
 
@@ -24,6 +25,37 @@ export interface ChatRowDescriptor {
   connectorStatus?: 'ok' | 'err' | 'run'
   connectorVisualState?: string
   isSearchMatch: boolean
+  /** 与上一行同角色且间隔 ≤ 5 分钟 ⇒ 同一消息组（不重复渲染头像/元信息） */
+  groupStart: boolean
+  /** 与下一行同角色且间隔 ≤ 5 分钟 ⇒ 组内续行（不重复留白） */
+  groupEnd: boolean
+}
+
+/** 同角色消息合并为一组的最大间隔（超过即视为新一组）。 */
+const GROUP_WINDOW_MS = 5 * 60 * 1000
+
+type GroupableRenderMessage = Extract<
+  RenderMessage,
+  { type: 'user' } | { type: 'assistant' } | { type: 'reasoning' }
+>
+
+function isGroupRole(renderMessage: RenderMessage | undefined): renderMessage is GroupableRenderMessage {
+  return renderMessage?.type === 'user'
+    || renderMessage?.type === 'assistant'
+    || renderMessage?.type === 'reasoning'
+}
+
+/**
+ * 相邻两行是否属于同一消息组：同角色、可分组角色、时间可解析且间隔不超过 5 分钟。
+ * system/error/工具行天然不可分组（`isGroupRole` 为 false）——它们出现在两行之间即断开分组。
+ */
+function continuesRowGroup(left: RenderMessage | undefined, right: RenderMessage | undefined): boolean {
+  if (!isGroupRole(left) || !isGroupRole(right)) return false
+  if (left.type !== right.type) return false
+  const leftTime = parseMessageTime(left.message.time)
+  const rightTime = parseMessageTime(right.message.time)
+  if (leftTime === undefined || rightTime === undefined) return false
+  return Math.abs(rightTime - leftTime) <= GROUP_WINDOW_MS
 }
 
 export function isToolRenderMessage(renderMessage: RenderMessage | undefined): renderMessage is RenderMessage {
@@ -60,6 +92,8 @@ export function isSameChatRowDescriptor(left: ChatRowDescriptor, right: ChatRowD
     && left.connectorStatus === right.connectorStatus
     && left.connectorVisualState === right.connectorVisualState
     && left.isSearchMatch === right.isSearchMatch
+    && left.groupStart === right.groupStart
+    && left.groupEnd === right.groupEnd
 }
 
 /**
@@ -83,6 +117,7 @@ function chatRowDescriptorAt(
   searchMatchId: string | undefined,
 ): ChatRowDescriptor {
   const previous = preparedMessages[index - 1]
+  const next = preparedMessages[index + 1]
   const isToolRow = isToolRenderMessage(renderMessage)
   const hasPreviousTool = isToolRow && isToolRenderMessage(previous)
   const currentVisualState = resolveRowToolVisualState(renderMessage.message, messageLookups)
@@ -100,6 +135,8 @@ function chatRowDescriptorAt(
     connectorStatus: previousConnectorStatus,
     connectorVisualState: previousConnectorVisualState,
     isSearchMatch: searchMatchId === renderMessage.message.id,
+    groupStart: !continuesRowGroup(previous, renderMessage),
+    groupEnd: !continuesRowGroup(renderMessage, next),
   }
 }
 
@@ -123,6 +160,9 @@ export interface PreviousDescriptors {
  * 上一次的 descriptor **对象**（零分配），首个失配下标起整段重建（connector 字段依赖
  * 前一行，重建段天然取新前驱）。
  *
+ * 分组字段 `groupEnd` 取**下一行**，因此失配下标的前一行也要重建（其新后继改变了组尾）；
+ * 行数缩短时旧尾行同样要重算（新状态是「无后继」）。
+ *
  * 安全阀：lookups 任一非空（legacy 预览宿主有工具行）或 searchMatchId 变化时整段回退
  * 全量构建——工具行的视觉状态可被**别的**消息（同 toolId 的 result 行）改写，引用稳定
  * 推不出内容稳定，那里不复用。canonical 生产路径三 Set 恒空 ⇒ 恒走增量。
@@ -144,8 +184,13 @@ export function buildChatRowDescriptorsIncremental(
     out[index] = previous.descriptors[index]!
     index += 1
   }
-  for (let rest = index; rest < preparedMessages.length; rest += 1) {
-    out[rest] = chatRowDescriptorAt(preparedMessages[rest]!, rest, preparedMessages, messageLookups, searchMatchId)
+  const tailNeedRebuild = index >= preparedMessages.length && preparedMessages.length < previous.descriptors.length
+  const rebuildFrom = index < preparedMessages.length || tailNeedRebuild ? Math.max(0, index - 1) : index
+  for (let rest = rebuildFrom; rest < preparedMessages.length; rest += 1) {
+    const rebuilt = chatRowDescriptorAt(preparedMessages[rest]!, rest, preparedMessages, messageLookups, searchMatchId)
+    const kept = rest < index ? previous.descriptors[rest] : undefined
+    // 前缀行只为 groupEnd（取新后继）重算：分组/连接线都没变时沿用旧对象，文本 delta 仍零分配。
+    out[rest] = kept !== undefined && isSameChatRowDescriptor(kept, rebuilt) ? kept : rebuilt
   }
   return out
 }

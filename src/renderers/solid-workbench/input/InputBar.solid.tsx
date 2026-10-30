@@ -12,6 +12,7 @@ import { ASSIST_PREDICTION_CONSUMED_KEY } from '../../../domains/workbench/sessi
 import { createCommandPaletteModel, resolvePaletteKeyAction } from './createCommandPaletteModel.solid.tsx'
 import { createInputPredictionController } from './createInputPredictionController.solid.tsx'
 import type { InputPredictionProvider } from '../../../infrastructure/prediction/inputPredictionProvider.ts'
+import { attachmentsFromPaths, attachmentNameForPath, subscribeAttachmentDrop } from '../../../infrastructure/tauri/attachmentPicker.ts'
 import { getFontContributionRegistry } from '../../../plugin-runtime/runtimeServices.ts'
 
 export interface QueuedWorkbenchMessage {
@@ -170,7 +171,21 @@ export function SolidInputBar(props: SolidInputBarProps) {
     }
     window.addEventListener('pylon:solid-input-send', sendFromWidget)
     window.addEventListener('pylon:new-session', resetEmptyDraft)
+    // #699：把文件拖进输入区即添加附件。落点判定用输入区矩形；Tauri 端口不可用
+    //（浏览器预览/单测）时整段跳过，不影响既有输入行为。
+    const unsubscribeDrop = subscribeAttachmentDrop((paths, point) => {
+      if (!inputBar) return
+      const scale = window.devicePixelRatio || 1
+      const rect = inputBar.getBoundingClientRect()
+      const x = point.x / scale
+      const y = point.y / scale
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return
+      const picked = attachmentsFromPaths(paths)
+      if (picked.length === 0) return
+      setAttachments(previous => mergeAttachments(previous, picked))
+    })
     onCleanup(() => {
+      unsubscribeDrop()
       unsubscribeCommands()
       window.removeEventListener('pylon:solid-input-send', sendFromWidget)
       window.removeEventListener('pylon:new-session', resetEmptyDraft)
@@ -353,6 +368,20 @@ export function SolidInputBar(props: SolidInputBarProps) {
     autoQueueArmed = false
     void sendQueued(first)
   })
+
+  /** #699：打开系统文件选择器，选中的路径并入会话附件态（按 id 去重）。 */
+  const attachFiles = async () => {
+    if (isDisabled()) return
+    const picked = await workbench.commands.attach(sessionId() ?? '')
+    if (picked.length === 0) return
+    setAttachments(previous => mergeAttachments(previous, picked))
+    queueMicrotask(() => textarea?.focus())
+  }
+
+  const removeAttachment = (id: string) => {
+    setAttachments(previous => previous.filter(item => item.id !== id))
+    queueMicrotask(() => textarea?.focus())
+  }
 
   const send = async () => {
     if (isDisabled()) return
@@ -575,6 +604,22 @@ export function SolidInputBar(props: SolidInputBarProps) {
         </div>
       </Show>
       <Show when={emptyState()?.before}>{content => <div class="input-empty-before">{content()}</div>}</Show>
+      <Show when={attachments().length > 0}>
+        <div class="input-attachments" aria-label="已添加附件">
+          <For each={attachments()}>{item => (
+            <span class="input-attachment" data-attachment-id={item.id}>
+              <span class="input-attachment-name" title={item.path}>{item.name ?? attachmentNameForPath(item.path)}</span>
+              <button
+                type="button"
+                class="input-attachment-remove"
+                aria-label={`移除附件 ${item.name ?? attachmentNameForPath(item.path)}`}
+                title="移除附件"
+                onClick={() => removeAttachment(item.id)}
+              >×</button>
+            </span>
+          )}</For>
+        </div>
+      </Show>
       <div class="input-row">
         <span class="cli-prefix">❯</span>
         <div class="input-editor-stack">
@@ -603,10 +648,43 @@ export function SolidInputBar(props: SolidInputBarProps) {
             disabled={isDisabled()}
           />
         </div>
+        <button
+          type="button"
+          class="input-attach-btn"
+          aria-label="添加附件"
+          title="添加附件"
+          disabled={isDisabled()}
+          onClick={() => void attachFiles()}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              d="M10.6 4.4 5.9 9.1a1.9 1.9 0 0 0 2.7 2.7l5-5a3.2 3.2 0 0 0-4.5-4.5l-5.3 5.3a4.5 4.5 0 0 0 6.4 6.4l4-4"
+            />
+          </svg>
+        </button>
       </div>
       <Show when={emptyState()?.after}>{content => <div class="input-empty-after">{content()}</div>}</Show>
     </div>
   )
+}
+
+function mergeAttachments(
+  current: readonly WorkbenchAttachment[],
+  incoming: readonly WorkbenchAttachment[],
+): readonly WorkbenchAttachment[] {
+  if (incoming.length === 0) return current
+  const seen = new Set(current.map(item => item.id))
+  const merged = [...current]
+  for (const item of incoming) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    merged.push(item)
+  }
+  return merged.length === current.length ? current : merged
 }
 
 function sameAttachments(left: readonly WorkbenchAttachment[], right: readonly WorkbenchAttachment[]): boolean {

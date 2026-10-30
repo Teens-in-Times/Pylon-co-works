@@ -12,6 +12,8 @@ function item(message: Partial<Message> & Pick<Message, 'id' | 'role'>, estimate
     renderMessage: toRenderMessage(full),
     showConnector: false,
     isSearchMatch: false,
+    groupStart: true,
+    groupEnd: true,
   }
   return estimatedHeight === undefined ? { key: descriptor.key, descriptor } : { key: descriptor.key, descriptor, estimatedHeight }
 }

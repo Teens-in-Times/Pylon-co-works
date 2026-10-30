@@ -735,3 +735,51 @@ describe('Agent 原生预测（#394）', () => {
     expect(await screen.findByText('做')).toBeTruthy()
   })
 })
+
+describe('#699 输入区附件', () => {
+  const shotPath = 'C:\\Users\\me\\shot.png'
+  const shot = { id: shotPath, path: shotPath }
+  const notes = { id: '/repo/notes.md', path: '/repo/notes.md' }
+
+  it('添加附件后渲染 chips，移除一个再发送时 payload 与界面一致', async () => {
+    const { services, textarea } = renderInput()
+    services.commands.setHandler('attach', vi.fn(async () => [shot, notes]))
+
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await waitFor(() => expect(document.querySelectorAll('.input-attachment')).toHaveLength(2))
+    expect(services.commands.calls.at(-1)).toEqual({ command: 'attach', args: ['session-a'] })
+    // 无 name 字段时展示名取路径尾段（Windows 与 POSIX 分隔符都要切对）。
+    expect(screen.getByText('shot.png')).toBeTruthy()
+    expect(screen.getByText('notes.md')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '移除附件 notes.md' }))
+    await waitFor(() => expect(document.querySelectorAll('.input-attachment')).toHaveLength(1))
+
+    fireEvent.input(textarea, { target: { value: '看这张图' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(services.commands.calls.at(-1)?.command).toBe('send'))
+    expect(services.commands.calls.at(-1)?.args).toEqual(['session-a', { text: '看这张图', attachments: [shot] }])
+    await waitFor(() => expect(document.querySelectorAll('.input-attachment')).toHaveLength(0))
+  })
+
+  it('重复选择同一路径不产生重复 chip（按 id 去重）', async () => {
+    const { services } = renderInput()
+    services.commands.setHandler('attach', vi.fn(async () => [shot]))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await waitFor(() => expect(document.querySelectorAll('.input-attachment')).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await waitFor(() => expect(services.commands.calls.filter(call => call.command === 'attach')).toHaveLength(2))
+    expect(document.querySelectorAll('.input-attachment')).toHaveLength(1)
+  })
+
+  it('选择器返回空（取消/浏览器预览）时保持原附件不变', async () => {
+    const { services } = renderInput()
+    services.commands.setHandler('attach', vi.fn(async () => [shot]))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await waitFor(() => expect(document.querySelectorAll('.input-attachment')).toHaveLength(1))
+    services.commands.setHandler('attach', vi.fn(async () => []))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await waitFor(() => expect(services.commands.calls.filter(call => call.command === 'attach')).toHaveLength(2))
+    expect(document.querySelectorAll('.input-attachment')).toHaveLength(1)
+  })
+})

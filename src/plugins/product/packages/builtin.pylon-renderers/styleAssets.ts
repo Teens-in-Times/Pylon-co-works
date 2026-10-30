@@ -4,6 +4,7 @@ const styleModules = typeof document === 'undefined'
   ? {}
   : import.meta.glob<string>([
   './styles/components/chat/ChatView.css',
+  './styles/components/chat/ChatView.modern.css',
   './styles/components/chat/InputBar.css',
   './styles/components/chat/StatusBar.css',
   './styles/components/ControlCenter.css',

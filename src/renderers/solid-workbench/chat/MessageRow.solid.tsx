@@ -9,6 +9,13 @@ import { SolidCollapsibleRegion } from './CollapsibleRegion.solid.tsx'
 import { createCollapsiblePresenter } from './CollapsiblePresenter.solid.tsx'
 import { createFrameTask } from '../frameTask.ts'
 import { createCopyFeedback } from '../../../utils/copyFeedback.ts'
+import { formatMessageClock } from '../../../domains/chat/messageTime.ts'
+
+/** 头像缩写：取显示名的首个字符（`Array.from` 按码点切，避免拆开 emoji/代理对）。 */
+export function avatarInitials(name: string): string {
+  const first = Array.from(name.trim())[0]
+  return (first ?? '?').toUpperCase()
+}
 
 export interface SolidMessageRowProps {
   renderMessage: RenderMessage
@@ -49,13 +56,21 @@ export function SolidMessageRow(props: SolidMessageRowProps) {
           <UserLine
             sender={message().sender}
             content={message().content}
+            time={message().time}
             appearance={props.appearance}
             resolveUserName={props.resolveUserName}
             semanticContent={props.semanticContent}
           />
         </Show>
         <Show when={props.renderMessage.type === 'assistant'}>
-          <AssistantContent text={message().content} appearance={props.appearance} streaming={live()} semanticContent={props.semanticContent} />
+          <AssistantContent
+            sender={message().sender}
+            time={message().time}
+            text={message().content}
+            appearance={props.appearance}
+            streaming={live()}
+            semanticContent={props.semanticContent}
+          />
         </Show>
         <Show when={props.renderMessage.type === 'reasoning'}>
           <Show when={props.semanticContent !== undefined} fallback={
@@ -80,6 +95,8 @@ export function SolidMessageRow(props: SolidMessageRowProps) {
 
 export function AssistantContent(props: {
   text: string
+  sender?: string
+  time?: string
   appearance: Pick<WorkbenchAppearanceSnapshot, 'assistantDot' | 'assistantDotGlyph' | 'assistantDotImage'>
   streaming?: boolean
   semanticContent?: JSX.Element
@@ -127,6 +144,8 @@ export function AssistantContent(props: {
     markCopied()
   }
 
+  const clock = () => formatMessageClock(props.time)
+
   return (
     <div class={`term-assistant${props.appearance.assistantDot ? ' has-dot' : ''}`}>
       <Show when={props.appearance.assistantDot}>
@@ -137,6 +156,12 @@ export function AssistantContent(props: {
           {src => <img class="term-assistant-dot-img" src={src()} alt="" aria-hidden="true" />}
         </Show>
       </Show>
+      <div class="term-assistant-meta">
+        <span class="term-assistant-name">{props.sender}</span>
+        <Show when={clock()}>
+          {value => <time class="term-row-time" datetime={props.time}>{value()}</time>}
+        </Show>
+      </div>
       <button class="copy-btn" type="button" onClick={copy} aria-label="复制消息">{copied() ? '✓' : '⎘'}</button>
       <div class="term-assistant-body">
         <Show when={props.semanticContent !== undefined} fallback={<MarkdownContent text={props.text} streaming={props.streaming} />}>
@@ -156,6 +181,7 @@ export function AssistantContent(props: {
 function UserLine(props: {
   sender: string
   content: string
+  time?: string
   appearance: Pick<WorkbenchAppearanceSnapshot, 'userName' | 'userPrefix' | 'userColor'>
   resolveUserName?: (sender: string) => string | undefined
   semanticContent?: JSX.Element
@@ -164,15 +190,24 @@ function UserLine(props: {
     || props.resolveUserName?.(props.sender)
     || props.sender.replace(/^.*:/, '')
   const colorStyle = () => props.appearance.userColor ? { color: props.appearance.userColor } : undefined
+  const clock = () => formatMessageClock(props.time)
 
   return (
     <div class="term-user">
-      <span class="term-user-prefix" style={colorStyle()}>{props.appearance.userPrefix || '❯'}</span>
-      <span class="term-user-name" style={colorStyle()}>{name()}</span>
-      <div class="term-user-content">
-        <Show when={props.semanticContent !== undefined} fallback={<MarkdownContent text={props.content} inline />}>
-          {props.semanticContent}
+      <span class="term-user-avatar" aria-hidden="true" style={colorStyle()}>{avatarInitials(name())}</span>
+      <div class="term-user-meta">
+        <span class="term-user-prefix" style={colorStyle()}>{props.appearance.userPrefix || '❯'}</span>
+        <span class="term-user-name" style={colorStyle()}>{name()}</span>
+        <Show when={clock()}>
+          {value => <time class="term-row-time" datetime={props.time}>{value()}</time>}
         </Show>
+      </div>
+      <div class="term-user-bubble">
+        <div class="term-user-content">
+          <Show when={props.semanticContent !== undefined} fallback={<MarkdownContent text={props.content} inline />}>
+            {props.semanticContent}
+          </Show>
+        </div>
       </div>
     </div>
   )

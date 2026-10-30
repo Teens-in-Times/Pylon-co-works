@@ -99,6 +99,23 @@ describe('#441-A 显示链单槽引用门', () => {
     ))
   })
 
+  it('#441-B groupEnd 取后继：尾部缩短时旧尾行重建为组尾，前段引用稳定', () => {
+    const messages = [message('a', '第一'), message('b', '第二'), message('c', '第三')]
+    const first = chatRowDescriptorsOf(prepareMessagesOf(messages), messageLookupsOf(messages), undefined)
+    expect(first.map(d => [d.groupStart, d.groupEnd])).toEqual([[true, false], [false, false], [false, true]])
+    const shorter = messages.slice(0, 2)
+    const second = chatRowDescriptorsOf(prepareMessagesOf(shorter), messageLookupsOf(shorter), undefined)
+    expect(second).toHaveLength(2)
+    expect(second[0]).toBe(first[0])
+    expect(second[1]).not.toBe(first[1])
+    expect(second[1]?.groupEnd).toBe(true)
+    expect(second).toStrictEqual(buildChatRowDescriptors(
+      prepareMessagesOf(shorter),
+      messageLookupsOf(shorter),
+      undefined,
+    ))
+  })
+
   it('#441-B 安全阀：lookups 非空（legacy 工具行）回退全量构建', () => {
     const base = [message('a', '第一')]
     const firstLookups = messageLookupsOf(base)

@@ -575,6 +575,8 @@ export function PlainMessageList(props: PlainMessageListProps) {
               data-message-key={row.key}
               data-entry={row.entering() ? 'new' : undefined}
               data-message-role={item.descriptor.renderMessage.message.role}
+              data-group-start={item.descriptor.groupStart ? 'true' : undefined}
+              data-group-end={item.descriptor.groupEnd ? 'true' : undefined}
               data-streaming={(props.rowLive?.(item) ?? item.descriptor.renderMessage.message.running === true) ? 'true' : undefined}
             >
               {props.renderItem(item)}
@@ -594,6 +596,8 @@ export function PlainMessageList(props: PlainMessageListProps) {
               data-index={cell.index}
               data-entry={cell.row.entering() ? 'new' : undefined}
               data-message-role={item.descriptor.renderMessage.message.role}
+              data-group-start={item.descriptor.groupStart ? 'true' : undefined}
+              data-group-end={item.descriptor.groupEnd ? 'true' : undefined}
               data-streaming={(props.rowLive?.(item) ?? item.descriptor.renderMessage.message.running === true) ? 'true' : undefined}
             >
               {props.renderItem(item)}
