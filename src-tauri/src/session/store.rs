@@ -8,6 +8,7 @@
 
 use crate::agent::runtime::session_mapping_matches;
 use crate::agent::runtime::{ClientActivation, SessionBindingHealth, SessionContinuity};
+use crate::error::PylonError;
 use crate::runtime::AgentRuntime;
 use crate::session::SessionInfo;
 
@@ -336,6 +337,98 @@ impl std::fmt::Display for SessionStoreError {
     }
 }
 
+// ── #707-B：prompt 管线散点锁收敛（锁序纪律从注释约束升级为容器方法约束）──
+
+/// prompt 管线的映射触碰（G2-08 锁合并读面收敛单点）——profile 附着 +
+/// updated_at 刷新 + `(peri_id, generation, is_first)` 读取在锁内一次完成。
+/// 原 `ensure_session_mapping` 内联锁段收口；返回 `None` = 无映射（调用方走
+/// revive/create）。generation 供 #702 的发送前代际复核。
+pub(crate) fn touch_for_prompt(
+    runtime: &AgentRuntime,
+    source: &str,
+    profile_id: Option<&str>,
+) -> Result<Option<(String, u64, bool)>, PylonError> {
+    let mut sessions = runtime
+        .sessions
+        .lock()
+        .map_err(|e| PylonError::Protocol(e.to_string()))?;
+    Ok(match sessions.get_mut(source) {
+        Some(session) => {
+            session.attach_profile_id(profile_id, source)?;
+            session.updated_at = Some(crate::time::Timestamp::now());
+            Some((
+                session.peri_id.clone(),
+                session.generation,
+                !session.has_first_prompt,
+            ))
+        }
+        None => None,
+    })
+}
+
+/// 回合起点的会话状态推进（R33b advance_round + #352 cancel 判死输入清除，
+/// 「新回合开始」的两点会话态变更合并为单次锁内完成）。
+///
+/// fail-closed（#331 例外一，#706）：锁中毒/映射缺失一律 `Err`——调用方在
+/// 出站发送**之前**传播（此时 `PreparedRpc` 未发送即丢弃，无 wire 副作用），
+/// 替代旧 `advance_round` 的 `if let Ok` 静默跳过。
+///
+/// 行为注记：cancel 清除点由「出站成功 + 账本 begin 之后」前移到发送前——
+/// prompt_gate 串行化保证本回合开始时上一回合等待循环已收敛（无并发消费者），
+/// 两位置可观察行为等价；发送失败路径多清一次陈旧标志（无观察者）。
+pub(crate) fn begin_turn_state(runtime: &AgentRuntime, source: &str) -> Result<(), PylonError> {
+    let mut sessions = runtime
+        .sessions
+        .lock()
+        .map_err(|e| PylonError::Protocol(e.to_string()))?;
+    let session = sessions.get_mut(source).ok_or_else(|| {
+        PylonError::Protocol(format!("session mapping vanished for source: {source}"))
+    })?;
+    session.inject_round = session.inject_round.saturating_add(1);
+    // B11.2：先标记收集回合（dispatcher 据此绑定流式收集），再清空文本。
+    session.last_response_round = session.inject_round;
+    session.last_response_text.clear();
+    // R-t5：上一回合的 activity 不能被当前 prompt 当成“已经收到首个 token”。
+    session.last_activity = None;
+    // #352：清除旧回合的 cancel 判死输入（generation 键化见 mark_cancel_requested）。
+    session.clear_cancel_requested_for_new_turn();
+    Ok(())
+}
+
+/// prompt 管线的注入轮次读（R33a `message_round`；无映射 = 0，与原实现一致）。
+pub(crate) fn inject_round(runtime: &AgentRuntime, source: &str) -> Result<u64, PylonError> {
+    let sessions = runtime
+        .sessions
+        .lock()
+        .map_err(|e| PylonError::Protocol(e.to_string()))?;
+    Ok(sessions.get(source).map(|s| s.inject_round).unwrap_or(0))
+}
+
+/// liveness 探针读（R-t5）——本会话最近一次 ACP 活动时刻。锁中毒按 None +
+/// warn（dev 下维持原退化语义：判为无活动；release `panic = "abort"` 下不可达）。
+pub(crate) fn last_activity(runtime: &AgentRuntime, source: &str) -> Option<std::time::Instant> {
+    match runtime.sessions.lock() {
+        Ok(sessions) => sessions.get(source).and_then(|s| s.last_activity),
+        Err(_) => {
+            tracing::warn!("sessions lock poisoned; liveness probe reads no activity");
+            None
+        }
+    }
+}
+
+/// 建会话槽位上限预检（`create_session_slot` 的存在性读取；满额文案与原实现
+/// 逐字一致，由 `replace_session_slot`/`insert` 的写入侧复核兜底）。
+pub(crate) fn slot_headroom(runtime: &AgentRuntime, max_sessions: usize) -> Result<(), PylonError> {
+    let sessions = runtime
+        .sessions
+        .lock()
+        .map_err(|e| PylonError::Protocol(e.to_string()))?;
+    if sessions.len() >= max_sessions {
+        return Err(PylonError::Protocol("max sessions reached".to_string()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,5 +565,65 @@ mod tests {
             rt.binding_health.lock().unwrap().get("src"),
             Some(SessionBindingHealth::Attached { generation: 8 })
         ));
+    }
+    // ── #707-B：prompt 管线散点锁收敛（含 #706 fail-closed）──
+
+    /// touch_for_prompt：无映射返回 None；有映射返回 (peri, generation, is_first)
+    /// 并刷新 updated_at（G2-08 语义）+ profile 附着（#702 的代际复核数据源）。
+    #[test]
+    fn touch_for_prompt_reads_mapping_and_refreshes() {
+        let rt = runtime();
+        assert!(
+            touch_for_prompt(rt.as_ref(), "src", None).unwrap().is_none(),
+            "无映射必须返回 None"
+        );
+        insert(rt.as_ref(), "src", session("peri-7", 3), true, 100).unwrap();
+        let touched = touch_for_prompt(rt.as_ref(), "src", None)
+            .expect("有映射必须成功")
+            .expect("映射必须存在");
+        assert_eq!(touched.0, "peri-7");
+        assert_eq!(touched.1, 3, "generation 必须随映射透出（#702 复核输入）");
+        assert!(!touched.2, "fixture has_first_prompt=true → is_first=false");
+    }
+
+    /// begin_turn_state：成功路径推进 inject_round/收集标记/清空文本/activity/
+    /// cancel 判死输入；映射缺失 fail-closed Err（#706：不再静默跳过）。
+    #[test]
+    fn begin_turn_state_advances_and_fails_closed() {
+        let rt = runtime();
+        assert!(begin_turn_state(rt.as_ref(), "src").is_err(), "映射缺失必须 Err");
+        insert(rt.as_ref(), "src", session("peri-7", 3), true, 100).unwrap();
+        {
+            let mut sessions = rt.sessions.lock().unwrap();
+            let s = sessions.get_mut("src").unwrap();
+            s.inject_round = 4;
+            s.last_response_text.push_str("stale");
+            s.last_activity = Some(std::time::Instant::now());
+            s.mark_cancel_requested(3, std::time::Instant::now());
+        }
+        begin_turn_state(rt.as_ref(), "src").expect("推进必须成功");
+        let sessions = rt.sessions.lock().unwrap();
+        let s = sessions.get("src").unwrap();
+        assert_eq!(s.inject_round, 5, "inject_round 必须 +1");
+        assert_eq!(s.last_response_round, 5, "收集回合必须标记为最新");
+        assert!(s.last_response_text.is_empty(), "上一回合文本必须清空");
+        assert!(s.last_activity.is_none(), "activity 必须清空（R-t5）");
+        assert!(s.cancel_requested.is_none(), "cancel 判死输入必须清除（#352）");
+    }
+
+    /// inject_round（无映射 = 0）与 slot_headroom（满额 Err 文案逐字）契约。
+    #[test]
+    fn inject_round_and_slot_headroom_contract() {
+        let rt = runtime();
+        assert_eq!(inject_round(rt.as_ref(), "src").unwrap(), 0, "无映射 = 0");
+        insert(rt.as_ref(), "src", session("peri-1", 0), true, 100).unwrap();
+        assert_eq!(inject_round(rt.as_ref(), "src").unwrap(), 0);
+        assert!(
+            insert(rt.as_ref(), "src2", session("peri-2", 0), true, 1).is_err(),
+            "预检与写入侧同口径满额拒绝（len=1 >= max=1 且非同源替换）"
+        );
+        let err = slot_headroom(rt.as_ref(), 1).unwrap_err();
+        assert_eq!(err.raw_message(), "max sessions reached", "文案逐字一致");
+        assert!(slot_headroom(rt.as_ref(), 100).is_ok());
     }
 }

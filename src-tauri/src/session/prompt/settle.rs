@@ -107,7 +107,7 @@ pub(super) async fn finalize_response<R: tauri::Runtime>(
             // M5 感知：refusal 区分于普通失败（max_turn_requests 现走 Ok 终态，
             // 旧错误分支里的 max_turn 探测随之消亡）。#416 W2：失败侧位点经
             // sink（在 done 广播之前）。
-            let reactions = PetReactionSink::new(state.pet.clone());
+            let reactions = PetReactionSink::new(state.pet.inner());
             if error.contains("refused") {
                 reactions.on_turn_failed(TurnFailureCause::Refused);
             } else {
@@ -118,7 +118,7 @@ pub(super) async fn finalize_response<R: tauri::Runtime>(
         if matches!(stop, crate::acp::PromptStopOutcome::MaxTokens) {
             // #416 W2：max_tokens 转正为合法终态但感知独立（on_maxed），
             // 仍在 done 广播之前的失败侧位点。
-            PetReactionSink::new(state.pet.clone()).on_turn_failed(TurnFailureCause::Maxed);
+            PetReactionSink::new(state.pet.inner()).on_turn_failed(TurnFailureCause::Maxed);
         }
     }
     if let Err(error) = state.ensure_generation(runtime, prompt_generation) {
@@ -180,7 +180,7 @@ pub(super) async fn finalize_response<R: tauri::Runtime>(
     // pet on_done 仅自然完成（cancelled 不感知——原 cancelled 镜像无 pet 调用）。
     // #416 W2：done 位点在 done 广播 + channel 终帧之后、B11.2 persist 之前（经 sink）。
     if !cancelled {
-        PetReactionSink::new(state.pet.clone()).on_turn_done();
+        PetReactionSink::new(state.pet.inner()).on_turn_done();
         // B11.2：完成持久化（gateway.inject.persist = "prism"）——把本回合
         // （用户消息 + 流式收集的回复文本）交 Prism /persist（LLM 摘要 +
         // recent.json + active.round 推进）。失败只告警，不阻断。
@@ -325,7 +325,7 @@ pub(super) async fn settle_prompt_response<R: tauri::Runtime>(
         };
         // #416 W2：provider 错误的失败侧感知经 sink（位点不变：账本结算与
         // failure 元数据落定后、幽灵映射清理与错误返回之前）。
-        PetReactionSink::new(state.pet.clone()).on_turn_failed(TurnFailureCause::Erred);
+        PetReactionSink::new(state.pet.inner()).on_turn_failed(TurnFailureCause::Erred);
         // S3：幽灵映射自动重建——agent 侧会话已不存在（重启/回收后映射滞留）
         // 时清理本地映射，下一条消息自动走会话重建路径；网络/临时错误不清理。
         cleanup_ghost_session_mapping(
@@ -517,7 +517,7 @@ pub(super) async fn settle_prompt_cancelled_after_timeout<R: tauri::Runtime>(
     );
     // M5 感知：超时 → 发呆（区别于普通失败）。#425 件6：超时位点经 sink
     // （原 `pet::on_timeout` 直呼点）。
-    PetReactionSink::new(state.pet.clone()).on_timeout();
+    PetReactionSink::new(state.pet.inner()).on_timeout();
     // 方案 I：超时日志区分内容状态 + 携带 request/session/agent 上下文。
     state.log_runtime_summary(
         "error",

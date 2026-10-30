@@ -251,10 +251,8 @@ pub(crate) async fn do_connect_and_replace<R: tauri::Runtime>(
     if announce {
         handles.emit_agent_status(runtime, window, AgentLifecycleStatus::Connected, None);
     }
-    let _ = handles
-        .pet
-        .lock()
-        .map(|mut p| crate::pet::on_agent_connected(&mut p));
+    let pet_arc = handles.pet.inner();
+    let _ = pet_arc.lock().map(|mut p| crate::pet::on_agent_connected(&mut p));
     handles.log_runtime_summary(
         "info",
         "agent",

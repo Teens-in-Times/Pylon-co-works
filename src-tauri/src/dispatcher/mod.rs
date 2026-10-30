@@ -147,7 +147,7 @@ async fn handle_session_update<R: tauri::Runtime>(
     message_service: Option<&Arc<crate::session::MessageService>>,
     classification: crate::acp::ReplayClassification,
     wire_ordinal: Option<u64>,
-    turn_ledger: &Arc<crate::acp::TurnLedger>,
+    runtime: &crate::runtime::AgentRuntime,
     probe_sessions: &crate::runtime::ProbeSessionRegistry,
     ingress_seq: u64,
     wire: Option<Arc<crate::acp::AcpWireCapture>>,
@@ -268,7 +268,8 @@ async fn handle_session_update<R: tauri::Runtime>(
             let effects = routing::agent_message_chunk_effects(update, decision);
             // #99：live 活动 → turn 账本推进（Streaming 阶段 + ingress cursor +
             // 文本标志）；回合未登记或已终态时为迟到活动，仅计诊断，不产生终态。
-            let _ = turn_ledger.note_session_activity(
+            crate::session::note_session_activity(
+                    runtime,
                 &source,
                 &peri_id,
                 generation,
@@ -331,7 +332,8 @@ async fn handle_session_update<R: tauri::Runtime>(
                     )
                 )
             {
-                let _ = turn_ledger.note_session_activity(
+                crate::session::note_session_activity(
+                    runtime,
                     &source,
                     &peri_id,
                     generation,
@@ -347,7 +349,8 @@ async fn handle_session_update<R: tauri::Runtime>(
             // （长推理无正文无工具）empty-turn 判定算有产出，不再误报
             // agent-empty。思考文本本身不进 collect（与旧行为一致）。
             if !is_replay && variant == Some(crate::acp::SessionUpdateVariant::AgentThoughtChunk) {
-                let _ = turn_ledger.note_session_activity(
+                crate::session::note_session_activity(
+                    runtime,
                     &source,
                     &peri_id,
                     generation,
@@ -567,7 +570,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
         let acp = runtime.acp.clone();
         let sessions = runtime.sessions.clone();
         let binding_health = runtime.binding_health.clone();
-        let pet = handles.pet.clone();
+        let pet = handles.pet.inner();
         // #416 W2 步骤③：宿主装配——pet 状态包成 KernelReactionSink 唯一实现；
         // 泵/崩溃处理器/handle_session_update 全走 trait 对象（kernel 不点名 pet）。
         let reactions: Arc<dyn KernelReactionSink> = Arc::new(PetReactionSink::new(pet));
@@ -580,7 +583,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
         let agent_runtime = runtime.agent_runtime.clone();
         let runtimes = handles.runtimes.clone();
         let gateway = handles.gateway.clone();
-        let approval_mode = handles.approval_mode.clone();
+        let approval_mode = handles.approval.mode();
         let event_service_slot = handles.event_service.clone();
         let event_service = event_service_slot.lock().ok().and_then(|slot| slot.clone());
         let message_service = handles
@@ -762,7 +765,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
         // break 路径（代际失配 / inbox 关闭 / handle_session_update false）。
         // 旧代际 turn 条目整体收敛；此后旧代际的迟到结算归 UnknownTurn
         // （可观测，且永远无法改写新代际状态）。
-        let dropped = self.runtime.turn_ledger.drop_generation(self.generation);
+        let dropped = crate::session::drop_generation(&self.runtime, self.generation);
         if dropped > 0 {
             tracing::info!(
                 dropped,
@@ -1020,7 +1023,7 @@ impl<R: tauri::Runtime> NotificationPump<R> {
             self.message_service.as_ref(),
             classification,
             wire_ordinal,
-            &self.runtime.turn_ledger,
+            &self.runtime,
             &self.runtime.probe_sessions,
             ingress_seq,
             self.wire_trace.clone(),

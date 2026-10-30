@@ -159,10 +159,8 @@ pub(super) async fn prepare_prompt_blocks<R: tauri::Runtime>(
     // B11.1：发送前置注入钩子（GUI 与平台 ingest 统一入口）——Prism 可用 +
     // gateway 配置开启 + 非命令消息 → POST /inject 拿 context 前置拼进 prompt。
     // Prism 不可用/请求失败 → 降级为不注入（消息照发，fail-open）。
-    let message_round = {
-        let sessions = runtime.sessions.lock().map_err(|e| e.to_string())?;
-        sessions.get(source).map(|s| s.inject_round).unwrap_or(0)
-    };
+    // #707-B：注入轮次读收口 SessionStore::inject_round。
+    let message_round = crate::session::store::inject_round(runtime, source)?;
     // B11.1：发送前置注入钩子（GUI 与平台 ingest 统一入口）——#416 W2 wave2
     // 步骤 4 起 prism/gateway 判断、/inject 请求与三分支日志都在 PromptTurnHooks
     // 实现内（本文件不再点名 PrismClient）；fail-open 语义由实现承担，调用点
@@ -186,26 +184,6 @@ pub(super) async fn prepare_prompt_blocks<R: tauri::Runtime>(
     flow.inject_activated = inject_activated;
     flow.prompt_blocks = prompt_blocks;
     Ok(())
-}
-
-/// R33b：回合推进纯函数——该 session 用户回合 +1、标记收集回合（dispatcher
-/// 据此绑定流式收集）、清空上一回合回复文本（本轮回复由 dispatcher 重新收集）。
-/// 必须在发送（send_keep_rx）之前完成（P2-8：发送成功后清空会与 dispatcher
-/// 的并行追加竞态：agent 极快响应时本轮回复文本会被清掉）。
-pub(super) fn advance_round<R: tauri::Runtime>(flow: &mut PromptFlow<'_, R>) {
-    if let Ok(mut sessions) = flow.runtime.sessions.lock() {
-        if let Some(session) = sessions.get_mut(&flow.ctx.source) {
-            session.inject_round = session.inject_round.saturating_add(1);
-            // B11.2：先标记收集回合（dispatcher 据此绑定流式收集），再清空文本。
-            session.last_response_round = session.inject_round;
-            session.last_response_text.clear();
-            // R-t5：上一回合的 activity 不能被当前 prompt 当成“已经收到首个
-            // token”。清空后，wait_prompt_with_recovery 会从本次 outbound
-            // request 重新等待 first-token 边界；本回合的第一条 update 再写回
-            // `last_activity` 续命 idle budget。
-            session.last_activity = None;
-        }
-    }
 }
 
 /// G2-05：一次 prompt 发送的不可变输入（来源无关：GUI send_message / 平台 ingest 共用）。
@@ -281,10 +259,28 @@ pub(crate) async fn send_prompt_core<R: tauri::Runtime>(
                 persistence_error = %persistence_error,
                 "prompt failure could not be committed; failure event was not published"
             );
-            return Err(persistence_error);
+            // #705（方案 A）：持久层错误保持主导（fail-loud），additive 携带原始
+            // prompt 错误（稳定码 + Display 原文）——前端既能继续按持久层稳定码
+            // 分支，也不再丢失真实失败原因。
+            return Err(PylonError::FailurePublish {
+                original_code: error.code().to_string(),
+                original_message: error.to_string(),
+                publish: Box::new(persistence_error),
+            });
         }
     }
     result
+}
+
+/// #702：cancel 的代际门（纯函数，便于定点测试）。快照客户端代际与回合代际
+/// 失配 = 等待期间连接已换装——旧 peri_id 的 session/cancel 不得写入新连接
+/// （auto-reconnect 迁移后同 peri_id 在新 client 合法存在，构成错位写入）；
+/// 旧连接必被 kill，cancel 已无对象，放弃即正确语义。
+pub(super) fn cancel_targets_snapshot_generation(
+    snapshot_generation: u64,
+    expected_generation: u64,
+) -> bool {
+    snapshot_generation == expected_generation
 }
 
 // prompt_lock/prompt_gate 单飞（B3）：同 source/同实例同时刻最多一个 prompt；cancel 闭包同持 acp 锁（方案 5）
@@ -369,7 +365,7 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
         .as_deref()
         .map(str::to_string)
         .unwrap_or_else(|| state.agent_cwd());
-    let (peri_id, is_first) = {
+    let (peri_id, mapping_generation, is_first) = {
         // 方案 I：session/new（建会话/复用）失败必须立即向前端广播 pylon:error，
         // 不能静默传播 Err——否则用户看到的是"消息滞留 + 生成指示器空转"而非明确错误
         // （Hermes 无 provider/401 等均在此时失败）。错误同时进 runtime 日志带上下文。
@@ -402,7 +398,7 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
             Err(error) => {
                 let message = error.to_string();
                 // #425 件6：发起路径错误位点经 sink（原 `pet::on_error` 直呼点）。
-                crate::dispatcher::reactions::PetReactionSink::new(state.pet.clone())
+                crate::dispatcher::reactions::PetReactionSink::new(state.pet.inner())
                     .on_prompt_error();
                 state.log_runtime_summary(
                     "error",
@@ -429,8 +425,19 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
                 );
             }
         }
-        (mapping.peri_id, mapping.is_first)
+        (mapping.peri_id, mapping.generation, mapping.is_first)
     };
+
+    // #702：映射→发送之间的换装窗口复核。peri_id 属于建立/复用它的那一代连接；
+    // 映射读取后连接若已被替换（Invalidated 路径清映射的窗口竞态），旧 peri_id
+    // 打到新进程只会得到 unknown session——在 ingest 用户消息之前以结构化
+    // stale 错误拦截，journal 不落错误配对的 (旧 peri_id, 新 generation) 行。
+    if mapping_generation != state.current_generation(runtime) {
+        return Err(PylonError::Protocol(format!(
+            "stale session mapping for source: {source} (mapping generation {mapping_generation}, current {})",
+            state.current_generation(runtime)
+        )));
+    }
 
     // G2-06：管线阶段载体（PromptFlow）——派生字段由阶段函数逐步填充。
     // #416 W2 wave2 步骤 4：Prism 回合钩子随 flow 注入（owned clone 自 state，
@@ -493,7 +500,7 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
     );
 
     // #425 件6：用户消息已送出位点经 sink（原 `pet::on_user_sent` 直呼点）。
-    crate::dispatcher::reactions::PetReactionSink::new(state.pet.clone()).on_user_sent();
+    crate::dispatcher::reactions::PetReactionSink::new(state.pet.inner()).on_user_sent();
     {
         let mut user_payload = serde_json::json!({ "source": source, "content": content });
         if !flow.inject_activated.is_empty() {
@@ -565,8 +572,11 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
     // 取消/连接关闭分支清理 pending 仍需 request_id（send_keep_rx 会消费 rpc）。
     flow.request_id = rpc.id;
     // R33b：回合推进（该 session 用户回合 +1、标记收集回合、清空回复文本）。
-    // P2-8：必须在发送（send_keep_rx）之前完成，见 advance_round 说明。
-    advance_round(&mut flow);
+    // P2-8：必须在发送（send_keep_rx）之前完成。#707-B/#706：R33b 推进与 #352
+    // cancel 判死输入清除合并为 `SessionStore::begin_turn_state` 单次锁内完成，
+    // fail-closed（锁中毒/映射缺失在发送前以错误拒绝——rpc 未发送即丢弃，
+    // 无 wire 副作用），不再静默跳过。
+    crate::session::store::begin_turn_state(runtime, source)?;
     // R3：send_keep_rx 统一 10s 写超时（对齐 complete 路径；原裸 write_tx.send 在
     // writer 阻塞 + 队列满时会无限挂起），失败已清理 pending，只收敛会话映射。
     let mut rx = match rpc.send_keep_rx().await {
@@ -592,21 +602,8 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
     // #442 Step2：终帧 additive turnId 的事实来源——回合已建立后发生的任何错误
     // 终态，error 帧都携带本回合身份（前端 stamps 猜测在字段可用时退役）。
     *attempted_turn_id = Some(turn_key.turn_id);
-    if let crate::acp::BeginOutcome::AlreadyActive =
-        runtime.turn_ledger.begin(turn_key.clone(), now_ms())
-    {
-        tracing::warn!(
-            turn_id = flow.request_id,
-            "duplicate turn begin in ledger; keeping original registration"
-        );
-    }
-    // #420/ADR-0034：在途事实由上方 ledger.begin 单源承载（SessionInfo 不再镜像）；
-    // 此处只保留 mark 的幸存职责——#352 新回合起点清除旧回合的 cancel 判死输入。
-    if let Ok(mut sessions) = runtime.sessions.lock() {
-        if let Some(session) = sessions.get_mut(source) {
-            session.clear_cancel_requested_for_new_turn();
-        }
-    }
+    // #707-C：账本写路径单点（session::prompt::ledger）。
+    super::ledger::begin_turn(runtime, &turn_key);
     let acp_for_cancel = runtime.acp.clone();
     let peri_id_for_cancel = flow.peri_id.clone();
     // API 1.3：turn.started 观察锚点——出站成功即回合开始（spawn 不阻塞响应等待）。
@@ -638,12 +635,11 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
         cancel_requested_probe(runtime.clone(), source.to_string(), expected_generation);
     // R-t5：liveness 探针——读本会话最近一次 ACP 活动时刻（dispatcher 刷新）。
     // 用作"闲置超时"判据：活动即续命，只有持续无输出才截。
+    // #707-B：读面收口 SessionStore::last_activity（中毒退化语义不变 + warn 显形）。
     let source_for_liveness = source.to_string();
+    let liveness_runtime = runtime.clone();
     let liveness_activity = move || {
-        let sessions = runtime.sessions.lock().map_err(|e| e.to_string()).ok()?;
-        sessions
-            .get(&source_for_liveness)
-            .and_then(|s| s.last_activity)
+        crate::session::store::last_activity(&liveness_runtime, &source_for_liveness)
     };
     let result = acp::wait_prompt_with_recovery(
         &mut rx,
@@ -654,14 +650,24 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
         cancel_requested,
         move || async move {
             // R6e：cancel 闭包契约是 Result<(), String>（wait_prompt_with_recovery 泛型边界）
-            // #549/ADR-0037：cancel 走快照客户端的私有通道，写入只可能落在被解析
-            // 的这一连接；replacement 换装后旧客户端被 kill，通道关闭即失败返回。
-            // 快照先绑定——读守卫不得活过下方 await（std 守卫非 Send，跨 await
-            // 会直接编译失败）。
+            // #549/ADR-0037：快照先绑定——读守卫不得活过下方 await（std 守卫非 Send，
+            // 跨 await 会直接编译失败）。#702：快照在**闭包触发时刻**解析（RwLock
+            // 句柄在捕获期只解引用一次），等待期间的换装会让它解析到新连接——
+            // 发送前以客户端自带 generation 自校验（与下方 Hermes force-kill 闭包、
+            // cancel_prompt 命令同一纪律）：失配即放弃（旧连接必被 kill，cancel
+            // 已无对象），不把旧 peri_id 的 session/cancel 写进新连接。
             let acp = acp_for_cancel
                 .read()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
+            if !cancel_targets_snapshot_generation(acp.client_generation(), expected_generation) {
+                tracing::debug!(
+                    expected_generation,
+                    snapshot_generation = acp.client_generation(),
+                    "skip cancel for stale prompt generation (connection replaced mid-wait)"
+                );
+                return Ok(());
+            }
             acp.cancel_session(&peri_id_for_cancel)
                 .await
                 .map_err(|e| e.to_string())

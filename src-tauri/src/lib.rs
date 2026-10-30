@@ -209,16 +209,18 @@ declare_app_state! {
         runtimes: Arc<AgentRuntimeManager>,
         agents: Arc<Mutex<HashMap<String, AgentDef>>>,
         active_agent: Arc<Mutex<String>>,
-        pet: Arc<Mutex<pet::PetState>>,
+        /// #707-A：宠物域——状态槽与落盘写序锁单一所有者（原 pet + pet_write_lock
+        /// 两处平铺收敛）。
+        pet: crate::pet::PetDomain,
         runtime_logs: Arc<runtime_log::RuntimeLogHub>,
         gateway: Arc<GatewayCore>,
-        /// 权限审批模式（B9.3）：bypass/auto 自动批准；edit/default 挂起询问。
-        approval_mode: Arc<Mutex<String>>,
-        /// #463 审查项 3：approval-mode 落盘健康位——内存当前值是否已被 SQLite 持有
-        /// （或从未偏离持久层）。set 落盘成功 / 启动回填成功 / 无持久值（默认即权威）
-        /// → true；set 落盘失败 / 回填失败 / service 未就绪 → false。经 set/get 的
+        /// #707-A：权限审批模式域（B9.3）——mode + 落盘健康位 + 写序锁单一所有者
+        /// （原 approval_mode / approval_mode_persisted / approval_mode_write_lock
+        /// 三处平铺收敛）。bypass/auto 自动批准；edit/default 挂起询问。健康位语义
+        /// （#463 审查项 3）不变：set 落盘成功 / 启动回填成功 / 无持久值 → true；
+        /// set 落盘失败 / 回填失败 / service 未就绪 → false，经 set/get 的
         /// ApprovalModeSnapshot.persisted 暴露给 CLI 消费方（degraded 外部可查）。
-        approval_mode_persisted: Arc<std::sync::atomic::AtomicBool>,
+        approval: crate::permission::ApprovalModeDomain,
         /// M3 EVT-02：canonical 事件仓库 service（与消息同库 canonical_events 表 v6，
         /// 方案书 §5.10 append-only 事件流）。与 message/user-data 作为同一 readiness
         /// unit 串行打开；生产 setup 返回后必为 Some。dispatcher 对有 durable owner 的
@@ -241,45 +243,28 @@ declare_app_state! {
         protocol_adapters: Arc<crate::protocol_adapter::ProtocolAdapterRegistry>,
     }
     app_only {
-        runtime_mcp: Mutex<Option<Vec<mcp::McpServerConfig>>>,
+        /// #707-A：MCP 域——写序锁 + 落盘序号 + runtime 配置 + wire 缓存单一所有者
+        /// （原 runtime_mcp / mcp_wire / mcp_write_lock / mcp_persist_order 四处平铺
+        /// 收敛；#703 读回填竞态在域方法内结构性不可表达）。
+        mcp: crate::lifecycle::mcp::McpDomain,
         /// issue #82：Agent 浏览器能力 hub（设置/claim/ref/CDP 状态）。
         browser_agent: Arc<crate::browser::agent::hub::BrowserAgentHub>,
         prism: PrismClient,
         /// R5（P1-3）：启动诊断快照（run() 构建主体；#482 起 storage 模式诊断已随
         /// AppData 双模式退役，快照只含配置来源与分域错误）。
         startup: Arc<RwLock<crate::startup::StartupDiagnostics>>,
-        /// #463：approval-mode 写序锁（tokio Mutex）——set_approval_mode 的内存写与
-        /// user_data 落盘全程持锁，并发 set（GUI 与 CLI 桥同进程）时磁盘必为最后一次
-        /// set（重启不回退到较早值；与 mcp_write_lock 同型。最后一次 set 落盘失败除外
-        /// ——降级路径见 set_approval_mode docstring，健康位经
-        /// approval_mode_persisted 对外可查，#463 审查项 3 已落地）。
-        approval_mode_write_lock: tokio::sync::Mutex<()>,
-        /// R6a：宠物落盘写序锁（tokio Mutex）——序列化在临界区内执行，保证
-        /// 后写状态 ≥ 先写状态（无乱序覆盖）；fs 写经 spawn_blocking 移出 async 运行时。
-        pet_write_lock: tokio::sync::Mutex<()>,
         /// C7：switch/reconnect 串行锁——并发 switch 不交叉杀进程（一个 switch
         /// 未完成前另一个 switch 不得 kill 同一批旧进程）。
         switch_lock: tokio::sync::Mutex<()>,
-        /// C8：MCP 写序锁（tokio Mutex）——set_mcp_servers 写 runtime_mcp + wire 缓存
-        /// 并在锁内登记落盘序号，使内存提交顺序 = 序号顺序。磁盘写不再持本锁
-        /// （#683：由 mcp_persist_order 串行且只落最新序号）。
-        mcp_write_lock: tokio::sync::Mutex<()>,
-        /// #683：MCP 落盘序号与串行闸——写盘在 spawn_blocking 内按此串行，
-        /// 且只让最新序号落盘；命令面不再持 mcp_write_lock 等待磁盘。
-        mcp_persist_order: Arc<crate::lifecycle::mcp::McpPersistOrder>,
         /// Phase 3：配置写序锁（tokio Mutex）——update_agents_config 读当前→生成候选→
         /// 校验→写盘→内存提交全程持锁，两个写请求不基于同一旧版本互相覆盖。
+        /// #707-A 留守说明：其守护面（agents/active_agent/verified fingerprints）
+        /// 读面横跨全仓，域化收益/风险比不划算，保留顶层（#707 评论已说明）。
         config_write_lock: tokio::sync::Mutex<()>,
         /// Phase 4：浏览器会话管理（WebView 方案 §6.0；setup() 注入主窗口）。
         browser: Arc<browser::BrowserManager>,
         /// #371：文档 Sheet 管理（离线文档站子 WebView；setup() 注入主窗口）。
         docs_sheet: Arc<docs_sheet::DocsSheetManager>,
-        /// P1（E10）：MCP wire 序列化缓存（Vec<Value>，session/new 的 mcpServers 载荷）。
-        /// 每消息省一次全量 validate+serialize（≤32 server × 字段校验 + 一次 clone）。
-        /// 写入 = set_mcp_servers 与 runtime_mcp 同 mcp_write_lock 下同步；读取
-        /// （send_prompt_core None 路径）miss 时回退全量重算并回填（E3 自愈：启动
-        /// 恢复路径直写 runtime_mcp 不经 set_mcp_servers，缓存为 None，首次读取即回填）。
-        mcp_wire: Mutex<Option<Vec<serde_json::Value>>>,
         /// R8（P2-3）：前端日志限流窗口（每秒上限，超限丢弃）。
         frontend_log_throttle: Mutex<runtime_log::FrontendLogThrottle>,
         /// I14-W5：用户数据仓库 service（与消息同库 user_data 表，versioned
@@ -378,8 +363,17 @@ fn apply_announce_override(
 
 impl AppStateHandles {
     /// 当前 active agent 的 runtime（无 active agent 时返回 None）。
+    /// #706：active_agent 按 #331 例外二处理——String 中毒后仍自洽（免疫值），
+    /// `into_inner` 就地恢复 + warn；此前 `.ok()?` 把中毒静默折叠成 None，
+    /// 令 `require_runtime` 误报 `no_active_agent`。
     fn active_runtime(&self) -> Option<Arc<AgentRuntime>> {
-        let id = self.active_agent.lock().ok()?.clone();
+        let id = match self.active_agent.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => {
+                tracing::warn!("active_agent lock poisoned; recovering in place (#331 例外二)");
+                poisoned.into_inner().clone()
+            }
+        };
         self.runtimes.get(&id)
     }
 
@@ -727,6 +721,16 @@ impl AppStateHandles {
 /// per-source prompt 锁表（source → 锁）。clippy 2026-08-02：复杂类型提取别名。
 pub(crate) type PromptLockTable = Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>;
 
+/// #706：gateway ingest 绑定目标注册表存在性判定——未知 id 拒绝建 runtime
+/// （幽灵清理只挂在配置 diff 的 removed_agents_guard，未配置过的 id 永不回收）；
+/// 锁中毒 fail-closed 拒绝。
+fn ingest_agent_registered(agents: &Mutex<HashMap<String, AgentDef>>, agent_id: &str) -> bool {
+    agents
+        .lock()
+        .map(|agents| agents.contains_key(agent_id))
+        .unwrap_or(false)
+}
+
 pub(crate) fn prompt_lock_for(
     locks: &PromptLockTable,
     source: &str,
@@ -905,26 +909,21 @@ pub(crate) fn build_app_state(parts: AppStateParts) -> AppState {
         runtimes,
         agents: Arc::new(Mutex::new(agents)),
         active_agent: Arc::new(Mutex::new(active_agent)),
-        pet: Arc::new(Mutex::new(pet::PetState::default())),
+        pet: crate::pet::PetDomain::new(),
         runtime_logs,
-        runtime_mcp: Mutex::new(None),
+        // #707-A：MCP 域初始空——启动恢复路径（setup load_mcp_persisted 经
+        // McpDomain::restore 直写 runtime 槽）后首次读取 miss 回退全量重算并
+        // 回填（E3 自愈，语义不变）。
+        mcp: crate::lifecycle::mcp::McpDomain::new(),
         prism,
         gateway,
         startup: Arc::new(RwLock::new(startup)),
-        approval_mode: Arc::new(Mutex::new("default".to_string())),
-        approval_mode_persisted: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-        approval_mode_write_lock: tokio::sync::Mutex::new(()),
+        approval: crate::permission::ApprovalModeDomain::new(),
         browser_agent: Arc::new(crate::browser::agent::hub::BrowserAgentHub::new()),
-        pet_write_lock: tokio::sync::Mutex::new(()),
         switch_lock: tokio::sync::Mutex::new(()),
-        mcp_write_lock: tokio::sync::Mutex::new(()),
-        mcp_persist_order: Arc::new(crate::lifecycle::mcp::McpPersistOrder::default()),
         config_write_lock: tokio::sync::Mutex::new(()),
         browser: Arc::new(browser::BrowserManager::new()),
         docs_sheet: Arc::new(docs_sheet::DocsSheetManager::new()),
-        // P1（E10）：wire 缓存初始 None——启动恢复路径（setup load_mcp_persisted
-        // 直写 runtime_mcp）后首次读取 miss 回退全量重算并回填（E3 自愈）。
-        mcp_wire: Mutex::new(None),
         frontend_log_throttle: Mutex::new(runtime_log::FrontendLogThrottle::default()),
         // I14-W1：消息仓库槽位初始 None，setup() 启动时序填充（见 struct 注释）。
         message_service: Arc::new(Mutex::new(None)),
@@ -1106,7 +1105,7 @@ fn setup_ensure_plugin_dirs(app: &tauri::App) {
 fn setup_restore_pet(app: &tauri::App, dirs: &crate::paths::DataDirs) {
     let path = crate::paths::pet_persist_path(dirs);
     if let Some(saved) = pet::load_from_file(&path) {
-        let pet_arc = app.state::<AppState>().pet.clone();
+        let pet_arc = app.state::<AppState>().pet.inner();
         if let Ok(mut pet) = pet_arc.lock() {
             pet::restore(&mut pet, saved);
         };
@@ -1114,13 +1113,12 @@ fn setup_restore_pet(app: &tauri::App, dirs: &crate::paths::DataDirs) {
 }
 
 /// 阶段 7：B4.2 MCP 配置落盘加载（重启不丢）。文件缺失/损坏/非法 → 保持空配置（静默降级）。
+/// #707-A：经 MCP 域 `restore` 直写 runtime 槽（wire 槽保持 None，首读回填语义不变）。
 fn setup_restore_mcp_config(app: &tauri::App, dirs: &crate::paths::DataDirs) {
     let path = crate::paths::mcp_persist_path(dirs);
     if let Some(servers) = load_mcp_persisted(&path) {
-        if let Ok(mut slot) = app.state::<AppState>().runtime_mcp.lock() {
-            *slot = Some(servers);
-            tracing::info!("MCP 配置已从 {} 恢复", path.display());
-        }
+        app.state::<AppState>().mcp.restore(servers);
+        tracing::info!("MCP 配置已从 {} 恢复", path.display());
     }
 }
 
@@ -1484,6 +1482,16 @@ fn setup_install_gateway_ingest_handler(app: &tauri::App) {
                     );
                     return;
                 }
+                // #706：绑定目标必须存在于 agents 注册表（判定见
+                // `ingest_agent_registered`）——未知 id 拒绝路由。
+                if !ingest_agent_registered(&state.inner().agents, &agent_id) {
+                    tracing::error!(
+                        agent_id = %agent_id,
+                        source = %resolved.source,
+                        "gateway ingest 拒绝：绑定目标 agent 不在注册表，不创建幽灵 runtime"
+                    );
+                    return;
+                }
                 let runtime = state.inner().runtimes.get_or_create(&agent_id);
                 if let Some(webview) = webview.as_ref() {
                     if let Err(error) = state
@@ -1806,7 +1814,7 @@ pub fn run() {
                 // 随后直接同步落盘兜底（后台任务在途写盘不受影响，R6a 尽力语义）。
                 crate::pet::cmds::drain_pet_dirty();
                 // 退出兜底：最后持久化一次（get_pet 12s 轮询已覆盖大部分变更）
-                let pet_arc = app_handle.state::<AppState>().pet.clone();
+                let pet_arc = app_handle.state::<AppState>().pet.inner();
                 if let Ok(pet) = pet_arc.try_lock() {
                     persist_pet_if_possible(app_handle, &pet);
                 };
@@ -1973,6 +1981,60 @@ mod window_browser_args_tests {
             MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS
                 .contains("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"),
             "内置 WebView2 参数丢了原有的 --disable-features 组合：{MAIN_WINDOW_ADDITIONAL_BROWSER_ARGS}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod review_706_tests {
+    use super::*;
+
+    /// #706：active_agent 中毒按 #331 例外二就地恢复——active_runtime 不得把
+    /// 中毒静默折叠成 None（`require_runtime` 误报 no_active_agent）。
+    #[test]
+    fn active_runtime_recovers_from_poisoned_active_agent() {
+        let state = crate::test_utils::TestStateBuilder::bare().build();
+        state
+            .runtimes
+            .insert("ghost-agent".to_string(), AgentRuntime::new_disconnected());
+        // 制造中毒：持锁 panic（测试 profile 为 unwind，catch_unwind 拦截）。
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let guard = state.active_agent.lock().unwrap();
+            assert_eq!(&*guard, "ghost-agent");
+            panic!("poison active_agent for test");
+        }));
+        assert!(poisoned.is_err(), "panic 必须发生以制造中毒");
+        let recovered = AppStateHandles::from_state(&state).active_runtime();
+        assert!(
+            recovered.is_some(),
+            "中毒就地恢复后必须仍解析到 active runtime（不得误报 no_active_agent）"
+        );
+    }
+
+    /// #706：ingest 绑定目标注册表判定——已配置放行、未知 id 拒绝、锁中毒
+    /// fail-closed 拒绝（不创建幽灵 runtime）。
+    #[test]
+    fn ingest_agent_registered_rejects_unknown_and_poisoned() {
+        let mut agents_map: HashMap<String, AgentDef> = HashMap::new();
+        agents_map.insert(
+            "peri".to_string(),
+            crate::test_utils::fake_acp_agent("peri", &["--scenario", "alive"]),
+        );
+        assert!(ingest_agent_registered(&Mutex::new(agents_map), "peri"));
+        let empty: Mutex<HashMap<String, AgentDef>> = Mutex::new(HashMap::new());
+        assert!(
+            !ingest_agent_registered(&empty, "typo-agent"),
+            "未知 id 必须拒绝"
+        );
+        let poisoned_map: Mutex<HashMap<String, AgentDef>> = Mutex::new(HashMap::new());
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let guard = poisoned_map.lock().unwrap();
+            let _ = guard.len();
+            panic!("poison agents map for test");
+        }));
+        assert!(
+            !ingest_agent_registered(&poisoned_map, "peri"),
+            "锁中毒必须 fail-closed 拒绝"
         );
     }
 }

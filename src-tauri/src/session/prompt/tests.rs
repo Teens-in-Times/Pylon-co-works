@@ -964,3 +964,47 @@ fn turn_settled_broadcast_publishes_once_with_full_record() {
     )
     .is_none());
 }
+
+// ── #702 / #707-C：代际门与账本门 ──
+
+/// #702：cancel 的代际门（纯函数）——快照客户端代际与回合代际失配（等待期间
+/// 换装）必须放弃发送；匹配才放行。与 Hermes force-kill 闭包、cancel_prompt
+/// 命令同一纪律（#549/ADR-0037 残余缺口收口）。
+#[test]
+fn cancel_targets_snapshot_generation_gates_stale_connections() {
+    assert!(super::wait::cancel_targets_snapshot_generation(7, 7), "同代放行");
+    assert!(
+        !super::wait::cancel_targets_snapshot_generation(8, 7),
+        "换装后代际失配必须放弃（旧 peri_id 不得写入新连接）"
+    );
+}
+
+/// #707-C：账本门 roundtrip——begin_turn 登记（重复 begin 只计诊断不 panic）、
+/// turn_in_flight 读、drop_generation 清账。
+#[test]
+fn turn_ledger_gate_begin_in_flight_and_drop_generation() {
+    let runtime = crate::runtime::AgentRuntime::new_disconnected();
+    let key = crate::acp::TurnKey {
+        local_session_id: "local:c".to_string(),
+        remote_session_id: "peri-c".to_string(),
+        generation: 3,
+        turn_id: 1,
+    };
+    super::ledger::begin_turn(&runtime, &key);
+    super::ledger::begin_turn(&runtime, &key); // 重复 begin：AlreadyActive 诊断路径
+    assert!(crate::session::turn_in_flight(
+        &runtime,
+        "local:c",
+        "peri-c",
+        3
+    ));
+    assert_eq!(
+        crate::session::drop_generation(&runtime, 3),
+        1,
+        "代际清账返回清理条数"
+    );
+    assert!(
+        !crate::session::turn_in_flight(&runtime, "local:c", "peri-c", 3),
+        "清账后在途事实必须归零"
+    );
+}

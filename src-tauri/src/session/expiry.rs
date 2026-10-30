@@ -157,7 +157,9 @@ pub(crate) async fn check_session_expiry_with(
                         // #420：在途事实查账本 active 表（单源）。账本是叶子锁
                         // （内部只做 HashMap 读写、不回调宿主、不取其他锁），
                         // 在 sessions 锁内查询无锁序风险。
-                        turn_in_flight: runtime.turn_ledger.turn_in_flight(
+                        // #707-C：在途事实读经账本门（crate::session::turn_in_flight）。
+                        turn_in_flight: crate::session::turn_in_flight(
+                            &runtime,
                             source,
                             &info.peri_id,
                             info.generation,
