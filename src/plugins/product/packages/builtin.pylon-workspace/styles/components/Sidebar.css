@@ -18,7 +18,7 @@
      与 .sheet-tab-strip 同一做法；列内列表（.work-list / .session-list 等）仍保留自己的滚动条。 */
   scrollbar-width:none;
   font-family:var(--font);
-  transition:width var(--motion-standard) var(--ease-emphasized), min-width var(--motion-standard) var(--ease-emphasized), max-width var(--motion-standard) var(--ease-emphasized), background-color var(--motion-standard) var(--ease-standard);
+  transition:width var(--motion-standard) var(--ease-emphasized), min-width var(--motion-standard) var(--ease-emphasized), max-width var(--motion-standard) var(--ease-emphasized), margin-inline-start var(--motion-standard) var(--ease-emphasized), margin-inline-end var(--motion-standard) var(--ease-emphasized), background-color var(--motion-standard) var(--ease-standard);
   will-change:width;
 }
 .sidebar::before {
@@ -503,7 +503,7 @@
 @media (hover:none) { .cwd-group-actions { opacity:1; visibility:visible; pointer-events:auto; } .session-tail > .session-meta { opacity:0; } .session-actions { opacity:1; visibility:visible; pointer-events:auto; } }
 
 /* Modern GUI workspace rail. Local values intentionally stay in this package. */
-.app[data-interface-mode="modern-gui"] .layout { gap:8px; padding:0 8px 8px; }
+.app[data-interface-mode="modern-gui"] .layout { --rail-gap:8px; gap:var(--rail-gap); padding:0 8px 8px; }
 .app[data-interface-mode="modern-gui"] .sidebar {
   margin:0; overflow:hidden; border:1px solid color-mix(in srgb,var(--border) 82%,transparent); border-radius:16px;
   background:color-mix(in srgb,var(--surface-panel) 70%,transparent); box-shadow:0 14px 38px color-mix(in srgb,var(--text) 5%,transparent);
@@ -528,7 +528,21 @@
 .app[data-interface-mode="modern-gui"] .cwd-new,
 .app[data-interface-mode="modern-gui"] .cwd-settings-section,
 .app[data-interface-mode="modern-gui"] .workspace-empty { border-radius:12px; }
-.app[data-interface-mode="modern-gui"] .layout[data-sidebar="collapsed"] .sidebar { border-radius:14px; }
+/* 折叠态必须真正归零。上面的卡片装饰（描边/圆角/底色/投影）声明在
+   `.layout[data-sidebar="collapsed"] .sidebar` 的归零规则之后，同特异性下后者胜——
+   不复位就会留下 2px 描边占位（轨道宽 0 但盒子最小 = 两条边框）。flex gap 也会为
+   0 宽轨道留一份 8px 空档，用负外边距吃掉，主区左右内边距才对称。 */
+.app[data-interface-mode="modern-gui"] .layout[data-sidebar="collapsed"] > .sidebar {
+  border:0; border-radius:0; background:transparent; box-shadow:none;
+  margin-inline-end:calc(-1 * var(--rail-gap, 8px));
+}
+.app[data-interface-mode="modern-gui"][data-shell-sidebar-side="right"] .layout[data-sidebar="collapsed"] > .sidebar {
+  margin-inline-end:0;
+  margin-inline-start:calc(-1 * var(--rail-gap, 8px));
+}
+/* 卡片边框自己就是分栏边界：#154 那条贯穿全高的 1px 线按轨道宽定位，
+   在现代模式会落在卡片内部（实测 left:249，卡片右缘 258），故现代模式不画。 */
+.app[data-interface-mode="modern-gui"] .layout[data-sidebar="expanded"]::before { display:none; }
 
 /* Q4/DF-05a：中心 workbench 先保留内容预算，再让宿主侧栏弹性收缩。 */
 .layout .agent-sheet-keep-alive > .main {

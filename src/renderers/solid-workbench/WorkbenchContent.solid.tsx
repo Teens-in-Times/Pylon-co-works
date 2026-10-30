@@ -141,6 +141,9 @@ export function WorkbenchContent(props: WorkbenchContentProps) {
       data-creation-state={sessionCreation().phase}
       style={{
         '--right-panel-inset': `${Math.max(0, props.context.input().rightInset ?? 0)}px`,
+        // 阅读列宽由外观快照决定；中控按同一真值收窄（现代模式），两栏折叠后
+        // 主区可涨到 1500px+，输入条若铺满整宽会与消息列脱开。
+        '--reading-column-max-width': `${readingWidth()}px`,
       }}
       aria-label="Solid Agent Workbench"
     >

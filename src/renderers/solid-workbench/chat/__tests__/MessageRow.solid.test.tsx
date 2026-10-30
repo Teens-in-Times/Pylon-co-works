@@ -6,7 +6,7 @@ import { toRenderMessage, type Message } from '../../../../domains/chat/messageT
 import type { WorkbenchAppearanceSnapshot } from '../../../../domains/appearance/appearance.ts'
 import { clearMarkdownRenderModelCache } from '../markdownRenderModel.ts'
 import { FLUSH_BUDGET } from '../../../../test/solidTestHelpers.ts'
-import { AssistantContent, ReasoningBlock, SolidMessageRow } from '../MessageRow.solid.tsx'
+import { AssistantContent, ReasoningBlock, SolidMessageRow, avatarInitials } from '../MessageRow.solid.tsx'
 
 const APPEARANCE: Pick<WorkbenchAppearanceSnapshot,
   'userName' | 'userPrefix' | 'userColor' | 'assistantDot' | 'assistantDotGlyph' | 'assistantDotImage'> = {
@@ -217,5 +217,29 @@ describe('SolidMessageRow', () => {
     const result = row({ id: 'e1', role: 'assistant', sender: 'system', content: '后端错误', time: 't' })
     expect(result.getByRole('alert').textContent).toContain('后端错误')
     expect(result.container.querySelector('[data-render-type="error"]')).not.toBeNull()
+  })
+
+  it('用户行输出头像缩写、meta 与 HH:MM 时间，并保留气泡包裹', () => {
+    const result = row({ id: 'u1', role: 'user', sender: 'alice', content: 'hello', time: '10:05:00' })
+    expect(result.container.querySelector('.term-user-avatar')?.textContent).toBe('A')
+    expect(result.container.querySelector('.term-user-meta .term-user-name')?.textContent).toBe('alice')
+    const time = result.container.querySelector('time.term-row-time')
+    expect(time?.textContent).toBe('10:05')
+    expect(time?.getAttribute('datetime')).toBe('10:05:00')
+    expect(result.container.querySelector('.term-user-bubble > .term-user-content')).not.toBeNull()
+  })
+
+  it('助手行 meta 带发送者与时间；时间不可解析时不渲染 time', () => {
+    const shown = row({ id: 'a1', role: 'assistant', sender: 'peri', content: 'yo', time: '11:30:00 PM' })
+    expect(shown.container.querySelector('.term-assistant-meta .term-assistant-name')?.textContent).toBe('peri')
+    expect(shown.container.querySelector('time.term-row-time')?.textContent).toBe('23:30')
+    const hidden = row({ id: 'a2', role: 'assistant', sender: 'peri', content: 'yo', time: 't' })
+    expect(hidden.container.querySelector('time.term-row-time')).toBeNull()
+  })
+
+  it('avatarInitials 按码点取首字符', () => {
+    expect(avatarInitials('alice')).toBe('A')
+    expect(avatarInitials('  周明')).toBe('周')
+    expect(avatarInitials('')).toBe('?')
   })
 })

@@ -138,3 +138,50 @@ describe('#154 左列统一模型 CSS 契约', () => {
     expect(collapsedBrand).toMatch(/display:\s*none/)
   })
 })
+
+// 现代模式的卡片装饰（描边/圆角/底色/投影）声明在 #154 折叠归零规则之后，同特异性
+// 下后者胜，若不显式复位，0 宽轨道仍会占 2px 描边宽度；`.layout` 的 flex gap 也会为
+// 折叠轨道留一份空档。这组断言把「折叠 = 真正 0 占位」钉住。
+describe('现代模式轨道折叠几何契约', () => {
+  const modernCollapsedSidebar = () => ruleBodies(
+    sidebarCss,
+    '.app[data-interface-mode="modern-gui"] .layout[data-sidebar="collapsed"] > .sidebar',
+  )[0]
+
+  it('折叠的左栏复位卡片装饰并吃掉 flex gap', () => {
+    const body = modernCollapsedSidebar()
+    expect(body, '缺少现代模式折叠左栏规则').toBeTruthy()
+    expect(body).toMatch(/border:\s*0/)
+    expect(body).toMatch(/box-shadow:\s*none/)
+    expect(body).toMatch(/background:\s*transparent/)
+    expect(body).toContain('margin-inline-end:calc(-1 * var(--rail-gap')
+  })
+
+  it('侧栏在右时镜像负外边距（负值必须落在朝主区的一侧）', () => {
+    const mirror = ruleBodies(
+      sidebarCss,
+      '.app[data-interface-mode="modern-gui"][data-shell-sidebar-side="right"] .layout[data-sidebar="collapsed"] > .sidebar',
+    )[0]
+    expect(mirror, '缺少侧栏在右的折叠镜像规则').toBeTruthy()
+    expect(mirror).toContain('margin-inline-start:calc(-1 * var(--rail-gap')
+    expect(mirror).toContain('margin-inline-end:0')
+  })
+
+  it('现代模式不再画 #154 贯穿线（卡片边框已是分栏边界）', () => {
+    // 贯穿线按轨道宽定位，卡片有 8px 布局内边距 ⇒ 线会落在卡片内部（实测 left:249 / 卡片右缘 258）。
+    expect(sidebarCss).toMatch(/\.app\[data-interface-mode="modern-gui"\] \.layout\[data-sidebar="expanded"\]::before\s*\{\s*display:none/)
+  })
+
+  it('折叠的右栏同样吃掉 flex gap（默认与侧栏在右两种形态）', () => {
+    const body = ruleBodies(appCss, '.app[data-interface-mode="modern-gui"] .layout > .right-rail-host.is-collapsed')[0]
+    expect(body, '缺少现代模式折叠右栏规则').toBeTruthy()
+    // 与左栏归零共用 `--rail-gap`：span gap 若被改，折叠补偿跟着变，不会留第二份真值。
+    expect(body).toContain('margin-inline-start:calc(-1 * var(--rail-gap')
+    const mirror = ruleBodies(
+      appCss,
+      '.app[data-interface-mode="modern-gui"][data-shell-sidebar-side="right"] .layout > .right-rail-host.is-collapsed',
+    )[0]
+    expect(mirror, '缺少侧栏在右的折叠右栏镜像规则').toBeTruthy()
+    expect(mirror).toContain('margin-inline-end:calc(-1 * var(--rail-gap')
+  })
+})

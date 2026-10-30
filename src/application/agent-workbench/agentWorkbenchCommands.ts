@@ -4,7 +4,8 @@ import { useIdentityStore, type Session } from '../../domains/identity/identityS
 import { useRuntimeStore } from '../../domains/runtime/runtimeStore.ts'
 import { buildSendMessagePayload } from '../../domains/chat/sessionRuntime.ts'
 import { collectProfilePersona } from '../../plugins/core/sessionCreation/builtinSessionCreation.ts'
-import { createWorkbenchSessionCreationStore, type WorkbenchCommandFacade } from '../../domains/workbench/workbenchCommandFacade.ts'
+import { createWorkbenchSessionCreationStore, type WorkbenchAttachment, type WorkbenchCommandFacade } from '../../domains/workbench/workbenchCommandFacade.ts'
+import { pickAttachments } from '../../infrastructure/tauri/attachmentPicker.ts'
 import { setSessionModel } from '../../domains/chat/sessionModel.ts'
 import { setSessionMode } from '../../domains/chat/sessionMode.ts'
 import type { InteractionResponseAnswer, InteractionResponseIdentity } from '../../domains/agent/agentContracts.ts'
@@ -47,6 +48,8 @@ export interface AgentWorkbenchCommandDependencies {
   createSession(input?: Parameters<WorkbenchCommandFacade['createSession']>[0]): Promise<{ sessionId: string }>
   selectSession(sessionId: string | null): void
   discardSession(sessionId: string): Promise<void>
+  /** #699：系统文件选择器（浏览器预览返回空数组）。 */
+  pickAttachments(): Promise<readonly WorkbenchAttachment[]>
 }
 
 function productionDependencies(): AgentWorkbenchCommandDependencies {
@@ -84,6 +87,7 @@ function productionDependencies(): AgentWorkbenchCommandDependencies {
     async createSession() { throw new Error('production_command_not_connected') },
     selectSession() {},
     async discardSession() {},
+    pickAttachments,
   }
 }
 
@@ -154,7 +158,7 @@ export function createAgentWorkbenchCommandFacade(
       dependencies.requestCancel(session.source, session.agentId)
       return { status: 'cancelled' }
     },
-    async attach() { return [] },
+    async attach() { return dependencies.pickAttachments() },
     async setModel(sessionId, modelId) {
       const session = dependencies.resolveSession(sessionId)
       if (!session) return rejected('session_not_found')

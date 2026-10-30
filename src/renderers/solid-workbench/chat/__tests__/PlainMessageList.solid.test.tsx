@@ -12,6 +12,8 @@ function descriptor(message: Message): ChatRowDescriptor {
     renderMessage: toRenderMessage(message),
     showConnector: false,
     isSearchMatch: false,
+    groupStart: true,
+    groupEnd: true,
   }
 }
 
@@ -120,6 +122,20 @@ describe('PlainMessageList', () => {
     expect(result.container.querySelector('[data-message-id="m2"]')).toBe(original)
     expect(result.container.querySelectorAll('[data-message-id]')).toHaveLength(1)
     expect(result.container.textContent).toBe('two')
+  })
+
+  it('把分组标记输出到行容器（data-group-start/end）', () => {
+    const first = { ...descriptor({ id: 'g1', role: 'user', sender: 'user', content: 'one', time: '10:00' }), groupEnd: false }
+    const second = { ...descriptor({ id: 'g2', role: 'user', sender: 'user', content: 'two', time: '10:01' }), groupStart: false }
+    const result = render(() => (
+      <PlainMessageList initialItems={createMessageListItems([first, second])} renderItem={item => item.key} />
+    ))
+    const firstRow = result.container.querySelector('[data-message-id="g1"]')
+    const secondRow = result.container.querySelector('[data-message-id="g2"]')
+    expect(firstRow).toHaveAttribute('data-group-start', 'true')
+    expect(firstRow).not.toHaveAttribute('data-group-end')
+    expect(secondRow).not.toHaveAttribute('data-group-start')
+    expect(secondRow).toHaveAttribute('data-group-end', 'true')
   })
 
   it('用 Solid For 渲染全部 item，并通过 port 替换列表', () => {

@@ -62,3 +62,56 @@ describe('chatRowPipeline 编排：连续 Tool 连接线 + 视觉状态 + 搜索
     expect(noMatch.every(d => d.isSearchMatch === false)).toBe(true)
   })
 })
+
+describe('chatRowPipeline 编排：消息分组（同角色 + 5 分钟窗口）', () => {
+  const time = (iso: string) => `2026-10-30T${iso}.000Z`
+  const at = (id: string, role: Message['role'], iso: string, extra: Partial<Message> = {}): Message =>
+    ({ id, role, sender: role === 'user' ? 'local' : 'peri', content: id, time: time(iso), ...extra })
+  const groupFlags = (messages: Message[]) => {
+    const descs = buildChatRowDescriptors(messages.map(toRenderMessage), buildMessageLookups(messages), undefined)
+    return descs.map(d => [d.groupStart, d.groupEnd])
+  }
+
+  it('同角色且间隔 ≤ 5 分钟：只有首行 groupStart、末行 groupEnd', () => {
+    const messages = [
+      at('u1', 'user', '10:00:00'),
+      at('u2', 'user', '10:04:59'),
+      at('u3', 'user', '10:09:58'),
+    ]
+    expect(groupFlags(messages)).toEqual([[true, false], [false, false], [false, true]])
+  })
+
+  it('间隔超过 5 分钟或角色切换即断开分组', () => {
+    const messages = [
+      at('u1', 'user', '10:00:00'),
+      at('u2', 'user', '10:05:01'),
+      at('a1', 'assistant', '10:05:02'),
+      at('a2', 'assistant', '10:05:03'),
+    ]
+    expect(groupFlags(messages)).toEqual([
+      [true, true],
+      [true, true],
+      [true, false],
+      [false, true],
+    ])
+  })
+
+  it('system/error 行自身不可分组，并中断两侧的同角色连续段', () => {
+    const error = at('e1', 'assistant', '10:00:30', { sender: 'system' })
+    const messages = [at('u1', 'user', '10:00:00'), at('u2', 'user', '10:01:00'), error, at('u3', 'user', '10:02:00')]
+    expect(groupFlags(messages)).toEqual([
+      [true, false],
+      [false, true],
+      [true, true],
+      [true, true],
+    ])
+  })
+
+  it('时间不可解析（非法 ISO）不并入分组', () => {
+    const messages = [
+      at('a1', 'assistant', '10:00:00'),
+      { id: 'a2', role: 'assistant', sender: 'peri', content: 'a2', time: 'not-a-date' } as Message,
+    ]
+    expect(groupFlags(messages)).toEqual([[true, true], [true, true]])
+  })
+})

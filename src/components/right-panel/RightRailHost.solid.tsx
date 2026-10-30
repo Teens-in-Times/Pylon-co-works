@@ -65,11 +65,18 @@ export default function RightRailHost(props: RightRailHostProps) {
     <Show when={entries().length > 0}>
       {/* Keep the rail mounted while collapsed. The application-level host owns
           the rail lifetime; retaining the DOM lets the shell animate its width and
-          preserves an active panel's local state across a collapse/expand cycle. */}
+          preserves an active panel's local state across a collapse/expand cycle.
+          折叠必须 `inert`：0 宽/透明挡不住键盘（实测折叠态仍可 focus 6 个控件），
+          `aria-hidden` 也只影响可访问性树、不退出 tab 序。inert 是**属性**而非
+          反射 property（jsdom 的 property 不反射），故按属性写。 */}
       <div
         class={`right-rail-host${collapsed() ? ' is-collapsed' : ''}${dragWidth() !== null ? ' is-resizing' : ''}`}
         data-collapsed={collapsed() ? 'true' : 'false'}
         aria-hidden={collapsed() ? 'true' : undefined}
+        ref={el => createEffect(() => {
+          if (collapsed()) el.setAttribute('inert', '')
+          else el.removeAttribute('inert')
+        })}
         data-background-sizing={background()?.sizing ?? 'fill'}
         style={{
           '--right-rail-width': `${Math.min(renderedWidth(), maxWidth())}px`,
