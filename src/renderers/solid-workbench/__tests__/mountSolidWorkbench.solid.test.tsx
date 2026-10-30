@@ -88,6 +88,10 @@ it('#566 keeps messages, activities and session cards in one stable reading colu
   const column = host.querySelector<HTMLElement>('.solid-workbench-reading-column')
   expect(column).not.toBeNull()
   expect(column!.style.maxWidth).toBe('960px')
+  // 中控（现代模式）按同一真值收窄：变量与阅读列的内联 max-width 必须同源，
+  // 否则侧栏折叠、主区变宽后输入条会与消息列脱开。
+  const workbench = host.querySelector<HTMLElement>('.solid-agent-workbench')
+  expect(workbench?.style.getPropertyValue('--reading-column-max-width')).toBe(column!.style.maxWidth)
   expect(column!.querySelector('.plain-message-list')).not.toBeNull()
   expect(column!.querySelector('.term-tool')).not.toBeNull()
   expect(column!.querySelector('.plan-goal-content')).not.toBeNull()

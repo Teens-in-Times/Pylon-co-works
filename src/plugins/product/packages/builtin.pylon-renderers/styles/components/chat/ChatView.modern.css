@@ -261,3 +261,19 @@
   color: var(--text);
   border-color: var(--stroke-default);
 }
+
+/* ── 输入区与阅读列同宽 ──
+   中控原先铺满主区。两侧栏折叠后主区可涨到 1500px+，输入条会拉成一整条横带、与消息列
+   脱开；折叠状态因此把「输入区/消息列不同宽」这个既有错位放大成显眼的断层。
+   这里按阅读列宽收窄并居中；窄窗（≤720px 时 `.term` 收内边距）同步镜像，避免输入条比
+   消息列更宽。终端模式不受影响。 */
+.app[data-interface-mode="modern-gui"] .solid-workbench-content-column > .control-center {
+  width: calc(100% - 2 * var(--cc-margin-x, 20px));
+  max-width: min(var(--reading-column-max-width, 960px), calc(100% - 2 * var(--ui-space-6)));
+  margin-inline: auto;
+}
+@media (max-width: 720px) {
+  .app[data-interface-mode="modern-gui"] .solid-workbench-content-column > .control-center {
+    max-width: min(var(--reading-column-max-width, 960px), calc(100% - 2 * var(--ui-space-4)));
+  }
+}

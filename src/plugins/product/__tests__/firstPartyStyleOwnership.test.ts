@@ -11,6 +11,8 @@ const expectedCssPaths = [
   'src/plugins/product/packages/builtin.pylon-renderers/styles/adaptive.css',
   'src/plugins/product/packages/builtin.pylon-renderers/styles/components/ControlCenter.css',
   'src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/ChatView.css',
+  // #699：现代模式行/中控样式层（plugin-scope，随渲染器插件回收）。
+  'src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/ChatView.modern.css',
   'src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/InputBar.css',
   'src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/StatusBar.css',
   'src/plugins/product/packages/builtin.pylon-renderers/styles/components/solid-workbench/WorkbenchChrome.css',
@@ -57,7 +59,7 @@ describe('first-party CSS ownership inventory', () => {
     ])
     expect(listFirstPartyStylesByOwner('builtin.pylon-shell')).toHaveLength(4) // -PermissionDialog/-SessionOwnerRecoveryDialog/-ProfileEditor（已绞杀，P93）
     expect(listFirstPartyStylesByOwner('builtin.pylon-workspace')).toHaveLength(6) // -HistorySheet/-BrowserSheet/-RuntimeSheet（已绞杀，P93 批 2/4）；-PrismSheet.css（演示出树，#484）；+SheetVocabulary.css（共享词汇基座，issue #83）
-    expect(listFirstPartyStylesByOwner('builtin.pylon-renderers')).toHaveLength(6) // -MessageSearchBar（已绞杀，J/绞杀流水线 20260914）；-PetCompanion.css（#483 宠物链删除）；+WorkbenchChrome.css（Solid 壳层过渡态）
+    expect(listFirstPartyStylesByOwner('builtin.pylon-renderers')).toHaveLength(7) // -MessageSearchBar（已绞杀，J/绞杀流水线 20260914）；-PetCompanion.css（#483 宠物链删除）；+WorkbenchChrome.css（Solid 壳层过渡态）；+ChatView.modern.css（#699 现代模式样式层）
     expect(listFirstPartyStylesByOwner('builtin.pylon-gateway')).toHaveLength(1) // P77：gateway 样式随包迁移
   })
 

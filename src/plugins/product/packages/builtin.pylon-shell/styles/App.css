@@ -507,8 +507,18 @@
 .layout.is-resizing,
 .layout.is-resizing .sidebar { transition:none; }
 .main { flex:1; display:flex; flex-direction:column; min-width:0; }
-.right-rail-host { position:relative; display:flex; flex:0 0 var(--right-rail-width,320px); width:var(--right-rail-width,320px); min-width:220px; max-width:560px; min-height:0; overflow:hidden; opacity:1; transition:flex-basis var(--motion-standard) var(--ease-emphasized), width var(--motion-standard) var(--ease-emphasized), min-width var(--motion-standard) var(--ease-emphasized), max-width var(--motion-standard) var(--ease-emphasized), opacity var(--motion-fast) var(--ease-standard); will-change:flex-basis,width; }
+.right-rail-host { position:relative; display:flex; flex:0 0 var(--right-rail-width,320px); width:var(--right-rail-width,320px); min-width:220px; max-width:560px; min-height:0; overflow:hidden; opacity:1; transition:flex-basis var(--motion-standard) var(--ease-emphasized), width var(--motion-standard) var(--ease-emphasized), min-width var(--motion-standard) var(--ease-emphasized), max-width var(--motion-standard) var(--ease-emphasized), margin-inline-start var(--motion-standard) var(--ease-emphasized), margin-inline-end var(--motion-standard) var(--ease-emphasized), opacity var(--motion-fast) var(--ease-standard); will-change:flex-basis,width; }
 .right-rail-host.is-collapsed { flex-basis:0; width:0; min-width:0; max-width:0; opacity:0; pointer-events:none; }
+/* 现代模式：折叠的右栏不再占 flex gap（`--rail-gap` 由 `.layout` 上的现代布局规则
+   声明，与左栏归零共用同一真值）。0 宽轨道若仍留空档，主区右缘就会比左内边距多出
+   一个 gap，两栏都折叠时阅读列与中控也随之偏心。 */
+.app[data-interface-mode="modern-gui"] .layout > .right-rail-host.is-collapsed {
+  margin-inline-start:calc(-1 * var(--rail-gap, 8px));
+}
+.app[data-interface-mode="modern-gui"][data-shell-sidebar-side="right"] .layout > .right-rail-host.is-collapsed {
+  margin-inline-start:0;
+  margin-inline-end:calc(-1 * var(--rail-gap, 8px));
+}
 .right-rail-host.is-collapsed .right-rail-resize-handle { display:none; }
 .right-rail-host .context-panel { width:100%; min-width:0; }
 .right-rail-host.is-resizing { transition:none; }
