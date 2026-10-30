@@ -41,11 +41,12 @@ pub(crate) async fn persist_pet_async(state: &AppState) -> bool {
             return false;
         }
     };
-    let _write_guard = HeldAcrossAwait::new(state.pet_write_lock.lock().await);
+    let _write_guard = HeldAcrossAwait::new(state.pet.write_lock().lock().await);
     // 显式块限定 pet 锁守卫作用域：序列化（内存，微秒级）后立即释放，
     // 绝不把 std MutexGuard 带过 spawn_blocking await（跨 await 不 Send）。
     let json = {
-        let pet = match state.pet.lock() {
+        let pet_arc = state.pet.inner();
+        let pet = match pet_arc.lock() {
             Ok(pet) => pet,
             Err(_) => {
                 tracing::warn!("pet lock poisoned; skip persist");
@@ -172,7 +173,8 @@ pub(crate) async fn get_pet(
     // R6a：pet 锁守卫限定在显式块内——块结束即释放（std MutexGuard 不可跨
     // await 保持 Send；显式块作用域比 drop(pet) 更可靠），下方 await 全部锁外。
     let value = {
-        let mut pet = state.pet.lock().map_err(|e| e.to_string())?;
+        let pet_arc = state.pet.inner();
+        let mut pet = pet_arc.lock().map_err(|e| e.to_string())?;
         // I18 W2（LR2-WI09）：轮询实际突变 → 统一 dirty/flush 契约（CR-001 修复后
         // 语义：已入睡态 check_sleepy 恒返 true 但无状态变更，不计 dirty——否则
         // 入睡期每轮冗余写盘）
@@ -202,7 +204,8 @@ pub(crate) async fn pet_action(
 ) -> Result<serde_json::Value, PylonError> {
     // R6a：pet 锁守卫限定在显式块内（块结束即释放，std MutexGuard 不可跨 await）。
     let result = {
-        let mut pet = state.pet.lock().map_err(|e| e.to_string())?;
+        let pet_arc = state.pet.inner();
+        let mut pet = pet_arc.lock().map_err(|e| e.to_string())?;
         let mut sleepy_result: Option<bool> = None;
         match action.as_str() {
             "poke" => {

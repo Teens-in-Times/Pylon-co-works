@@ -33,8 +33,11 @@ pub(crate) fn replace_session_slot(
 }
 
 /// G2-04：会话建立结果——peri_id + 是否首轮 + session/new 原始响应（new_session 命令回传前端）。
+/// `generation`：映射建立/复用所属的 client 代际——#702 供 prompt 管线在发送前
+/// 复核「peri_id 仍属于当前连接」，换装窗口内失配即以 stale 错误拒绝。
 pub(crate) struct SessionMapping {
     pub(crate) peri_id: String,
+    pub(crate) generation: u64,
     pub(crate) is_first: bool,
     pub(crate) new_response: Option<serde_json::Value>,
 }
@@ -919,12 +922,11 @@ async fn create_session_slot(
         session_cwd,
         wire_mcp_servers,
     } = *assembly;
-    {
-        let sessions = runtime.sessions.lock().map_err(|e| e.to_string())?;
-        if sessions.len() >= crate::agent::runtime::SessionSlotPolicy::default().max_sessions {
-            return Err(PylonError::Protocol("max sessions reached".to_string()));
-        }
-    }
+    // #707-B：槽位上限预检收口 SessionStore::slot_headroom（写入侧 insert 复核兜底）。
+    crate::session::store::slot_headroom(
+        runtime,
+        crate::agent::runtime::SessionSlotPolicy::default().max_sessions,
+    )?;
     let generation = state.current_generation(runtime);
     // B2：session/new 不得绕过 initialize——未完成握手的客户端直接拒绝（稳定
     // 错误码），而不是把一个注定失败的会话建立发给子进程。
@@ -1038,6 +1040,7 @@ async fn create_session_slot(
     }
     Ok(SessionMapping {
         peri_id,
+        generation,
         is_first: true,
         new_response: Some(response),
     })
@@ -1084,21 +1087,14 @@ pub(crate) async fn ensure_session_mapping(
         }
     }
     // G2-08 锁合并：消息到达即活动（B10.3b 会话超时判定）——updated_at 刷新与
-    // 存在性读取合并为 guard 内一次 sessions.lock()（每消息 7 处 sessions 锁降为
-    // 6 处）。行为差异（E10 已拍板）：crashed 早退路径不再刷新 updated_at。
-    let existing = {
-        let mut sessions = runtime.sessions.lock().map_err(|e| e.to_string())?;
-        if let Some(session) = sessions.get_mut(source) {
-            session.attach_profile_id(profile_id, source)?;
-            session.updated_at = Some(Timestamp::now());
-            Some((session.peri_id.clone(), !session.has_first_prompt))
-        } else {
-            None
-        }
-    };
-    if let Some((peri_id, is_first)) = existing {
+    // 存在性读取合并为 guard 内一次 sessions.lock()。行为差异（E10 已拍板）：
+    // crashed 早退路径不再刷新 updated_at。
+    // #707-B：锁段收口 SessionStore::touch_for_prompt（锁序纪律容器方法化）。
+    let existing = crate::session::store::touch_for_prompt(runtime, source, profile_id)?;
+    if let Some((peri_id, mapping_generation, is_first)) = existing {
         return Ok(SessionMapping {
             peri_id,
+            generation: mapping_generation,
             is_first,
             new_response: None,
         });

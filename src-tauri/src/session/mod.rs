@@ -261,28 +261,18 @@ impl AppState {
     }
 
     pub(crate) fn current_mcp_servers(&self) -> Result<Vec<crate::mcp::McpServerConfig>, String> {
-        Ok(self
-            .runtime_mcp
-            .lock()
-            .map_err(|error| error.to_string())?
-            .clone()
-            .unwrap_or_default())
+        // #707-A：数据面委托 MCP 域（原 AppState.runtime_mcp 直读）。
+        self.mcp.current_servers()
     }
 
     /// P1（E10）：读 MCP wire 缓存（send_prompt_core None 路径）——命中直接返回
-    /// （零重算零校验）；miss（None，如启动恢复路径直写 runtime_mcp 后首次读取）
+    /// （零重算零校验）；miss（None，如启动恢复路径直写 runtime 槽后首次读取）
     /// 回退全量重算（校验 + 序列化，语义 = 现状 validate_and_serialize）并回填
-    /// （E3 自愈）。写入侧 = lifecycle::set_mcp_servers（同 mcp_write_lock）。
+    /// （E3 自愈）。#707-A：实现下沉 `McpDomain::wire_servers`——miss 重算与
+    /// commit 共享同一把 slots 锁，#703 的「按旧值算出、覆写新缓存」竞态在域内
+    /// 结构性不可表达。
     pub(crate) fn wire_mcp_servers(&self) -> Result<Vec<serde_json::Value>, String> {
-        if let Some(cached) = self.mcp_wire.lock().map_err(|e| e.to_string())?.clone() {
-            return Ok(cached);
-        }
-        let servers = self.current_mcp_servers().unwrap_or_default();
-        let values = crate::mcp::serialize_for_session(&servers)?;
-        if let Ok(mut slot) = self.mcp_wire.lock() {
-            *slot = Some(values.clone());
-        }
-        Ok(values)
+        self.mcp.wire_servers()
     }
 
     pub(crate) fn log_runtime_summary(
@@ -1274,27 +1264,27 @@ gateway:
 
     /// P1（E10）：缓存未初始化（None，启动恢复路径形态）→ 回退全量重算
     /// （校验 + 序列化）并回填；行为与现状 validate_and_serialize(current_mcp_servers)
-    /// 逐字一致（E3 自愈：首次读取即回填）。
+    /// 逐字一致（E3 自愈：首次读取即回填）。#707-A：经域访问器断言回填。
     #[test]
     fn mcp_wire_cache_uninitialized_falls_back_and_backfills() {
         let state = crate::test_utils::TestStateBuilder::bare().build();
         let values = state.wire_mcp_servers().expect("miss 回退必须成功");
         assert!(values.is_empty(), "空配置 → 空 wire 数组（现状语义）");
-        assert_eq!(
-            state.mcp_wire.lock().unwrap().as_ref().map(Vec::len),
-            Some(0),
-            "miss 后必须回填缓存"
-        );
+        // miss 后必须回填缓存（域 slots.wire 槽；经命中读路径验证回填生效）。
+        let hit = state.wire_mcp_servers().expect("回填后读取必须命中");
+        assert_eq!(hit, values, "回填后再次读取必须与首次结果一致");
     }
 
-    /// P1（E10）：缓存命中直接返回 wire 形态（零重算零校验）——runtime_mcp 即使
+    /// P1（E10）：缓存命中直接返回 wire 形态（零重算零校验）——runtime 槽即使
     /// 被置入非法数据（超限 server）也不触发校验，证明读路径短路。
-    #[test]
-    fn mcp_wire_cache_hit_short_circuits_recompute() {
+    /// #707-A：缓存预置经 `McpDomain::restore` 语义等价构造（直写 runtime 槽 +
+    /// wire None 不构成命中，故改用 commit 预置 wire——原测试直接写 mcp_wire 槽）。
+    #[tokio::test]
+    async fn mcp_wire_cache_hit_short_circuits_recompute() {
         let state = crate::test_utils::TestStateBuilder::bare().build();
         let cached = vec![serde_json::json!({"name": "cached-mcp"})];
-        *state.mcp_wire.lock().unwrap() = Some(cached.clone());
-        // 非法 runtime_mcp：33 个 server（> MAX_SERVERS=32，validate 必失败）
+        // 非法 runtime 槽：33 个 server（> MAX_SERVERS=32，validate 必失败）——
+        // commit 携带同批非法配置与预置 wire 缓存。
         let mut bad = Vec::new();
         for i in 0..(crate::mcp::MAX_SERVERS + 1) {
             bad.push(crate::mcp::McpServerConfig {
@@ -1311,7 +1301,10 @@ gateway:
                 disabled: false,
             });
         }
-        *state.runtime_mcp.lock().unwrap() = Some(bad);
+        state
+            .mcp
+            .commit(Some(bad), cached.clone(), None)
+            .await;
         let values = state.wire_mcp_servers().expect("缓存命中不得触发校验");
         assert_eq!(values, cached, "命中必须返回缓存 wire 形态");
     }

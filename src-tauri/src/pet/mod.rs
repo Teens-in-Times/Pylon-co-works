@@ -6,6 +6,34 @@ pub use pylon_pet_core::{
     AchievementInfo, AiEvent, CosmeticInfo, DayPart, GrowthStage, PetState, ToolKind, ToolOutcome,
 };
 use serde::Serialize;
+use std::sync::Arc;
+
+/// #707-A：宠物域——状态槽与落盘写序锁（R6a）单一所有者，不再平铺 AppState
+/// 的 shared `pet` + app_only `pet_write_lock` 两处。域方法保持既有锁形态：
+/// 状态槽仍是 `Arc<Mutex<PetState>>`（sink/命令/restore 以 Arc 消费），写序锁
+/// 仍是 tokio Mutex（序列化在临界区内执行，后写状态 ≥ 先写状态；fs 写经
+/// spawn_blocking 移出 async 运行时）。
+#[derive(Clone, Default)]
+pub(crate) struct PetDomain {
+    state: Arc<std::sync::Mutex<PetState>>,
+    write_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl PetDomain {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// 宠物状态槽（Arc 克隆；既有 pet 域函数与 PetReactionSink 以 Arc 消费）。
+    pub(crate) fn inner(&self) -> Arc<std::sync::Mutex<PetState>> {
+        self.state.clone()
+    }
+
+    /// R6a：宠物落盘写序锁——persist_pet_async 的临界区守卫。
+    pub(crate) fn write_lock(&self) -> &tokio::sync::Mutex<()> {
+        &self.write_lock
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct PetView<'a> {
@@ -386,6 +414,29 @@ mod tests {
         assert!(
             !restored.unlocked.iter().any(|id| id == "ghost_achievement"),
             "未知成就 id 必须剔除"
+        );
+    }
+}
+
+#[cfg(test)]
+mod pet_domain_tests {
+    use super::*;
+
+    /// #707-A：域槽位单实例（inner 返回同一 Arc）+ 写序锁持有期互斥（R6a）。
+    #[test]
+    fn pet_domain_slot_is_shared_and_write_lock_is_exclusive() {
+        let domain = PetDomain::new();
+        let first = domain.inner();
+        let second = domain.inner();
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "inner 必须返回同一状态槽 Arc"
+        );
+        let guard = domain.write_lock().try_lock();
+        assert!(guard.is_ok(), "空闲写锁必须可获取");
+        assert!(
+            domain.write_lock().try_lock().is_err(),
+            "持有期间写锁必须互斥（persist_pet_async 串行化前提）"
         );
     }
 }

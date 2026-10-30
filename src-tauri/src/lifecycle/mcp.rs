@@ -8,6 +8,108 @@ use crate::AppState;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+// ── #707-A：MCP 域对象 ──
+
+/// #707-A：MCP 域——写序锁、落盘序号、内存配置与 wire 缓存收进单一所有者，
+/// 不再平铺 AppState 顶层四字段。域内不变量：`commit` 与 `wire_servers` 的
+/// miss 回填共享同一把 `slots` 锁——「同锁写两槽」（#683 C8）从人肉约定变为
+/// 结构事实，#703（读回填绕过写序锁、并发 set 后缓存被旧值覆写）在此
+/// 结构性不可表达。
+pub(crate) struct McpDomain {
+    /// C8：写序锁——commit 全程持锁（内存提交 + 落盘序号登记），并发 set 的
+    /// 内存提交与序号顺序一致（磁盘必为最后一次 commit；#683：磁盘 IO 本体
+    /// 在锁外 spawn_blocking）。
+    write_lock: Arc<tokio::sync::Mutex<()>>,
+    /// #683：落盘序号与串行闸。
+    persist_order: Arc<McpPersistOrder>,
+    /// 内存两槽（runtime 配置 + wire 序列化缓存）同锁互斥。
+    slots: std::sync::Mutex<McpSlots>,
+}
+
+#[derive(Default)]
+struct McpSlots {
+    runtime: Option<Vec<crate::mcp::McpServerConfig>>,
+    wire: Option<Vec<serde_json::Value>>,
+}
+
+impl Default for McpDomain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl McpDomain {
+    pub(crate) fn new() -> Self {
+        Self {
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
+            persist_order: Arc::new(McpPersistOrder::default()),
+            slots: std::sync::Mutex::new(McpSlots::default()),
+        }
+    }
+
+    /// 当前内存 MCP 配置（原 `AppState.runtime_mcp` 读面；get_mcp_servers 消费）。
+    pub(crate) fn current_servers(
+        &self,
+    ) -> Result<Vec<crate::mcp::McpServerConfig>, String> {
+        let slots = self.slots.lock().map_err(|e| e.to_string())?;
+        Ok(slots.runtime.clone().unwrap_or_default())
+    }
+
+    /// wire 载荷读路径（P1/E10 + #703 修复）：命中直接返回；miss 在**同一把
+    /// slots 锁内**从 runtime 槽重算并回填——重算与并发 `commit` 互斥，
+    /// 「按旧 runtime 算出、覆写新缓存」的窗口不存在。计算成本有界
+    /// （≤32 server 校验 + 序列化），持锁可接受。
+    pub(crate) fn wire_servers(&self) -> Result<Vec<serde_json::Value>, String> {
+        let mut slots = self.slots.lock().map_err(|e| e.to_string())?;
+        if let Some(cached) = slots.wire.clone() {
+            return Ok(cached);
+        }
+        let values =
+            crate::mcp::serialize_for_session(&slots.runtime.clone().unwrap_or_default())?;
+        slots.wire = Some(values.clone());
+        Ok(values)
+    }
+
+    /// 提交（原 set_mcp_servers 锁内段）：写序锁内两槽同锁提交 + 落盘序号登记。
+    /// `persist_path` 由调用方预先解析（None = 路径不可解析，只提交内存不落盘，
+    /// 与原行为一致）。返回 Some((version, path)) = 需要落盘（调用方
+    /// spawn_blocking 执行，不持本锁等待磁盘）。
+    pub(crate) async fn commit(
+        &self,
+        servers: Option<Vec<crate::mcp::McpServerConfig>>,
+        serialized: Vec<serde_json::Value>,
+        persist_path: Option<std::path::PathBuf>,
+    ) -> Option<(u64, std::path::PathBuf)> {
+        let write_guard = self.write_lock.lock().await;
+        {
+            let mut slots = self
+                .slots
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            slots.runtime = servers;
+            slots.wire = Some(serialized);
+        }
+        persist_path.map(|path| (self.persist_order.begin(&write_guard), path))
+    }
+
+    /// 启动恢复直写 runtime 槽（原 setup_restore_mcp_config 直写 runtime_mcp）。
+    /// wire 槽保持 None——恢复后首次读取在 `wire_servers` 内回填（E3 自愈，
+    /// 语义与原实现一致）。
+    pub(crate) fn restore(&self, servers: Vec<crate::mcp::McpServerConfig>) {
+        let mut slots = self
+            .slots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        slots.runtime = Some(servers);
+        slots.wire = None;
+    }
+
+    /// 落盘序号句柄（spawn_persist_mcp_servers 消费）。
+    pub(crate) fn persist_order(&self) -> Arc<McpPersistOrder> {
+        self.persist_order.clone()
+    }
+}
+
 // ── B4.2 MCP 配置持久化 ──
 
 /// #683：MCP 落盘序号 + 串行闸。
@@ -124,40 +226,31 @@ pub(crate) async fn set_mcp_servers(
     state: tauri::State<'_, AppState>,
     servers: Option<Vec<crate::mcp::McpServerConfig>>,
 ) -> Result<Vec<serde_json::Value>, PylonError> {
-    // O13：单次 clone（validate 消耗 clone，原值 move 进 runtime_mcp；
-    // 落盘快照也在锁外 clone 一次，无二次序列化）。
+    // O13：单次 clone（validate 消耗 clone，原值 move 进域槽位；
+    // 落盘快照在锁外 clone 一次，无二次序列化）。
     let serialized =
         crate::mcp::validate_and_serialize(servers.clone()).map_err(PylonError::Command)?;
     let persist_servers = servers.clone().unwrap_or_default();
-    // C8：写 runtime_mcp + wire 缓存 + 登记落盘序号全程持写序锁——并发
-    // set_mcp_servers 的内存提交与序号顺序一致（磁盘必为最后一次设置）。
+    // C8/#707-A：两槽同锁提交 + 登记落盘序号全程持写序锁（McpDomain::commit）——
+    // 并发 set_mcp_servers 的内存提交与序号顺序一致（磁盘必为最后一次设置）。
     // #683：磁盘 IO 不在锁内——序号登记后立即释放锁，写盘在 spawn_blocking。
-    let persist = {
-        let _mcp_write_guard = state.mcp_write_lock.lock().await;
-        {
-            let mut guard = state
-                .runtime_mcp
-                .lock()
-                .map_err(|error| PylonError::Command(error.to_string()))?;
-            *guard = servers;
-            // P1（E10）：wire 缓存与 runtime_mcp 同锁写入（读路径 miss 时回退重算并回填）。
-            if let Ok(mut cache) = state.mcp_wire.lock() {
-                *cache = Some(serialized.clone());
-            }
-        }
-        match mcp_persist_path(state.inner()) {
-            Ok(path) => Some((state.mcp_persist_order.begin(&_mcp_write_guard), path)),
-            Err(error) => {
-                // 与原实现一致：路径不可解析只 warn，不阻断本次设置。
-                tracing::warn!("resolve MCP persist path failed: {}", error.raw_message());
-                None
-            }
+    // 落盘路径预先解析（失败只 warn 不阻断，与原实现一致）。
+    let persist_path = match mcp_persist_path(state.inner()) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            tracing::warn!("resolve MCP persist path failed: {}", error.raw_message());
+            None
         }
     };
+    let persist = state
+        .inner()
+        .mcp
+        .commit(servers, serialized.clone(), persist_path)
+        .await;
     // B4.2：配置落盘（重启不丢）。写失败只 warn，不阻断本次设置。
     if let Some((version, path)) = persist {
         spawn_persist_mcp_servers(
-            state.mcp_persist_order.clone(),
+            state.inner().mcp.persist_order(),
             version,
             path,
             persist_servers,
@@ -189,5 +282,78 @@ mod tests {
         drop(gate);
         // 重复写同一版本仍被允许（串行调用方幂等重试）。
         assert!(order.begin_write(second).is_some());
+    }
+}
+
+#[cfg(test)]
+mod mcp_domain_tests {
+    use super::*;
+
+    /// #707-A：读路径契约——miss（启动恢复 restore 形态）回填、命中短路、
+    /// commit 后读取一致。
+    #[tokio::test]
+    async fn wire_read_miss_backfills_hit_short_circuits_and_commit_converges() {
+        let domain = McpDomain::new();
+        // miss：restore 直写 runtime 槽（wire None）→ 首读回填。
+        domain.restore(vec![]);
+        let first = domain.wire_servers().expect("miss 回退必须成功");
+        assert!(first.is_empty(), "空配置 → 空 wire 数组");
+        assert_eq!(
+            domain.wire_servers().expect("回填后读取"),
+            first,
+            "回填后读取与首次一致"
+        );
+        // commit：两槽同锁提交 → 读路径返回新值。
+        let serialized = vec![serde_json::json!({"name": "committed-mcp"})];
+        let persist = domain.commit(Some(vec![]), serialized.clone(), None).await;
+        assert!(persist.is_none(), "persist_path=None 不登记落盘");
+        assert_eq!(
+            domain.wire_servers().expect("commit 后读取"),
+            serialized,
+            "读路径必须反映最后一次 commit"
+        );
+        assert!(
+            domain.current_servers().unwrap().is_empty(),
+            "runtime 槽与 wire 槽同锁提交"
+        );
+    }
+
+    /// #703：并发 commit 与 wire 读交错——最终读必须等于最后一次 commit。
+    /// 单一 slots 锁下「按旧值算出、覆写新缓存」的窗口结构性不存在；本测试
+    /// 以压力交错做回归证据（旧实现下该断言可被读回填竞态打破）。
+    #[tokio::test]
+    async fn concurrent_commit_and_wire_read_converge_to_last_commit() {
+        let domain = std::sync::Arc::new(McpDomain::new());
+        let rounds = 64u64;
+        let mut tasks = Vec::new();
+        for writer in 0..4u64 {
+            let domain = domain.clone();
+            tasks.push(tokio::spawn(async move {
+                for round in 0..rounds {
+                    let value = writer * rounds + round;
+                    let serialized = vec![serde_json::json!({"name": format!("m{value}")})];
+                    domain.commit(Some(vec![]), serialized, None).await;
+                }
+            }));
+        }
+        let mut readers = Vec::new();
+        for _ in 0..4 {
+            let domain = domain.clone();
+            readers.push(tokio::spawn(async move {
+                for _ in 0..128 {
+                    let _ = domain.wire_servers().expect("并发读不得失败");
+                }
+            }));
+        }
+        for task in tasks.into_iter().chain(readers) {
+            task.await.expect("task must not panic");
+        }
+        let wire = domain.wire_servers().expect("final read");
+        let last_name = wire[0]["name"].as_str().expect("marker").to_string();
+        assert_eq!(
+            last_name,
+            format!("m{}", 3 * rounds + (rounds - 1)),
+            "最终读必须等于最后一次 commit（无旧值覆写）"
+        );
     }
 }

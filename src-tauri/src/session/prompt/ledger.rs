@@ -8,6 +8,81 @@ pub(super) fn now_ms() -> u64 {
     crate::time::Timestamp::now().as_u64()
 }
 
+// ── #707-C：turn 账本宿主侧单点门 ──
+// 宿主（pylon）对 turn_ledger 的全部写路径与跨域读经本模块单点收口；
+// `AgentRuntime.turn_ledger` 字段可见性收窄 pub(crate)，域外不再有直呼点
+// （grep 证据落开发记录；runtime.rs 的 cfg(test) 直接用例是账本语义自测，
+// 不在门纪律范围内）。
+
+/// #99/#707-C：出站成功即回合在账本登记（Prompting 起点）。重复 begin 只计
+/// 诊断（账本键控语义），与原 wait.rs 内联段逐字等价。
+pub(crate) fn begin_turn(runtime: &Arc<AgentRuntime>, turn_key: &crate::acp::TurnKey) {
+    if let crate::acp::BeginOutcome::AlreadyActive =
+        runtime.turn_ledger.begin(turn_key.clone(), now_ms())
+    {
+        tracing::warn!(
+            turn_id = turn_key.turn_id,
+            "duplicate turn begin in ledger; keeping original registration"
+        );
+    }
+}
+
+/// #707-C：prompt 失败路径的防御性结算（残余在途 turn 收敛；ingest 消费）。
+/// 原因固定 ProtocolError（语义：失败发布即本回合不可能再收到权威终态）。
+pub(crate) fn settle_active_for_session_defensively(
+    runtime: &Arc<AgentRuntime>,
+    source: &str,
+    peri_id: &str,
+    generation: u64,
+    detail: Option<String>,
+) -> crate::acp::SettleOutcome {
+    runtime.turn_ledger.settle_active_for_session(
+        source,
+        peri_id,
+        generation,
+        crate::acp::TurnTerminalCause::ProtocolError,
+        now_ms(),
+        detail,
+    )
+}
+
+/// #99/#707-C：live 活动推进单点（dispatcher 消费）——Streaming 阶段 +
+/// ingress cursor + 文本/工具/思考标志。回合未登记或已终态时为迟到活动，
+/// 仅计诊断，不产生终态（账本内语义）。
+pub(crate) fn note_session_activity(
+    runtime: &AgentRuntime,
+    source: &str,
+    peri_id: &str,
+    generation: u64,
+    ingress_seq: u64,
+    flags: crate::acp::ActivityFlags,
+) {
+    let _ = runtime
+        .turn_ledger
+        .note_session_activity(source, peri_id, generation, ingress_seq, flags);
+}
+
+/// #99（评审 E6）/#707-C：代际退出清账（dispatcher 主循环统一收口）——旧代际
+/// turn 条目整体收敛，此后旧代际迟到结算归 UnknownTurn。返回清理条数（诊断）。
+/// （TurnLedger::drop_generation 返回 usize，门保持原型。）
+pub(crate) fn drop_generation(runtime: &AgentRuntime, generation: u64) -> usize {
+    runtime.turn_ledger.drop_generation(generation)
+}
+
+/// #420/ADR-0034/#707-C：在途事实读（expiry 回收判定消费）——账本 active 表
+/// 单源。账本是叶子锁（内部只做 HashMap 读写、不回调宿主、不取其他锁），
+/// 可在 sessions 锁内调用（无锁序风险，见 expiry 快照闭包注释）。
+pub(crate) fn turn_in_flight(
+    runtime: &AgentRuntime,
+    source: &str,
+    peri_id: &str,
+    generation: u64,
+) -> bool {
+    runtime
+        .turn_ledger
+        .turn_in_flight(source, peri_id, generation)
+}
+
 /// #99：把 ledger settle 结果落到诊断日志——`Published` 静默（正常收敛），
 /// `Late`/`UnknownTurn` 告警（竞态被 CAS 拦截 / 未登记 turn）。
 /// #420/ADR-0034：settle 即「本回合在途」事实的唯一收敛点（账本 active→terminal

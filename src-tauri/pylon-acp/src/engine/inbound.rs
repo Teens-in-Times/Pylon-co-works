@@ -295,9 +295,10 @@ impl InboundRelay {
 /// 保序机制（评审 E1）：锁内 **peek 队首并 clone 试发**——帧在成功发送前保持
 /// 队首占位，生产者（relay）因此始终看到非空滞留、把新帧排到队尾；
 /// 「取出-失败-放回」的重试窗口不复存在。
-/// 退出条件（评审 E5/P2-3）：下游通道关闭（滞留帧计入 `closed_dropped`）、
-/// shutdown 触发（订阅 watch：空 spill 时现值检查 + changed；重试等待中亦
-/// 响应现值——连接收敛后不再向其投递滞留帧）、或过载终态后 spill 排空。
+/// 退出条件（评审 E5/P2-3）：下游通道关闭、shutdown 触发（订阅 watch：空 spill
+/// 时现值检查 + changed；重试等待中亦响应现值——连接收敛后不再向其投递滞留帧）、
+/// 或过载终态后 spill 排空。#704：下游关闭与 shutdown 两条退出路径上的 spill
+/// 滞留帧都显式清点计入 `closed_dropped`（「任何 drop 必须可观测」）。
 pub fn spawn_inbound_pump(relay: InboundRelay) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut shutdown_rx = relay.shutdown.subscribe();
@@ -366,7 +367,12 @@ pub fn spawn_inbound_pump(relay: InboundRelay) -> tokio::task::JoinHandle<()> {
                     // inbox 仍满：帧保持在队首占位，稍候重试（无取放窗口）。
                     // 重试等待同样响应 shutdown——过载终态置位 shutdown 后不再
                     // 把滞留帧继续投进正在收敛的连接（评审 P2-3）。
+                    // #704：shutdown 退出与下游关闭同账——此刻 spill 仍滞留的帧
+                    // 永远不会投出，必须显式清点计入 closed_dropped（「任何 drop
+                    // 必须可观测」不变量；审查定位修正：None 分支退出时 spill 必空，
+                    // 真实缺口在本分支 break）。
                     if *shutdown_rx.borrow_and_update() {
+                        abandon_spill_leftovers(&relay, "shutdown");
                         break;
                     }
                     tokio::time::sleep(retry).await;
@@ -374,29 +380,36 @@ pub fn spawn_inbound_pump(relay: InboundRelay) -> tokio::task::JoinHandle<()> {
                 Some((_, Err(tokio::sync::mpsc::error::TrySendError::Closed(_)))) => {
                     // 下游关闭：spill 滞留帧无法投递——显式计数后退出（模块
                     // 不变量：任何 drop 必须可观测，评审 P2-3）。
-                    let mut spill = relay
-                        .spill
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                    let leftover = (spill.control.len() + spill.updates.len()) as u64;
-                    spill.control.clear();
-                    spill.updates.clear();
-                    drop(spill);
-                    if leftover > 0 {
-                        relay
-                            .telemetry
-                            .closed_dropped
-                            .fetch_add(leftover, Ordering::AcqRel);
-                        tracing::warn!(
-                            leftover,
-                            "acp inbound pump: downstream closed with frames still in spill"
-                        );
-                    }
+                    abandon_spill_leftovers(&relay, "downstream closed");
                     break;
                 }
             }
         }
     })
+}
+
+/// #704：清空 spill 并把滞留帧显式计入 `closed_dropped`（泵退出路径共用的
+/// 「任何 drop 必须可观测」收口；reason 只进日志，便于区分退出通道）。
+fn abandon_spill_leftovers(relay: &InboundRelay, reason: &str) {
+    let mut spill = relay
+        .spill
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let leftover = (spill.control.len() + spill.updates.len()) as u64;
+    spill.control.clear();
+    spill.updates.clear();
+    drop(spill);
+    if leftover > 0 {
+        relay
+            .telemetry
+            .closed_dropped
+            .fetch_add(leftover, Ordering::AcqRel);
+        tracing::warn!(
+            leftover,
+            reason,
+            "acp inbound pump: abandoning frames still in spill"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -720,4 +733,57 @@ mod tests {
             .expect("pump must exit after shutdown")
             .expect("pump task must not panic");
     }
+}
+
+/// #704：shutdown 退出时 spill 滞留帧显式清点（closed_dropped）——「任何 drop
+/// 必须可观测」在 shutdown 路径同样成立（与下游关闭分支同账）。
+#[tokio::test]
+async fn shutdown_abandons_spill_leftovers_with_explicit_accounting() {
+    let (updates_tx, updates_rx) = mpsc::channel(1);
+    let (control_tx, control_rx) = mpsc::channel(8);
+    let (shutdown, _shutdown_rx) = watch::channel(false);
+    let shutdown_tx = shutdown.clone();
+    let (crashed_watch, _crashed_rx) = watch::channel(false);
+    let relay = InboundRelay {
+        updates_tx,
+        control_tx,
+        spill: Arc::new(Mutex::new(SpillState {
+            control: std::collections::VecDeque::new(),
+            updates: std::collections::VecDeque::new(),
+            capacity: 64,
+        })),
+        wake: Arc::new(tokio::sync::Notify::new()),
+        telemetry: Arc::new(InboundTelemetry::new()),
+        shutdown,
+        crashed: Arc::new(AtomicBool::new(false)),
+        crashed_watch,
+    };
+    let update = |index: u64| {
+        ClassifiedMessage::live(RawMessage {
+            id: None,
+            kind: crate::AcpKind::SessionUpdate,
+            method: Some(crate::NOTIF_SESSION_UPDATE.to_string()),
+            result: None,
+            params: Some(serde_json::json!({"sessionId": "s-1", "update": {"index": index}})),
+            error: None,
+        })
+    };
+    // inbox(1) 占满且不消费 → 2 帧滞留 spill，泵卡在 Full 分支重试等待。
+    assert_eq!(relay.relay(update(0)), PublishOutcome::Published);
+    assert_eq!(relay.relay(update(1)), PublishOutcome::Spilled);
+    assert_eq!(relay.relay(update(2)), PublishOutcome::Spilled);
+    let pump = spawn_inbound_pump(relay.clone());
+    let _ = shutdown_tx.send(true);
+    tokio::time::timeout(std::time::Duration::from_secs(2), pump)
+        .await
+        .expect("pump must exit on shutdown")
+        .expect("pump task must not panic");
+    let telemetry = relay.telemetry.snapshot();
+    assert_eq!(
+        telemetry.closed_dropped, 2,
+        "shutdown 退出的 spill 残留必须显式计数（#704）"
+    );
+    assert_eq!(telemetry.dropped_total, 0, "非溢出路径不得污染 gap 计数");
+    drop(updates_rx);
+    drop(control_rx);
 }

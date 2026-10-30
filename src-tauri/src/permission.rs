@@ -7,6 +7,7 @@
 use pylon_foundations::await_guard::HeldAcrossAwait;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use crate::acp::RequestId;
 use crate::dispatcher::resolve_agent_provider;
@@ -14,6 +15,43 @@ use crate::error::PylonError;
 use crate::runtime::AgentRuntime;
 use crate::time::Timestamp;
 use crate::AppState;
+
+/// #707-A：权限审批模式域——mode + 落盘健康位 + 写序锁单一所有者（原 AppState
+/// 平铺的 approval_mode / approval_mode_persisted / approval_mode_write_lock 三处
+/// 收敛）。槽访问器保持原锁形态：mode/persisted 以 Arc 供 Handles 与 dispatcher
+/// 泵克隆共享；写序锁 tokio Mutex（#463 C-1：串行「内存写→落盘」全窗口，
+/// 并发 set 磁盘必为最后一次 set）。
+#[derive(Clone)]
+pub(crate) struct ApprovalModeDomain {
+    mode: Arc<std::sync::Mutex<String>>,
+    persisted: Arc<std::sync::atomic::AtomicBool>,
+    write_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl ApprovalModeDomain {
+    pub(crate) fn new() -> Self {
+        Self {
+            mode: Arc::new(std::sync::Mutex::new("default".to_string())),
+            persisted: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
+        }
+    }
+
+    /// 内存模式槽（Arc 克隆；dispatcher 泵 / permission_route 以 Arc 消费）。
+    pub(crate) fn mode(&self) -> Arc<std::sync::Mutex<String>> {
+        self.mode.clone()
+    }
+
+    /// #463 审查项 3：落盘健康位（内存当前值是否已被 SQLite 持有）。
+    pub(crate) fn persisted(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.persisted.clone()
+    }
+
+    /// #463 C-1：写序锁（set_approval_mode 的「内存写→落盘」临界区）。
+    pub(crate) fn write_lock(&self) -> &tokio::sync::Mutex<()> {
+        &self.write_lock
+    }
+}
 
 // #416 W2 wave2 步骤 5（§4.4.4 第一步）：request_permission 的 wire 纯函数
 // （parse/build 正身与 PendingPermission/PermissionOption 类型）已下沉引擎
@@ -440,13 +478,14 @@ pub(crate) async fn set_approval_mode(
             "unknown approval mode: {mode}"
         )));
     }
-    let _write_guard = HeldAcrossAwait::new(state.approval_mode_write_lock.lock().await);
-    *state.approval_mode.lock().map_err(|e| e.to_string())? = mode.clone();
+    let _write_guard = HeldAcrossAwait::new(state.approval.write_lock().lock().await);
+    *state.approval.mode().lock().map_err(|e| e.to_string())? = mode.clone();
     let service = state
         .user_data_service
         .lock()
         .ok()
         .and_then(|slot| slot.clone());
+    let persisted = state.approval.persisted();
     match service {
         Some(service) => {
             let payload = serde_json::json!({ "version": 1, "mode": mode });
@@ -458,24 +497,20 @@ pub(crate) async fn set_approval_mode(
                 )
                 .await
             {
-                Ok(_) => state.approval_mode_persisted.store(true, Ordering::Release),
+                Ok(_) => persisted.store(true, Ordering::Release),
                 Err(error) => {
-                    state
-                        .approval_mode_persisted
-                        .store(false, Ordering::Release);
+                    persisted.store(false, Ordering::Release);
                     tracing::warn!("approval mode 落盘失败（内存已生效，重启回退）：{error}");
                 }
             }
         }
         None => {
-            state
-                .approval_mode_persisted
-                .store(false, Ordering::Release);
+            persisted.store(false, Ordering::Release);
             tracing::warn!("approval mode 落盘跳过：user data service 未就绪（内存已生效）");
         }
     }
     Ok(ApprovalModeSnapshot {
-        persisted: state.approval_mode_persisted.load(Ordering::Acquire),
+        persisted: persisted.load(Ordering::Acquire),
         mode,
     })
 }
@@ -499,12 +534,13 @@ pub(crate) async fn get_approval_mode(
     state: tauri::State<'_, AppState>,
 ) -> Result<ApprovalModeSnapshot, PylonError> {
     let mode = state
-        .approval_mode
+        .approval
+        .mode()
         .lock()
         .map(|mode| mode.clone())
         .map_err(|e| PylonError::Protocol(format!("approval mode lock poisoned: {e}")))?;
     Ok(ApprovalModeSnapshot {
-        persisted: state.approval_mode_persisted.load(Ordering::Acquire),
+        persisted: state.approval.persisted().load(Ordering::Acquire),
         mode,
     })
 }
@@ -524,10 +560,9 @@ pub(crate) fn restore_persisted_approval_mode(state: &AppState) {
         .lock()
         .ok()
         .and_then(|slot| slot.clone());
+    let persisted = state.approval.persisted();
     let Some(service) = service else {
-        state
-            .approval_mode_persisted
-            .store(false, Ordering::Release);
+        persisted.store(false, Ordering::Release);
         tracing::warn!("approval-mode 恢复跳过：user data service 未就绪");
         return;
     };
@@ -540,28 +575,24 @@ pub(crate) fn restore_persisted_approval_mode(state: &AppState) {
                 .filter(|mode| matches!(*mode, "bypass" | "auto" | "edit" | "default"));
             match mode {
                 Some(mode) => {
-                    if let Ok(mut slot) = state.approval_mode.lock() {
+                    if let Ok(mut slot) = state.approval.mode().lock() {
                         *slot = mode.to_string();
-                        state.approval_mode_persisted.store(true, Ordering::Release);
+                        persisted.store(true, Ordering::Release);
                         tracing::info!("approval mode 已从 user_data 恢复：{mode}");
                     }
                 }
                 None => {
-                    state
-                        .approval_mode_persisted
-                        .store(false, Ordering::Release);
+                    persisted.store(false, Ordering::Release);
                     tracing::warn!("approval-mode envelope 缺少合法 mode，保持默认");
                 }
             }
         }
         Ok(None) => {
             // 无持久化值：保持 default，前端首次种子兜底——默认值与磁盘无偏离，健康。
-            state.approval_mode_persisted.store(true, Ordering::Release);
+            persisted.store(true, Ordering::Release);
         }
         Err(error) => {
-            state
-                .approval_mode_persisted
-                .store(false, Ordering::Release);
+            persisted.store(false, Ordering::Release);
             tracing::warn!("approval-mode 恢复失败（保持默认）：{error}");
         }
     }
@@ -1788,7 +1819,7 @@ mod tests {
             });
         // 内存态生效
         assert_eq!(
-            *app.state::<crate::AppState>().approval_mode.lock().unwrap(),
+            *app.state::<crate::AppState>().approval.mode().lock().unwrap(),
             "auto"
         );
         // 落盘生效（load_sync 直读——与启动回填同路径）
@@ -1831,7 +1862,7 @@ mod tests {
             assert!(!view.persisted, "get 健康位与 set 返回一致");
         });
         assert_eq!(
-            *app.state::<crate::AppState>().approval_mode.lock().unwrap(),
+            *app.state::<crate::AppState>().approval.mode().lock().unwrap(),
             "edit"
         );
     }
@@ -1861,9 +1892,9 @@ mod tests {
             .with_user_data_service(shared)
             .build();
         restore_persisted_approval_mode(&state);
-        assert_eq!(*state.approval_mode.lock().unwrap(), "bypass");
+        assert_eq!(*state.approval.mode().lock().unwrap(), "bypass");
         assert!(
-            state.approval_mode_persisted.load(Ordering::Acquire),
+            state.approval.persisted().load(Ordering::Acquire),
             "回填成功必须健康位 true"
         );
 
@@ -1874,8 +1905,8 @@ mod tests {
             ))
             .build();
         restore_persisted_approval_mode(&fresh);
-        assert_eq!(*fresh.approval_mode.lock().unwrap(), "default");
-        assert!(fresh.approval_mode_persisted.load(Ordering::Acquire));
+        assert_eq!(*fresh.approval.mode().lock().unwrap(), "default");
+        assert!(fresh.approval.persisted().load(Ordering::Acquire));
 
         // 损坏 payload（非法/缺失 mode）分支在此不可测：validate_approval_mode 前置
         // 拒绝（approval_mode_rejects_unknown_mode_and_version 钉住），in_memory 基建
@@ -1891,9 +1922,9 @@ mod tests {
         use std::sync::atomic::Ordering;
         let state = crate::test_utils::TestStateBuilder::bare().build();
         restore_persisted_approval_mode(&state);
-        assert_eq!(*state.approval_mode.lock().unwrap(), "default");
+        assert_eq!(*state.approval.mode().lock().unwrap(), "default");
         assert!(
-            !state.approval_mode_persisted.load(Ordering::Acquire),
+            !state.approval.persisted().load(Ordering::Acquire),
             "service 未就绪必须暴露 degraded"
         );
     }
@@ -1943,7 +1974,7 @@ mod tests {
                 );
                 let memory = app
                     .state::<crate::AppState>()
-                    .approval_mode
+                    .approval.mode()
                     .lock()
                     .unwrap()
                     .clone();
@@ -1961,5 +1992,18 @@ mod tests {
                 );
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod approval_domain_tests {
+    use super::*;
+
+    /// #707-A：域默认值与生产装配一致（mode="default"、persisted=true）。
+    #[test]
+    fn approval_mode_domain_defaults_match_production() {
+        let domain = ApprovalModeDomain::new();
+        assert_eq!(&*domain.mode().lock().unwrap(), "default");
+        assert!(domain.persisted().load(Ordering::Acquire));
     }
 }
