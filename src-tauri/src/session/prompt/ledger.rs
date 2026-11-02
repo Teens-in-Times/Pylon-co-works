@@ -57,9 +57,10 @@ pub(crate) fn note_session_activity(
     ingress_seq: u64,
     flags: crate::acp::ActivityFlags,
 ) {
-    let _ = runtime
-        .turn_ledger
-        .note_session_activity(source, peri_id, generation, ingress_seq, flags);
+    let _ =
+        runtime
+            .turn_ledger
+            .note_session_activity(source, peri_id, generation, ingress_seq, flags);
 }
 
 /// #99（评审 E6）/#707-C：代际退出清账（dispatcher 主循环统一收口）——旧代际
