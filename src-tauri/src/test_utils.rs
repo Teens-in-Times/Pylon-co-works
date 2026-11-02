@@ -255,7 +255,7 @@ impl TestStateBuilder {
         if let Some(consumers) = self.capability_consumers {
             state.capability_consumers = Arc::new(consumers);
         }
-        *state.approval_mode.lock().expect("approval lock") = self.approval_mode;
+        *state.approval.mode().lock().expect("approval lock") = self.approval_mode;
         if let Some(service) = self.user_data_service {
             *state
                 .user_data_service
@@ -412,8 +412,8 @@ mod tests {
         assert_eq!(&*state.active_agent.lock().unwrap(), "ghost-agent");
         assert!(state.agents.lock().unwrap().is_empty());
         assert!(state.runtimes.all().is_empty());
-        assert_eq!(&*state.approval_mode.lock().unwrap(), "default");
-        assert!(state.runtime_mcp.lock().unwrap().is_none());
+        assert_eq!(&*state.approval.mode().lock().unwrap(), "default");
+        assert!(state.mcp.current_servers().unwrap().is_empty());
         assert_eq!(
             state.prism.status().await["status"],
             "configuration_error",
@@ -434,7 +434,7 @@ mod tests {
             .with_approval_mode("auto")
             .build();
         assert_eq!(&*state.active_agent.lock().unwrap(), "peri");
-        assert_eq!(&*state.approval_mode.lock().unwrap(), "auto");
+        assert_eq!(&*state.approval.mode().lock().unwrap(), "auto");
         assert!(Arc::ptr_eq(&state.gateway, &gateway));
         assert!(state.agents.lock().unwrap().contains_key("peri"));
         assert!(Arc::ptr_eq(&state.runtimes.get("peri").unwrap(), &runtime));
@@ -489,8 +489,8 @@ mod tests {
     async fn build_app_state_single_construction_point_defaults() {
         let state = TestStateBuilder::bare().build();
         assert_eq!(&*state.active_agent.lock().unwrap(), "ghost-agent");
-        assert_eq!(&*state.approval_mode.lock().unwrap(), "default");
-        assert!(state.runtime_mcp.lock().unwrap().is_none());
+        assert_eq!(&*state.approval.mode().lock().unwrap(), "default");
+        assert!(state.mcp.current_servers().unwrap().is_empty());
         assert!(state.event_service.lock().unwrap().is_none());
         assert!(state.data_dirs.get().is_none());
         assert_eq!(

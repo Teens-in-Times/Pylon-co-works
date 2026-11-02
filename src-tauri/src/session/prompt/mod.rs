@@ -38,6 +38,10 @@ use settle::*;
 pub(crate) use wait::*;
 // `cancel_requested_probe` 的 crate 内使用点在 wait.rs（经本命名空间解析）。
 pub(crate) use ledger::cancel_requested_probe;
+// #707-C：turn 账本宿主侧单点门——跨域消费面（dispatcher/expiry 经 `session::*`
+// 消费）；begin_turn/settle_active_for_session_defensively 仅 prompt 域内使用
+// （走上方私有 glob），不外扩 re-export。
+pub(crate) use ledger::{drop_generation, note_session_activity, turn_in_flight};
 // cleanup/prompt_error 的 crate 内消费点仅在 cfg(test)（session/mod.rs 测试），
 // 非 test 构建下本 re-export 无 traced 使用点，属预期（同 event_repo::EventRepo 先例）。
 #[allow(unused_imports)]

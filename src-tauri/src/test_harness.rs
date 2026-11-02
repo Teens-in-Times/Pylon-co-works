@@ -315,7 +315,7 @@ impl TestHarness {
             }
         }
         // approval_mode 覆盖在 build 之后（build_app_state 只承载生产默认值）。
-        *state.approval_mode.lock().expect("approval mode lock") = config.approval_mode;
+        *state.approval.mode().lock().expect("approval mode lock") = config.approval_mode;
         {
             let event_service =
                 crate::session::EventService::in_memory().expect("in-memory event service");

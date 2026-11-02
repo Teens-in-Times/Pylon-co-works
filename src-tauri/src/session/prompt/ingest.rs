@@ -199,12 +199,12 @@ pub(super) async fn publish_prompt_failure<R: tauri::Runtime>(
                 generation,
                 turn_id,
             });
-        let defensive_outcome = runtime.turn_ledger.settle_active_for_session(
+        // #707-C：账本写路径单点（session::prompt::ledger）。
+        let defensive_outcome = super::ledger::settle_active_for_session_defensively(
+            runtime,
             &ctx.source,
             &peri_id,
             generation,
-            crate::acp::TurnTerminalCause::ProtocolError,
-            super::ledger::now_ms(),
             Some(error.to_string()),
         );
         if let crate::acp::SettleOutcome::Published = defensive_outcome {

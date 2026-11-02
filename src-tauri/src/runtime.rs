@@ -158,7 +158,9 @@ pub struct AgentRuntime {
     pub host_tools_policy: Arc<Mutex<crate::acp::host_tools::HostToolsPolicy>>,
     /// #99：prompt/turn 终态账本——本 runtime 的 live turn 权威状态
     /// （CAS 单终态、generation 硬隔离、冷挂载快照数据源）。
-    pub turn_ledger: Arc<crate::acp::TurnLedger>,
+    /// #707-C：写路径宿主侧单点门 `session::prompt::ledger`；字段收窄 pub(crate)，
+    /// 域外（dispatcher/expiry/prompt）不再直呼账本。
+    pub(crate) turn_ledger: Arc<crate::acp::TurnLedger>,
     /// #250：#53 选择器探测会话登记簿——dispatcher 对其无映射通知静默降级（debug）。
     pub probe_sessions: Arc<crate::runtime::ProbeSessionRegistry>,
     /// ADR-0017/#217：「在途回合标记为真而账本已无在途 turn」的失配计数。

@@ -410,6 +410,7 @@ pub(super) async fn revive_session_slot(
     .await;
     Ok(Some(SessionMapping {
         peri_id: revived_peri_id,
+        generation,
         is_first: false,
         new_response: None,
     }))
