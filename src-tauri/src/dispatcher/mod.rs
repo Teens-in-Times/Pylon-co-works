@@ -269,7 +269,7 @@ async fn handle_session_update<R: tauri::Runtime>(
             // #99：live 活动 → turn 账本推进（Streaming 阶段 + ingress cursor +
             // 文本标志）；回合未登记或已终态时为迟到活动，仅计诊断，不产生终态。
             crate::session::note_session_activity(
-                    runtime,
+                runtime,
                 &source,
                 &peri_id,
                 generation,
