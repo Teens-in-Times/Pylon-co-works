@@ -1301,10 +1301,7 @@ gateway:
                 disabled: false,
             });
         }
-        state
-            .mcp
-            .commit(Some(bad), cached.clone(), None)
-            .await;
+        state.mcp.commit(Some(bad), cached.clone(), None).await;
         let values = state.wire_mcp_servers().expect("缓存命中不得触发校验");
         assert_eq!(values, cached, "命中必须返回缓存 wire 形态");
     }
