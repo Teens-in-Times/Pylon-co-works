@@ -574,7 +574,9 @@ mod tests {
     fn touch_for_prompt_reads_mapping_and_refreshes() {
         let rt = runtime();
         assert!(
-            touch_for_prompt(rt.as_ref(), "src", None).unwrap().is_none(),
+            touch_for_prompt(rt.as_ref(), "src", None)
+                .unwrap()
+                .is_none(),
             "无映射必须返回 None"
         );
         insert(rt.as_ref(), "src", session("peri-7", 3), true, 100).unwrap();
@@ -591,7 +593,10 @@ mod tests {
     #[test]
     fn begin_turn_state_advances_and_fails_closed() {
         let rt = runtime();
-        assert!(begin_turn_state(rt.as_ref(), "src").is_err(), "映射缺失必须 Err");
+        assert!(
+            begin_turn_state(rt.as_ref(), "src").is_err(),
+            "映射缺失必须 Err"
+        );
         insert(rt.as_ref(), "src", session("peri-7", 3), true, 100).unwrap();
         {
             let mut sessions = rt.sessions.lock().unwrap();
@@ -608,7 +613,10 @@ mod tests {
         assert_eq!(s.last_response_round, 5, "收集回合必须标记为最新");
         assert!(s.last_response_text.is_empty(), "上一回合文本必须清空");
         assert!(s.last_activity.is_none(), "activity 必须清空（R-t5）");
-        assert!(s.cancel_requested.is_none(), "cancel 判死输入必须清除（#352）");
+        assert!(
+            s.cancel_requested.is_none(),
+            "cancel 判死输入必须清除（#352）"
+        );
     }
 
     /// inject_round（无映射 = 0）与 slot_headroom（满额 Err 文案逐字）契约。
