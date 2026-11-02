@@ -48,9 +48,7 @@ impl McpDomain {
     }
 
     /// 当前内存 MCP 配置（原 `AppState.runtime_mcp` 读面；get_mcp_servers 消费）。
-    pub(crate) fn current_servers(
-        &self,
-    ) -> Result<Vec<crate::mcp::McpServerConfig>, String> {
+    pub(crate) fn current_servers(&self) -> Result<Vec<crate::mcp::McpServerConfig>, String> {
         let slots = self.slots.lock().map_err(|e| e.to_string())?;
         Ok(slots.runtime.clone().unwrap_or_default())
     }
@@ -64,8 +62,7 @@ impl McpDomain {
         if let Some(cached) = slots.wire.clone() {
             return Ok(cached);
         }
-        let values =
-            crate::mcp::serialize_for_session(&slots.runtime.clone().unwrap_or_default())?;
+        let values = crate::mcp::serialize_for_session(&slots.runtime.clone().unwrap_or_default())?;
         slots.wire = Some(values.clone());
         Ok(values)
     }
