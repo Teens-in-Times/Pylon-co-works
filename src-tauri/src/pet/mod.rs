@@ -428,10 +428,7 @@ mod pet_domain_tests {
         let domain = PetDomain::new();
         let first = domain.inner();
         let second = domain.inner();
-        assert!(
-            Arc::ptr_eq(&first, &second),
-            "inner 必须返回同一状态槽 Arc"
-        );
+        assert!(Arc::ptr_eq(&first, &second), "inner 必须返回同一状态槽 Arc");
         let guard = domain.write_lock().try_lock();
         assert!(guard.is_ok(), "空闲写锁必须可获取");
         assert!(
