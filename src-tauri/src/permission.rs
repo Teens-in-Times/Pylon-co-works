@@ -1819,7 +1819,11 @@ mod tests {
             });
         // 内存态生效
         assert_eq!(
-            *app.state::<crate::AppState>().approval.mode().lock().unwrap(),
+            *app.state::<crate::AppState>()
+                .approval
+                .mode()
+                .lock()
+                .unwrap(),
             "auto"
         );
         // 落盘生效（load_sync 直读——与启动回填同路径）
@@ -1862,7 +1866,11 @@ mod tests {
             assert!(!view.persisted, "get 健康位与 set 返回一致");
         });
         assert_eq!(
-            *app.state::<crate::AppState>().approval.mode().lock().unwrap(),
+            *app.state::<crate::AppState>()
+                .approval
+                .mode()
+                .lock()
+                .unwrap(),
             "edit"
         );
     }
@@ -1974,7 +1982,8 @@ mod tests {
                 );
                 let memory = app
                     .state::<crate::AppState>()
-                    .approval.mode()
+                    .approval
+                    .mode()
                     .lock()
                     .unwrap()
                     .clone();
