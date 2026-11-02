@@ -972,7 +972,10 @@ fn turn_settled_broadcast_publishes_once_with_full_record() {
 /// 命令同一纪律（#549/ADR-0037 残余缺口收口）。
 #[test]
 fn cancel_targets_snapshot_generation_gates_stale_connections() {
-    assert!(super::wait::cancel_targets_snapshot_generation(7, 7), "同代放行");
+    assert!(
+        super::wait::cancel_targets_snapshot_generation(7, 7),
+        "同代放行"
+    );
     assert!(
         !super::wait::cancel_targets_snapshot_generation(8, 7),
         "换装后代际失配必须放弃（旧 peri_id 不得写入新连接）"
@@ -993,10 +996,7 @@ fn turn_ledger_gate_begin_in_flight_and_drop_generation() {
     super::ledger::begin_turn(&runtime, &key);
     super::ledger::begin_turn(&runtime, &key); // 重复 begin：AlreadyActive 诊断路径
     assert!(crate::session::turn_in_flight(
-        &runtime,
-        "local:c",
-        "peri-c",
-        3
+        &runtime, "local:c", "peri-c", 3
     ));
     assert_eq!(
         crate::session::drop_generation(&runtime, 3),
