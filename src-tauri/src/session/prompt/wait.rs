@@ -638,9 +638,8 @@ async fn send_prompt_core_impl<R: tauri::Runtime>(
     // #707-B：读面收口 SessionStore::last_activity（中毒退化语义不变 + warn 显形）。
     let source_for_liveness = source.to_string();
     let liveness_runtime = runtime.clone();
-    let liveness_activity = move || {
-        crate::session::store::last_activity(&liveness_runtime, &source_for_liveness)
-    };
+    let liveness_activity =
+        move || crate::session::store::last_activity(&liveness_runtime, &source_for_liveness);
     let result = acp::wait_prompt_with_recovery(
         &mut rx,
         Duration::from_secs(cancel_settle_timeout_secs),
