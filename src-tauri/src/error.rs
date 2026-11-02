@@ -370,7 +370,9 @@ mod failure_publish_tests {
         let value = serde_json::to_value(&error).expect("serialize");
         assert_eq!(value["code"], "event_db_unavailable");
         assert!(
-            value["message"].as_str().is_some_and(|m| m.contains("db down")),
+            value["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("db down")),
             "message = 持久层错误 Display：{value}"
         );
         assert_eq!(value["originalCode"], "agent_crashed");
