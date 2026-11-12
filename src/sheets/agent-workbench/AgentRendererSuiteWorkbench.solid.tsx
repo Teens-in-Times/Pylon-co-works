@@ -1,6 +1,7 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from 'solid-js'
 import { appClients } from '../../app/appClients.ts'
+import { IS_TAURI, isBrowserMockRuntime } from '../../infrastructure/tauri/env.ts'
 import type { Session } from '../../domains/identity/identityStore.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../domains/runtime/runtimeStore.ts'
@@ -119,6 +120,16 @@ export default function AgentRendererSuiteWorkbench(props: AgentRendererSuiteWor
     { subscribe: listener => useRuntimeStore.subscribe(listener) },
     () => useRuntimeStore.getVersion(),
   )
+  // Local canonical history is bound independently below, including hidden
+  // Sheets. Desktop ACP work needs an active, explicitly connected owner;
+  // an absent status during bootstrap is not permission to start a hidden Agent.
+  const remoteSessionReady = createMemo(() => {
+    if (!isActiveSheet()) return false
+    if (!IS_TAURI || isBrowserMockRuntime()) return true
+    void runtimeStoreVersion()
+    const owner = sheetAgentId()
+    return activeAgentId() === owner && useRuntimeStore.getState().agentStatuses[owner]?.status === 'connected'
+  })
   const agentAdvertisedModels = createMemo(() => {
     void runtimeStoreVersion()
     return agentAdvertisedModelEntries(sheetAgentId())
@@ -131,7 +142,7 @@ export default function AgentRendererSuiteWorkbench(props: AgentRendererSuiteWor
   createEffect(() => {
     const agentId = sheetAgentId()
     void probeTick()
-    if (!agentId) return
+    if (!agentId || !remoteSessionReady()) return
     if (agentProbeFresh(agentId) || agentProbeInFlight(agentId)) return
     markProbeInFlight(agentId, true)
     appClients.session()
@@ -571,7 +582,7 @@ export default function AgentRendererSuiteWorkbench(props: AgentRendererSuiteWor
           </section>
         )}
       </Show>
-      <Show when={isActiveSheet()}>
+      <Show when={remoteSessionReady()}>
         <ActiveAgentSessionLifecycle session={session()} sessions={sessions()}
           selectSession={props.ctx.selectSession} sessionRuntime={sessionRuntime} />
       </Show>
@@ -617,10 +628,11 @@ function ActiveAgentSessionLifecycle(props: {
     const currentSession = props.session
     const token = reloadToken()
     if (!currentSession) return
-    const reloadRef = { current: token }
+    let current = true
+    onCleanup(() => { current = false })
     void lifecycle.activate(currentSession, {
       reloadToken: token,
-      isCurrent: () => untrack(() => props.session)?.id === currentSession.id && reloadRef.current === token,
+      isCurrent: () => current && untrack(() => props.session)?.id === currentSession.id && untrack(reloadToken) === token,
     })
   })
   // prune：移除已删除会话的 load generation 记录（原 useEffect [lifecycle, props.sessions]）。

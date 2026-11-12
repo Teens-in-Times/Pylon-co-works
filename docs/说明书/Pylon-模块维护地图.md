@@ -54,6 +54,8 @@ flowchart LR
 
 图是责任流，不表示每个响应都写入 native journal。session response 的补充投影和浏览器旧消息桥接有各自来源与信任级别，不能借重构升级为 authoritative replay。
 
+桌面工作台的本地历史与远端恢复分开驱动：`sessionRuntime.bind` 始终读取所属会话的 canonical journal，包含隐藏的保活 Sheet；`AgentRendererSuiteWorkbench` 仅在该 Sheet 活动、身份 owner 一致且运行时明确 `connected` 后挂载 ACP 会话生命周期与选择器探测。隐藏、换会话或重载令牌变化会废止旧激活任务，迟到读取/失败不继续恢复或重试，不隐式启动隐藏 Agent。浏览器预览与框架无关的 `AgentWorkbenchLifecycle` 无状态兼容规则保持不变。
+
 当前已分开的责任：
 
 - [sessionResponseProjection](../../src/application/agent-workbench/sessionResponseProjection.ts)：响应选项、模型/模式与 envelope 值转换（#304：存在标准 configOptions 时不再合成 legacy model/mode 候选；事件 id 含 sequence，kind 区分会话建立与选择器更新）。去重（只与**最近一条**响应 + 当时 session 快照比对，故 A→B→A 不被永久吞掉）、session owner、订阅与顺序留在 host。

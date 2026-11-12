@@ -130,3 +130,9 @@
 - workspace分路同时修FileContextPanel关联会话的同类直通路径，采用相同activation/openOwned/profile契约，并补source按AgentContextKey消歧；metadata在离开源页签前捕获，避免同步focus改变取值。
 - 行为证据：真实activateAgentSheet/switchAgentTransaction与App事件监听、SheetLayout一起运行，模拟setActiveAgent先聚焦再广播的实际顺序，断言两个Agent会话记忆、正文/左右栏一致；Browser返回与模式变化后再重挂仍不串线，已连接同owner不重复启动。另测跨owner/跨profile坏记忆、Browser异步等待/失败保留/错误上报，以及响应式延迟水合。沿用原测试文件，新增源码仅src/app/agentSessionSelection.ts；无新console白名单。
 - 验证：`bun run test -- src/workspace-sheets src/sheets/browser/__tests__ src/components/right-panel/__tests__/FileContextPanel.solid.test.tsx src/application/transactions/__tests__/openOwnedSessionTransaction.test.ts src/application/transactions/__tests__/createSwitchAgentRunner.test.ts`：36文件159例通过，27.27秒（00:43）。完整tsc退出0、上述自有源码/测试ESLint退出0、本域diff-check退出0；File分路另2文件14例/tsc/lint绿。主线负责从最终源码重建原生并复验相同场景。
+
+## 隐藏Agent冷恢复时序最后收口（01:31）
+- 主线原生冷启动确认：仅A运行时已连接，隐藏B工作台仍报两次恢复失败，诊断为B runtime unavailable。宿主虽以活动Sheet的Show挂生命周期，但旧isCurrent只比会话id、卸载后仍为true；reloadRef也是永不更新的局部值，不能废止旧重载。
+- 最小生产修正仅在AgentRendererSuiteWorkbench：桌面远端生命周期/选择器探测要求活动Sheet、identity owner一致、runtime明确connected；本地sessionRuntime.bind独立保留，隐藏Sheet仍读取并展示canonical journal，不隐式启动Agent。每次激活effect cleanup立即置旧任务失效，isCurrent同时校验当前会话及最新reloadToken；迟到本地读/远端失败不再恢复或安排重试。generic AgentWorkbenchLifecycle缺失status视ready的历史兼容规则、非Tauri生命周期均未改。
+- 新原生宿主行为测试不替换Lifecycle或sessionRuntime：使用真实Host Port和canonical仓储边界，通过简单测试Suite消费实际文档。3例验证隐藏B本地正文可读、unknown/connecting不请求ACP、活动且connected仅恢复B一次；隐藏后迟到canonical读不发恢复；隐藏后迟到远端失败不报当前错误/不自动重试。未新增console白名单。
+- 定向2文件10例通过；扩大`bun run test -- src/application/agent-workbench src/sheets/__tests__/AgentSheetView.rendererMode.solid.test.tsx src/sheets/__tests__/AgentSheetView.solid.test.tsx src/workspace-sheets/__tests__/sheetLayoutContextLifetime.solid.test.tsx`：13文件143例通过（01:29，22.71秒）。完整tsc退出0，新增测试与宿主ESLint退出0。本轮说明同步《Pylon-模块维护地图》“会话与渲染边界”；最终原生冷启动、A/B切换、B续发与双模式验收由主线汇总。

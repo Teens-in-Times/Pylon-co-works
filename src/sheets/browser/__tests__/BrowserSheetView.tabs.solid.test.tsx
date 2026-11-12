@@ -13,6 +13,7 @@ import { useWorkspaceStore } from '../../../domains/workspace/workspaceStore.ts'
 import { useIdentityStore } from '../../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../../domains/runtime/runtimeStore.ts'
 import { resetStores } from '../../../test/resetStores.ts'
+import { browserEventFeed } from '../../../infrastructure/tauri/browserEventFeed.ts'
 
 vi.mock('../../../infrastructure/tauri/env.ts', () => ({ IS_TAURI: true, hasTauriRuntime: () => true, isBrowserMockRuntime: () => true }))
 
@@ -72,9 +73,21 @@ function seedReturnSession(agentId: string): string {
   return id
 }
 
-afterEach(() => cleanup())
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Browser 内部多标签', () => {
+  it('keeps event consumers stable while the Sheet enters and leaves the active workspace', async () => {
+    const subscribe = vi.spyOn(browserEventFeed, 'subscribe')
+    const [active, setActive] = createSignal(true)
+    render(() => <BrowserSheetView sheet={sheet} ctx={{ ...ctx, isActive: active() }} />)
+    await screen.findByRole('tab', { name: /Example Domain/ })
+    expect(subscribe).toHaveBeenCalledTimes(2)
+    setActive(false)
+    setActive(true)
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Example Domain/ })).toBeInTheDocument())
+    expect(subscribe).toHaveBeenCalledTimes(2)
+  })
+
   beforeEach(() => {
     resetStores()
     reportError.mockClear()

@@ -129,3 +129,21 @@ App.css 将窗口按钮规则限定为 `.workspace-window-native-controls > butt
 新增 Rust 行为测试构造 portable / target-debug 两种真实临时资源树并验证 HTML、JS 响应，放置旧顶层 docs-site 诱饵证明不会误读；另覆盖缺失、空入口失败与修复后重试。既有穿越、clean URL 与缓存策略测试保持。前端原有失败重试/导航恢复/原生可见性与尺寸同步测试 1 文件 / 4 用例通过；`cargo fmt --check -p pylon` 和 diff whitespace 检查退出码 0。定向 Rust 测试命令：`cargo test --manifest-path src-tauri/Cargo.toml -p pylon --lib docs_sheet -- --nocapture`；Clippy 与新二进制原生页面复验由主线统一运行。
 
 Rust 定向结果（00:18）：12 passed，997 filtered out，执行 0.05s，退出码 0；上述资源路径与入口 preflight 两例均包含在内。
+
+## 原生验收跟进：浏览器事件监听生命周期
+
+主线在冷启动观察到两条 `unregisterListener` 读取 handlerId 失败；Agent 来回切换则出现 browser-status 的 callback id 丢失警告。核实当前 Tauri 2.11.6 源码：webview::listen_js 将页面注册脚本入队即返回 eventId，注册 Promise 完成不等于页面监听表已经落位；SDK unlisten 先读该条目的 handlerId 并移除回调，然后才调用后端 unlisten。前一窗口可能抛错并中断后端注销，后一窗口允许已排队事件访问已移除的回调。工具注入脚本只注册自己的回调，无覆盖 SDK 监听表的代码；本次只读取函数验证，不操作验收 UI。
+
+应用侧重复注册来自两处：AgentBrowserResources 每次挂载独立订阅 status/page；browserSheetEffects 又把原生订阅放在依赖 isActive 的 effect 中，每次切 Sheet 重建。新增 `infrastructure/tauri/browserEventFeed.ts` 工厂与窗口单例：两个固定事件各一个原生监听，消费者只增删本地回调，没有消费者时不投递、也不注销原生监听；事件入口不保存 Agent/session 数据。BrowserSheet 的活动态状态探测与本地订阅分开，保留各 owner 请求代际和原生视图生命周期。单消费者异常送日志后继续其他消费者，显式 feed dispose 用于整个传输生命周期关闭，不由视图触发。
+
+runtimeEventClient 同时消费 SDK 实际返回的异步 stop Promise，注销失败送 frontendLogSink，停止投递仍立即且幂等。此项是诊断完整性修复，不宣称修复 Tauri SDK；未吞错、未加时延、未读写生产环境私有监听表。其他事件的生命周期没有扩大重构。
+
+验证：浏览器套件、Inspector、event client/feed 共 10 文件 / 36 用例通过；随后再补「原生注册未 settle 时视图退出」用例，feed 5 用例通过。覆盖固定 listen 计数、零消费者、重新订阅、多消费者独立退订、单消费者失败隔离、显式生命周期关闭后的迟到事件、两个 async-stop 拒绝分支和 Browser Sheet 活动切换不重订。`bun run check:types`、定向 ESLint、diff whitespace 检查退出码 0。最终新二进制冷启动/Agent切换的原生日志复验由主线统一执行。说明书浏览器资源段已同步该窗口级事件契约。
+
+## 原生性能验收跟进：浏览器状态反馈回路
+
+主线确认监听与冷恢复修复后，继续在 Browser 加载网页再返回 Chat 的路径捕获性能异常：MCP 请求从小于 1 秒增长到 10–25 秒，事件序号数分钟增长到约 12 万；原生网络中 browser_set_visible(false) 约每 2ms 重发。源码闭环为 set_visible 无条件 emit_status → applySnapshot 写入新对象 → effect 直接读取 snapshot().phase、追踪整份对象 → 再次 setVisible。set_bounds 不广播状态，但同样被状态对象更新重复触发；工具 inspectPage 的嵌套 snapshot 读取也会扩大 effect 依赖。
+
+最小修复仅在 browserSheetEffects：将 phase、isActive、sidebarCollapsed、overlay 投影为标量 memo；副作用使用 on 显式依赖，隔离 syncBounds/inspectPage 内部读取。状态探测只响应真正的活动态变化，保持 undefined 与 false 的既有区别。界面仍消费完整状态，未吞事件、加延时或修改 Rust 广播语义。
+
+新增 4 个行为用例以最多 8 次广播模拟原生命令回执，旧反馈环会使调用次数断言失败而不挂死测试；同时覆盖活动态/覆盖层/阶段改变、未指定活动态、无关 ctx 更新、真实 resize、侧栏折叠和工具快照刷新。浏览器与事件 feed 定向合计 9 文件 / 27 用例通过，`bun run check:types`、定向 ESLint 退出码 0。说明书已补充副作用精确依赖契约。完整门禁、重建和原生空闲 IPC 频率复验由主线统一执行。

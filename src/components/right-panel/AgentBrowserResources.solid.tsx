@@ -2,7 +2,7 @@
 /** Read-only browser inspector. The Browser Sheet owns native viewport and browser lifetime. */
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { appClients } from '../../app/appClients.ts'
-import { runtimeEventClient } from '../../infrastructure/tauri/runtimeEventClient.ts'
+import { browserEventFeed } from '../../infrastructure/tauri/browserEventFeed.ts'
 import { isBrowserMockRuntime } from '../../infrastructure/tauri/env.ts'
 import { BROWSER_PHASE_LABELS, type BrowserPageSnapshot, type BrowserSnapshot } from '../../sheets/browser/browserSheetTypes.ts'
 import { LucideIcon } from '../LucideIcon.solid.tsx'
@@ -77,8 +77,8 @@ export default function AgentBrowserResources(props: { onOpen: (url?: string) =>
     void refresh()
     // Visibility, zoom and title broadcasts do not change the page being read.
     const onStatus = (next: BrowserSnapshot) => applySnapshot(next)
-    const status = runtimeEventClient.subscribe<BrowserSnapshot>('pylon:browser-status', onStatus)
-    const pageEvent = runtimeEventClient.subscribe<{ tabId: number; active: boolean; url?: string; title?: string }>('pylon:browser-page', value => {
+    const status = browserEventFeed.subscribe<BrowserSnapshot>('pylon:browser-status', onStatus)
+    const pageEvent = browserEventFeed.subscribe<{ tabId: number; active: boolean; url?: string; title?: string }>('pylon:browser-page', value => {
       const current = snapshot()
       if (!current) return
       const active = value.active && value.tabId === current.activeTabId

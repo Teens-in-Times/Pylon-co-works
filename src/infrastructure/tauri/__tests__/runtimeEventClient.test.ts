@@ -8,11 +8,13 @@ import type { RuntimeEventClient } from '../runtimeEventClient.ts'
 
 type Handler = (event: { payload: unknown }) => void
 
-const { listenMock } = vi.hoisted(() => ({
+const { listenMock, logWarn } = vi.hoisted(() => ({
   listenMock: vi.fn<(event: string, handler: Handler) => Promise<() => void>>(),
+  logWarn: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }))
+vi.mock('../../../contracts/frontendLogSink.ts', () => ({ logWarn }))
 
 /** 可手动投递的注册表版 listen。 */
 function installRegistryListen() {
@@ -37,6 +39,20 @@ function clientWithRegistryListen(): RuntimeEventClient {
 }
 
 describe('runtimeEventClient', () => {
+  it.each([true, false])('reports an async unlisten rejection when disposed before settle = %s', async beforeSettle => {
+    logWarn.mockClear()
+    const failure = new Error('native listener teardown failed')
+    const stop = vi.fn(async () => { throw failure })
+    listenMock.mockResolvedValueOnce(stop)
+    const subscription = clientWithRegistryListen().subscribe('pylon:failed-stop', () => {})
+    if (!beforeSettle) await Promise.resolve()
+    subscription.dispose()
+    subscription.dispose()
+    await vi.waitFor(() => expect(logWarn).toHaveBeenCalledWith('注销运行时事件失败：pylon:failed-stop', failure))
+    expect(stop).toHaveBeenCalledOnce()
+    expect(logWarn).toHaveBeenCalledOnce()
+  })
+
   it('投递事件 payload 给 handler；dispose 后注销', async () => {
     const registry = installRegistryListen()
     const received: unknown[] = []

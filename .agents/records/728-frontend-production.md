@@ -37,9 +37,9 @@
 
 | 命令/范围 | 证据 |
 | --- | --- |
-| bun run check:frontend | 退出 0；698 文件、5502 用例通过，1 文件/1 用例为既有跳过；target/728-delivery-frontend.log |
+| bun run check:frontend | 退出 0；701 文件、5517 用例通过，1 文件/1 用例为既有跳过；target/728-verified-frontend.log |
 | 最后会话归属修复 | 专项 36 文件/159 用例与 File 入口 14 用例通过；已纳入最终全量前端检查 |
-| 最终生产构建与原生编译 | check:frontend 内 build 退出 0；cargo build 退出 0（54.32s，target/728-delivery-native.log）；最终源码已嵌入验收程序 |
+| 最终生产构建与原生编译 | check:frontend 内 build 退出 0；cargo build 退出 0（42.18s，target/728-verified-native.log）；最终源码已嵌入验收程序 |
 | bun run check:rust | 最终完整退出 0，11 组共 1747 用例通过、4 ignored；ACP shadow/fmt 通过；target/728-complete-rust.log |
 | 最后 Docs Rust 改动 | cargo test -p pylon --lib docs_sheet：12 通过；DocsSheetView 4 个行为用例通过；cargo fmt 通过 |
 | bun run check:clippy（Docs 改动后） | 退出 0；全部 crate 基线外新增诊断 0；17 文件/55 处 await 说明一致、裸 allow 0；target/728-complete-clippy.log |
@@ -84,3 +84,19 @@ Vite 覆盖有数据的聊天、工具/推理/代码、文件树/编辑器、Sea
 
 - 最后交付截图/JSON：delivery-modern-chat、delivery-terminal-chat、delivery-menu-labels、owner-return-after-restart-final（均位于 target/qa-728/evidence，1200×800、5 个工作表面，几何与绑定检查全部通过）。
 - 旧跨 Agent 错误记忆被过滤为空态；手动选回正确会话后，新的 Browser 来源记录可在下次重启后精确返回。原生测试使用明确的两个 Agent 和各自会话，未伪造连接状态。
+
+### 最后事件生命周期修正
+
+日志复查发现浏览器面板随 Agent/Sheet 切换反复注册原生事件，触发 Tauri 注册脚本入队与注销之间的竞态：冷启动出现 handlerId 异常，切换出现已注销 callback 的警告。现在 status/page 两个固定事件由窗口级 browserEventFeed 统一订阅，视图只管理自己的本地消费者；零消费者不投递、不保存会话数据，各面板仍维护独立请求代际。单消费者异常被隔离，SDK 异步注销失败明确记录诊断。生产代码没有访问 Tauri 私有监听表或加入时延。
+
+专项 37 用例通过，覆盖未完成注册时退出、共享监听计数、零消费者、再次进入、多消费者独立退订、错误隔离、异步注销失败，以及 Browser 活动态变化不重订。最终 check:frontend 退出 0：699 文件 / 5510 用例通过、1 文件 / 1 用例既有跳过；生产隔离扫描 223 个 JS assets，通过。日志：target/728-event-delivery-frontend.log。
+
+重新编译原生（36.64s，target/728-event-delivery-native.log）后，冷启动、5 次 Agent 切换、现代→终端→现代、Browser 打开真实网页并返回来源会话：browser-status/page 原生注册数始终各 1，handlerId/callback 注销异常为 0。右栏仍收到 Example Domain 状态与正文，绑定错误为空；event-terminal-browser-final 与 event-modern-browser-final 的 1200×800 / 5 表面几何检查通过。
+
+同轮确认冷启动两条恢复诊断来自隐藏 B 页签遗留的恢复任务（目标 runtime 尚不可用），点击 B 激活后诊断虽可自动恢复，仍不应发生。工作台宿主现仅在活动页签、归属匹配且原生 runtime 明确 connected 时驱动远端 ACP；本地 canonical 历史继续独立读取。effect 退出将旧任务与重试资格失效，不通过延时、隐式启动隐藏 Agent 或吞错解决。新增 3 个原生环境集成用例及 143 个相关用例通过，类型、ESLint 与 diff 检查通过。
+
+后续原生性能检查发现 Browser 打开后有 `browser_set_visible({visible:false})` 连续约每 2ms 一条：状态广播更新整份 snapshot，而 effect 直接读取 snapshot().phase，每次对象变化都会重新同步可见性，后端再次广播形成反馈。此次将 phase、活动态、折叠和弹层依赖收窄为值比较，并隔离副作用回调的隐式追踪；bounds 和工具刷新也不再被无关快照触发。该缺陷说明控制台无错误与布局通过不足以证明空闲性能，最终验收增加网络空闲请求计数。
+
+最终全量前端检查退出 0（701 文件 / 5517 用例，既有 1 文件 / 1 用例跳过），生产隔离 223 个 JS assets 通过；原生重建 42.18s 后冷启动、默认 A 经 Browser 返回 B、网页正文预览、现代→终端全部通过。B 正文保持 3 条真实 ACP 回复，归属与可见绑定错误检查正常；前端 warning/error/exception 共 0 条，浏览器两个事件原生监听仍各 1。空闲网络窗口 5019ms，browser_* 请求 0 条、无连接重建，反馈环已消除。
+
+最终证据：target/qa-728/evidence/verified-runtime.json，以及 verified-modern-resources、verified-terminal-resources、verified-menu-labels 三组 PNG/JSON（1200×800、5 表面，均通过）。最终全量日志 target/728-verified-frontend.log、原生编译日志 target/728-verified-native.log；此前的交付截图保留为迭代记录。验收用 Vite 和原生调试实例已关闭。最新 main 仍为 4d64e138，未落后远端。

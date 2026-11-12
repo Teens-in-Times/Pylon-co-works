@@ -3,12 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentBrowserResources from '../AgentBrowserResources.solid.tsx'
 import { appClients } from '../../../app/appClients.ts'
-import { runtimeEventClient } from '../../../infrastructure/tauri/runtimeEventClient.ts'
+import { browserEventFeed } from '../../../infrastructure/tauri/browserEventFeed.ts'
 import type { BrowserSnapshot } from '../../../sheets/browser/browserSheetTypes.ts'
 
 const ready: BrowserSnapshot = { instanceId: 1, phase: 'ready', zoomPercent: 90, activeTabId: 1, title: 'Guide', url: 'https://example.com/guide', tabs: [{ id: 1, title: 'Guide', url: 'https://example.com/guide' }] }
 beforeEach(() => {
-  vi.spyOn(runtimeEventClient, 'subscribe').mockReturnValue({ dispose: vi.fn() })
+  vi.spyOn(browserEventFeed, 'subscribe').mockReturnValue({ dispose: vi.fn() })
   vi.spyOn(appClients.browser, 'status').mockResolvedValue(ready)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -50,7 +50,7 @@ describe('browser resource inspector', () => {
 
   it('keeps an in-flight page preview across same-page status and background-page broadcasts', async () => {
     const listeners = new Map<string, (value: unknown) => void>()
-    vi.mocked(runtimeEventClient.subscribe).mockImplementation((name, listener) => {
+    vi.mocked(browserEventFeed.subscribe).mockImplementation((name, listener) => {
       listeners.set(name, listener as (value: unknown) => void)
       return { dispose: vi.fn() }
     })
@@ -75,7 +75,7 @@ describe('browser resource inspector', () => {
     ['browser stops being ready', { ...ready, phase: 'starting' }],
   ] as const)('does not show a late page snapshot when %s', async (_case, next) => {
     const listeners = new Map<string, (value: unknown) => void>()
-    vi.mocked(runtimeEventClient.subscribe).mockImplementation((name, listener) => {
+    vi.mocked(browserEventFeed.subscribe).mockImplementation((name, listener) => {
       listeners.set(name, listener as (value: unknown) => void)
       return { dispose: vi.fn() }
     })
@@ -92,7 +92,7 @@ describe('browser resource inspector', () => {
 
   it('invalidates an in-flight preview when the active page reloads at the same URL', async () => {
     const listeners = new Map<string, (value: unknown) => void>()
-    vi.mocked(runtimeEventClient.subscribe).mockImplementation((name, listener) => {
+    vi.mocked(browserEventFeed.subscribe).mockImplementation((name, listener) => {
       listeners.set(name, listener as (value: unknown) => void)
       return { dispose: vi.fn() }
     })
