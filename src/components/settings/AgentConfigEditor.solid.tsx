@@ -15,8 +15,6 @@ interface AgentConfigEditorProps {
 /**
  * AgentConfigEditor — Agent 配置编辑入口（W1-07）。
  *
- * #515：Solid 实体（原 AgentConfigEditor.tsx 为 React 薄桥）。
- *
  * scope="agent" 的 YAML 整块替换：调用 update_agents_config 写回生效配置，
  * 成功后刷新前端 agent 列表（写盘与内存提交均由后端事务完成，无需 reload_agents）。
  *
@@ -30,6 +28,7 @@ export default function AgentConfigEditor(props: AgentConfigEditorProps) {
   const [validationError, setValidationError] = createSignal<string | null>(null)
 
   const save = async () => {
+    if (status().kind === 'saving' || !props.agentId) return
     const invalid = validateAgentConfig(config())
     if (invalid) {
       // Form validation is a local, actionable fact rather than a runtime
@@ -63,17 +62,22 @@ export default function AgentConfigEditor(props: AgentConfigEditorProps) {
   }
 
   return (
-    <div class="agent-config-editor">
+    <div class="agent-config-editor grid gap-3" aria-busy={status().kind === 'saving'}>
+      <p class="m-0 text-[13px] leading-relaxed text-text-dim">编辑 {props.agentId || '当前 Agent'} 的完整 YAML 配置。启动入口发生变化时会自动验证连接。</p>
+      <Show when={!props.agentId}><p class="text-[13px] text-text-dim" role="status">先添加并选择一个 Agent，再编辑它的配置。</p></Show>
+      <label class="agent-form-field">Agent 配置（YAML）
       <textarea
-        class="agent-config-textarea"
+        class="agent-config-textarea w-full min-h-[180px] box-border resize-y rounded-[4px] border border-stroke-default bg-bg-input p-3 font-mono text-[13px] leading-relaxed text-text focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-60"
+        disabled={status().kind === 'saving' || !props.agentId}
         value={config()}
         onInput={event => { setConfig(event.currentTarget.value); setValidationError(null); setStatus({ kind: 'idle' }) }}
         placeholder="粘贴 Agent 配置（YAML）…"
         rows={8}
         aria-label="Agent 配置"
       />
-      <div class="agent-config-actions">
-        <button type="button" class="agent-config-save" onClick={save} disabled={status().kind === 'saving'}>
+      </label>
+      <div class="agent-config-actions flex items-center gap-3 flex-wrap">
+        <button type="button" class="agent-config-save ps-btn sm primary" onClick={save} disabled={status().kind === 'saving' || !props.agentId}>
           {status().kind === 'saving' ? '保存中…' : '保存配置'}
         </button>
         <Show when={status().kind === 'blocked'}>

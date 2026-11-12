@@ -12,9 +12,11 @@
  * - 补显式 `afterEach(cleanup)`（vitest globals 未开）；
  * - 断言集逐字保留（role=alert 呈现「归属不明」、不 selectSession、不开 sheet）。
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
 import HistorySheetView from '../HistorySheetView.solid.tsx'
+import { useIdentityStore } from '../../../domains/identity/identityStore'
+beforeEach(() => useIdentityStore.setState({ activeAgent: 'peri', agents: [{ id: 'peri', name: 'Peri', available: true }] }))
 import type { SheetContext, SheetRecord } from '../../../workspace-sheets/sheetTypes'
 import { FakeInvoke } from '../../../test/fakeInvoke'
 

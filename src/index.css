@@ -74,7 +74,7 @@
   --surface-overlay: color-mix(in srgb, var(--global-bg-color) 94%, var(--text) 3%);
   --surface-sunken: color-mix(in srgb, var(--global-bg-color) 62%, #000 4%);
   --surface-glass: color-mix(in srgb, var(--global-bg-color) 76%, transparent);
-  --stroke-subtle: color-mix(in srgb, var(--border) 72%, transparent);
+  --stroke-subtle: color-mix(in srgb, var(--border) 40%, transparent);
   --stroke-default: var(--border);
   --stroke-strong: color-mix(in srgb, var(--border-focus) 78%, transparent);
   --shadow-soft: 0 8px 28px color-mix(in srgb, #000 13%, transparent);

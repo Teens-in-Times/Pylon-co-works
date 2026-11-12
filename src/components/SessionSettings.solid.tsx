@@ -1,5 +1,6 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from 'solid-js'
+import { createDialogFocus } from './ui/dialogFocus'
+import { createEffect, createMemo, createSignal, on, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
 import { appClients } from '../app/appClients.ts'
@@ -117,25 +118,8 @@ export default function SessionSettings(props: SessionSettingsProps) {
     props.onDeleted?.()
   }
 
-  // radix onOpenChange(false) 的两条触发路：Esc（content 上）与遮罩/外点（overlay 上）。
-  // 打开期间挂 window 级 Esc 监听（radix 语义：Esc 总是可达，无论焦点落在哪个输入）。
-  createEffect(() => {
-    if (!props.open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        beforeClose()
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    onCleanup(() => document.removeEventListener('keydown', onKey))
-  })
-
   let contentRef: HTMLDivElement | null = null
-  onMount(() => {
-    // radix：打开时把焦点移入 content（无初始聚焦目标时聚焦 content 本身）。
-    contentRef?.focus()
-  })
+  createDialogFocus(() => contentRef, () => props.open && session(), beforeClose)
 
   return (
     <Show when={props.open && session()}>
@@ -146,6 +130,7 @@ export default function SessionSettings(props: SessionSettingsProps) {
           class="dialog-content settings-surface settings-dialog agent-settings-dialog session-settings w-[min(760px,calc(100vw-32px))] max-w-[760px] max-h-[min(88vh,860px)] flex flex-col"
           role="dialog"
           aria-modal="true"
+          aria-label="会话设置"
           aria-describedby="session-settings-description"
           tabindex="-1"
         >

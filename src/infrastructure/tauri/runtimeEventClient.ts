@@ -8,10 +8,10 @@
  * - `dispose()` 幂等；注册 promise 已 settle 时立即注销，尚未 settle 时 settle 后
  *   自动注销；
  * - dispose 前到达的事件照常投递，dispose 后不再投递；
- * - 注册失败的拒绝只在 dispose 处吸收（与原视图 onCleanup 里逐条
- *   `.catch(() => {})` 的语义对应），不在订阅路径上新增错误上报——行为零变化。
+ * - 保持注册失败的既有静默语义；注销失败显式记录诊断，不让异步拒绝悬空。
  */
 import { listen as tauriListen } from '@tauri-apps/api/event'
+import { logWarn } from '../../contracts/frontendLogSink.ts'
 
 export interface RuntimeEventSubscription {
   /** 停止投递并注销底层 listener；重复调用为 no-op。 */
@@ -28,13 +28,22 @@ export function createRuntimeEventClient(listen: typeof tauriListen = tauriListe
     subscribe<T>(event: string, onPayload: (payload: T) => void): RuntimeEventSubscription {
       let disposed = false
       let unlisten: (() => void) | undefined
+      const stopListening = (stop: () => void) => {
+        try {
+          // Tauri's public UnlistenFn type is void, but the implementation returns
+          // a Promise. Observe failures without pretending the native listener stopped.
+          void Promise.resolve(stop()).catch(error => logWarn(`注销运行时事件失败：${event}`, error))
+        } catch (error) {
+          logWarn(`注销运行时事件失败：${event}`, error)
+        }
+      }
       const registration = listen<T>(event, event => {
         if (!disposed) onPayload(event.payload)
       })
       registration
         .then(stop => {
           // dispose 跑在注册 settle 之前：settle 后补注销。
-          if (disposed) stop()
+          if (disposed) stopListening(stop)
           else unlisten = stop
         })
         // 注册失败的拒绝在 dispose 处吸收（下方 registration.catch 只救原始 promise）；
@@ -47,7 +56,7 @@ export function createRuntimeEventClient(listen: typeof tauriListen = tauriListe
           const stop = unlisten
           unlisten = undefined
           void registration.catch(() => {})
-          stop?.()
+          if (stop) stopListening(stop)
         },
       }
     },

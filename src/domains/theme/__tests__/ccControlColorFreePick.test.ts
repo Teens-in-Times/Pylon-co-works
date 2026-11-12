@@ -114,15 +114,18 @@ describe('#266 遗留① · 老枚举 ⇒ 等价颜色（读盘归一化）', ()
     }
   })
 
-  it('老数据缺这些键 ⇒ 补新默认值，画出来的颜色仍与改造前相同', () => {
-    // 出厂预设里本来就没有这 6 个键（落的是字段默认值）⇒ 默认值本身也是等价颜色。
+  it('缺省背景使用当前透明出厂值，显式旧枚举仍保留原色', () => {
     const aligned = align({})
-    expect(aligned.modelBgColor).toBe('#ffffff')
-    expect(aligned.modelTextColor).toBe('#000000')
+    expect(aligned.modelBgColor).toBe('transparent')
+    expect(aligned.reasoningBgColor).toBe('transparent')
+    expect(aligned.permissionBgColor).toBe('transparent')
+    expect(aligned.modelTextColor).toBe('var(--text)')
+    expect(aligned.reasoningTextColor).toBe('var(--text)')
     expect(aligned.permissionTextColor).toBe('')
-    for (const key of Object.keys(LEGACY_ENUM_VALUES) as CcColorKey[]) {
-      expect({ [key]: newRendered(key, aligned[key]) }, `${key} 的默认值应等价`).toEqual({ [key]: oldRendered(key) })
-    }
+    const explicitWhite = align({ modelBgColor: '#ffffff', reasoningBgColor: '#ffffff', permissionBgColor: '#ffffff' })
+    expect(explicitWhite.modelBgColor).toBe('#ffffff')
+    expect(explicitWhite.reasoningBgColor).toBe('#ffffff')
+    expect(explicitWhite.permissionBgColor).toBe('#ffffff')
   })
 
   it('幂等：归一化连跑两次结果相同', () => {

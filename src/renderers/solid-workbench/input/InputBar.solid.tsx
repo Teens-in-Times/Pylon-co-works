@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { For, Index, Show, createEffect, createSignal, onCleanup, onMount, type Accessor, type JSX } from 'solid-js'
+import { For, Index, Show, createEffect, createSignal, createUniqueId, onCleanup, onMount, type Accessor, type JSX } from 'solid-js'
 import {
   parseSlashCommand,
   type CommandSuggestion,
@@ -14,6 +14,7 @@ import { createInputPredictionController } from './createInputPredictionControll
 import type { InputPredictionProvider } from '../../../infrastructure/prediction/inputPredictionProvider.ts'
 import { attachmentsFromPaths, attachmentNameForPath, subscribeAttachmentDrop } from '../../../infrastructure/tauri/attachmentPicker.ts'
 import { getFontContributionRegistry } from '../../../plugin-runtime/runtimeServices.ts'
+import { LucideIcon } from '../../../components/LucideIcon.solid.tsx'
 
 export interface QueuedWorkbenchMessage {
   id: number
@@ -54,6 +55,10 @@ export function SolidInputBar(props: SolidInputBarProps) {
   const [attachments, setAttachments] = createSessionUiSignal<readonly WorkbenchAttachment[]>(workbench.sessionUi, sessionId, 'attachments', [])
   const [sendError, setSendError] = createSessionUiSignal(workbench.sessionUi, sessionId, 'input-error', '')
   const [queueSendingSessions, setQueueSendingSessions] = createSignal<ReadonlySet<string>>(new Set())
+  const [pickingAttachments, setPickingAttachments] = createSignal(false)
+  const paletteId = `commands-${createUniqueId()}`
+  let disposed = false
+  onCleanup(() => { disposed = true })
   // #394：原生预测的消费标记（per-session）——接受/拒绝后输入框 ghost 收敛。
   const [consumedPrediction, setConsumedPrediction] = createSessionUiSignal(workbench.sessionUi, sessionId, ASSIST_PREDICTION_CONSUMED_KEY, '')
   let textarea: HTMLTextAreaElement | undefined
@@ -66,11 +71,13 @@ export function SolidInputBar(props: SolidInputBarProps) {
   const isDisabled = () => Boolean(props.disabled || emptyState()?.submitting?.())
 
   const resizeInput = () => {
-    if (!textarea) return
+    if (!textarea || disposed) return
     const slot = textarea.closest<HTMLElement>('.cc-input-slot')
     if (!slot) return
     const styles = getComputedStyle(slot)
-    const staticHeight = Number.parseFloat(styles.getPropertyValue('--cc-input-height')) || textarea.clientHeight || 40
+    const flowLayout = styles.getPropertyValue('--cc-input-flow').trim() === '1'
+    const themedHeight = Number.parseFloat(styles.getPropertyValue('--cc-input-height')) || textarea.clientHeight || 40
+    const staticHeight = flowLayout ? Math.max(60, themedHeight) : themedHeight
     const controlCenter = slot.closest<HTMLElement>('.control-center')
     // ★ #266 刀10：原先命令行有一次提前 `return`（清空高度 ⇒ 冻在 CSS 的 22px）。
     //   那个 `return` 随 `cliOverflowMode` 字段退场 —— 命令行现在也走「随内容增高」这一套：
@@ -79,11 +86,11 @@ export function SolidInputBar(props: SolidInputBarProps) {
     textarea.style.height = 'auto'
     const contentHeight = Math.max(textarea.scrollHeight, staticHeight)
     const nextHeight = Math.min(maxHeight, Math.max(staticHeight, contentHeight))
-    slot.style.height = `${nextHeight}px`
+    slot.style.height = flowLayout ? 'auto' : `${nextHeight}px`
     const extraHeight = nextHeight - staticHeight
-    if (extraHeight > 0) controlCenter?.style.setProperty('--cc-input-extra-height', `${extraHeight}px`)
+    if (!flowLayout && extraHeight > 0) controlCenter?.style.setProperty('--cc-input-extra-height', `${extraHeight}px`)
     else controlCenter?.style.removeProperty('--cc-input-extra-height')
-    textarea.style.height = '100%'
+    textarea.style.height = flowLayout ? `${nextHeight}px` : '100%'
     textarea.style.maxHeight = `${maxHeight}px`
     textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden'
     if (inputBar) inputBar.dataset.expanded = String(nextHeight > staticHeight)
@@ -104,6 +111,23 @@ export function SolidInputBar(props: SolidInputBarProps) {
     queueMicrotask(resizeInput)
   })
   onMount(() => queueMicrotask(resizeInput))
+
+  onMount(() => {
+    const slot = textarea?.closest<HTMLElement>('.cc-input-slot')
+    if (!slot || typeof ResizeObserver === 'undefined') return
+    let previousWidth = -1
+    let previousFlow = ''
+    const observer = new ResizeObserver(() => {
+      const width = slot.getBoundingClientRect().width
+      const flow = getComputedStyle(slot).getPropertyValue('--cc-input-flow')
+      if (width === previousWidth && flow === previousFlow) return
+      previousWidth = width
+      previousFlow = flow
+      resizeInput()
+    })
+    observer.observe(slot)
+    onCleanup(() => observer.disconnect())
+  })
 
   // CC-21：字体资源与贡献变化会在字段值不变时改变字宽（插件字体加载完成/贡献撤下/恢复）
   // ⇒ 订阅字体注册表与 document.fonts，变化后重测。监听只在挂载时注册一次（不随输入字符
@@ -153,10 +177,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
     consume: key => setConsumedPrediction(key),
     provider: props.predictionProvider,
   })
-  // ★ #266 刀9：输入形态固定为命令行（`inputVariant` / `inputMode` 两字段已删除）。
-  // Placeholder copy is deferred to the send/indicator work; keep the
-  // textarea free of a standalone instruction line.
-  const placeholder = () => ''
+  const placeholder = () => emptyState() ? '描述你想完成的事…' : '继续对话，输入 / 查看命令…'
 
   onMount(() => {
     textarea?.focus()
@@ -174,7 +195,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
     // #699：把文件拖进输入区即添加附件。落点判定用输入区矩形；Tauri 端口不可用
     //（浏览器预览/单测）时整段跳过，不影响既有输入行为。
     const unsubscribeDrop = subscribeAttachmentDrop((paths, point) => {
-      if (!inputBar) return
+      if (!inputBar || isDisabled()) return
       const scale = window.devicePixelRatio || 1
       const rect = inputBar.getBoundingClientRect()
       const x = point.x / scale
@@ -369,13 +390,28 @@ export function SolidInputBar(props: SolidInputBarProps) {
     void sendQueued(first)
   })
 
-  /** #699：打开系统文件选择器，选中的路径并入会话附件态（按 id 去重）。 */
+  /** A system picker can outlive a session switch. Its result belongs to its initiating session. */
   const attachFiles = async () => {
-    if (isDisabled()) return
-    const picked = await workbench.commands.attach(sessionId() ?? '')
-    if (picked.length === 0) return
-    setAttachments(previous => mergeAttachments(previous, picked))
-    queueMicrotask(() => textarea?.focus())
+    if (isDisabled() || pickingAttachments()) return
+    const id = sessionId()
+    const ui = id ? workbench.sessionUi.capture(id) : undefined
+    setPickingAttachments(true)
+    try {
+      const picked = await workbench.commands.attach(id ?? '')
+      if (disposed || picked.length === 0) return
+      if (ui) ui.update<readonly WorkbenchAttachment[]>('attachments', [], previous => mergeAttachments(previous, picked))
+      else if (sessionId() === id) setAttachments(previous => mergeAttachments(previous, picked))
+    } catch (error) {
+      if (disposed) return
+      const message = `添加附件失败：${error instanceof Error ? error.message : String(error)}`
+      if (ui) ui.set('input-error', message)
+      else if (sessionId() === id) setSendError(message)
+    } finally {
+      if (!disposed) {
+        setPickingAttachments(false)
+        if (sessionId() === id && !isDisabled()) textarea?.focus()
+      }
+    }
   }
 
   const removeAttachment = (id: string) => {
@@ -401,8 +437,12 @@ export function SolidInputBar(props: SolidInputBarProps) {
     const id = sessionId()
     if (!id) return
     const ui = workbench.sessionUi.capture(id)
-    const result = await workbench.commands.cancel(id)
-    if (result.status === 'rejected') ui.set('input-error', result.error || '取消失败')
+    try {
+      const result = await workbench.commands.cancel(id)
+      if (result.status === 'rejected') ui.set('input-error', result.error || '取消失败')
+    } catch (error) {
+      ui.set('input-error', error instanceof Error ? error.message : String(error))
+    }
   }
 
   const browseHistory = (direction: 'up' | 'down') => {
@@ -424,12 +464,15 @@ export function SolidInputBar(props: SolidInputBarProps) {
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
+    // Composition keys belong to the input method, including Escape and candidate navigation.
+    if (composing || event.isComposing || event.keyCode === 229) return
     if (event.key === 'Escape' && runtime().generating) {
       event.preventDefault()
       void cancel()
       return
     }
-    if (event.ctrlKey && (event.key === 'c' || event.key === 'C') && runtime().generating && !window.getSelection()?.toString()) {
+    if (event.ctrlKey && (event.key === 'c' || event.key === 'C') && runtime().generating
+      && textarea?.selectionStart === textarea?.selectionEnd && !window.getSelection()?.toString()) {
       event.preventDefault()
       void cancel()
       return
@@ -537,12 +580,15 @@ export function SolidInputBar(props: SolidInputBarProps) {
         <div class={`input-binding-status${hint().error ? ' input-binding-status--error' : ''}`} role="status">{hint().text}</div>
       )}</Show>
       <Show when={!emptyState() && palette.rows().length > 0}>
-        <div class="command-palette" role="listbox" aria-label="命令建议">
+        <div id={paletteId} class="command-palette" role="listbox" aria-label="命令建议">
           <For each={palette.rows()}>{(row, index) => (
             row.kind === 'toggle'
               ? <button
                   type="button"
                   role="option"
+                  id={`${paletteId}-${index()}`}
+                  aria-selected={index() === palette.activeIndex()}
+                  tabIndex={-1}
                   aria-label={palette.showAll() ? '只看常用命令' : `显示全部命令，含内部 ${palette.hiddenInternalCount()} 条`}
                   class={`cmd-item cmd-toggle${index() === palette.activeIndex() ? ' active' : ''}`}
                   onClick={palette.toggleLayer}
@@ -552,6 +598,8 @@ export function SolidInputBar(props: SolidInputBarProps) {
               : <button
                   type="button"
                   role="option"
+                  id={`${paletteId}-${index()}`}
+                  tabIndex={-1}
                   aria-selected={index() === palette.activeIndex()}
                   class={`cmd-item${index() === palette.activeIndex() ? ' active' : ''}`}
                   onClick={() => pickSuggestion(row.suggestion)}
@@ -632,6 +680,9 @@ export function SolidInputBar(props: SolidInputBarProps) {
             ref={textarea}
             class="input-textarea"
             aria-label="消息输入"
+            aria-autocomplete="list"
+            aria-controls={!emptyState() && palette.rows().length > 0 ? paletteId : undefined}
+            aria-activedescendant={!emptyState() && palette.rows().length > 0 ? `${paletteId}-${palette.activeIndex()}` : undefined}
             value={draft()}
             onInput={event => {
               setDraft(event.currentTarget.value)
@@ -653,7 +704,8 @@ export function SolidInputBar(props: SolidInputBarProps) {
           class="input-attach-btn"
           aria-label="添加附件"
           title="添加附件"
-          disabled={isDisabled()}
+          disabled={isDisabled() || pickingAttachments()}
+          aria-busy={pickingAttachments()}
           onClick={() => void attachFiles()}
         >
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -665,6 +717,16 @@ export function SolidInputBar(props: SolidInputBarProps) {
               d="M10.6 4.4 5.9 9.1a1.9 1.9 0 0 0 2.7 2.7l5-5a3.2 3.2 0 0 0-4.5-4.5l-5.3 5.3a4.5 4.5 0 0 0 6.4 6.4l4-4"
             />
           </svg>
+        </button>
+        <button type="button" class="input-submit-btn"
+          disabled={isDisabled() || (!runtime().generating && !draft().trim())}
+          aria-label={runtime().generating ? draft().trim() ? '加入发送队列' : '停止当前生成' : '提交消息'}
+          title={runtime().generating ? draft().trim() ? '加入发送队列' : '停止当前生成' : '发送 · Enter'}
+          data-action={runtime().generating && !draft().trim() ? 'stop' : 'send'}
+          onClick={() => void (runtime().generating && !draft().trim() ? cancel() : send())}>
+          <Show when={runtime().generating && !draft().trim()} fallback={<LucideIcon name="Send" size={16} strokeWidth={1.8} />}>
+            <LucideIcon name="Square" size={16} strokeWidth={1.8} />
+          </Show>
         </button>
       </div>
       <Show when={emptyState()?.after}>{content => <div class="input-empty-after">{content()}</div>}</Show>

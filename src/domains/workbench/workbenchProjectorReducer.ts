@@ -599,8 +599,11 @@ function reduceMessage(document: WorkbenchDocument, envelope: WorkbenchEventEnve
   // same role still belong to one stream; some providers also rotate messageId
   // for every delta. Assistant boundaries therefore come from the canonical
   // timeline's semantic text/tool/session events, not from side-channel events
-  // or per-chunk identity.
-  const append = Boolean(previous && previous.role === role && textStreamContinues(document, previous, envelope, context?.textBoundarySequences) && (
+  // or per-chunk identity. An explicit start after completion opens a new
+  // segment, including snapshots that contain adjacent complete messages.
+  // Journal-earlier starts still go through the sealed-segment convergence path.
+  const startsNewSegment = event.type === 'message.started' && previous?.running === false && envelope.sequence > previous.sequence
+  const append = Boolean(!startsNewSegment && previous && previous.role === role && textStreamContinues(document, previous, envelope, context?.textBoundarySequences) && (
     role === 'assistant'
       ? true
       : providerIdentityKey(envelope.identity) !== ''
@@ -626,7 +629,7 @@ function reduceMessage(document: WorkbenchDocument, envelope: WorkbenchEventEnve
       } as WorkbenchMessage) : message),
     }
   }
-  if (!terminal && previous && previous.role === role) {
+  if (!terminal && !startsNewSegment && previous && previous.role === role) {
     const sealedOutcome = foldIntoSealedSegmentOrDrop(document, envelope, previous, {
       deltaOnly: true,
       continues: textStreamContinues(document, previous, envelope, context?.textBoundarySequences),

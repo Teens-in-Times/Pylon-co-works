@@ -6,6 +6,7 @@ import { useModalOverlayStore } from '../app/modalOverlayStore'
 import { resolveUnresolvedSessionTransaction } from '../app/bootstrap/resolveUnresolvedSessionTransaction'
 import type { LegacySession } from '../domains/identity/sessionPersistence'
 import Select from './ui/Select.solid.tsx'
+import { createDialogFocus } from './ui/dialogFocus'
 
 /**
  * ISSUE-01：未决 Session 恢复入口。
@@ -93,9 +94,12 @@ export default function SessionOwnerRecoveryDialog() {
     if (!result.ok) setError(result.message)
   }
 
+  let dialogRef: HTMLDivElement | undefined
+  createDialogFocus(() => dialogRef, () => unresolved().length > 0 && !dismissed(), () => setDismissed(true))
+
   return (
     <Show when={unresolved().length > 0 && !dismissed()}>
-      <div class={OVERLAY} role="dialog" aria-modal="true" aria-label="恢复遗留会话归属">
+      <div ref={node => { dialogRef = node }} class={OVERLAY} role="dialog" aria-modal="true" aria-label="恢复遗留会话归属">
         <div class={DIALOG}>
           <h2 class={H2}>恢复遗留会话归属</h2>
           <p class={P}>以下会话无法从持久化数据唯一判断所属 Agent。请选择后确认；稍后处理不会修改原始数据。</p>

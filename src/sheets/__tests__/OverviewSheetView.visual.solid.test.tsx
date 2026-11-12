@@ -67,6 +67,22 @@ beforeEach(() => {
 })
 
 describe('Overview visual workbench', () => {
+  it('first run presents one setup action and three next steps instead of an empty Agent card', () => {
+    useIdentityStore.setState({ agents: [], sessions: [] })
+    useWorkspaceEntityStore.setState({ workspaces: [] })
+    const listener = vi.fn()
+    window.addEventListener('pylon:open-settings', listener)
+    render(() => <OverviewSheetView sheet={sheet} ctx={{} as SheetContext} />)
+    expect(screen.getByRole('heading', { name: '开始你的工作' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: '开始工作步骤' }).children).toHaveLength(3)
+    expect(screen.queryByRole('heading', { name: '选择 Agent' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '新建 Agent' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Agent 设置' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '配置 Agent' }))
+    expect(listener).toHaveBeenCalledOnce()
+    window.removeEventListener('pylon:open-settings', listener)
+  })
+
   // 改写点登记：指挥台是 Solid 直连（TacticalCommandDeck.solid），交互一律经 findBy
   // 等待渲染落 DOM；断言集与 React 版逐条一致，不缩减。
   it('战术导航进入现有分区、返回，并通过 Sheet host 打开诊断', async () => {

@@ -22,9 +22,11 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import '../../plugin-runtime/testing/productPluginTestBootstrap.ts'
 import { cleanup, render } from '@solidjs/testing-library'
+import { createSignal } from 'solid-js'
 import SheetLayout from '../SheetLayout.solid.tsx'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore'
 import { useIdentityStore } from '../../domains/identity/identityStore'
+import { useRuntimeStore } from '../../domains/runtime/runtimeStore'
 import { useHydrationStore } from '../../app/bootstrap/hydrationState'
 import { resetStores } from '../../test/resetStores'
 
@@ -53,6 +55,9 @@ describe('重启后 activeSession 恢复不被 hydration 竞态清空', () => {
   beforeEach(() => {
     localStorage.clear()
     resetStores()
+    useHydrationStore.getState().setStatus('idle')
+    // These cases exercise session hydration after the Agent has connected.
+    useRuntimeStore.getState().setAgentStatus('peri', { agent: 'peri', status: 'connected' })
   })
 
   it('sessions 未水合时清理 effect 不得清空恢复中的 activeSession', () => {
@@ -101,5 +106,17 @@ describe('重启后 activeSession 恢复不被 hydration 竞态清空', () => {
     useHydrationStore.getState().setStatus('ready')
     useWorkspaceStore.getState().hydrateWorkspaceSheets()
     expect(selected).toBe(null)
+  })
+
+  it('reactive selection remains pending until its session row hydrates', () => {
+    seedRememberedSession('session-pending')
+    const [selected, select] = createSignal<string | null>(null)
+    render(() => <SheetLayout activeSession={selected()} onSelectSession={select} onProfileEdit={() => {}} onSessionSettings={() => {}} />)
+
+    useHydrationStore.getState().setStatus('ready')
+    expect(selected()).toBe('session-pending')
+    expect(useWorkspaceStore.getState().sheetAgentStates.peri.activeSessionId).toBe('session-pending')
+    seedSession('session-pending')
+    expect(selected()).toBe('session-pending')
   })
 })

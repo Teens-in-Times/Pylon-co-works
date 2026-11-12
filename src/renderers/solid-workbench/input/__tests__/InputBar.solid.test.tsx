@@ -26,14 +26,8 @@ afterEach(() => {
 })
 afterAll(() => { void modelCommand.dispose() })
 
-/**
- * ★ #266 刀9：原第二参 `inputVariant: 'cli' | 'composer'`（用来摆两种输入形态）已删除 ——
- * 输入形态固定命令行，`inputVariant` / `inputMode` 两个字段不存在了。
- * 参数位保留为「摆位/其它可选项」的占位（调用点里原本传 'composer' 的地方传 undefined）。
- */
 function renderInput(
   sessionId = 'session-a',
-  _legacyVariant?: 'cli' | 'composer',
   predictionProvider?: InputPredictionProvider,
   inInputSlot = false,
   /** #395：宿主提供的 provider source——文档判据的比对基准（缺省 null = 不收紧）。 */
@@ -89,7 +83,7 @@ function renderInput(
 // CC-21：输入栏字体（独立/跟随）与字体资源变化都是测高响应依赖；卸载即清理监听。
 describe('CC-21 输入字体测高响应与生命周期', () => {
   it('独立输入字体变化立即重测高度（字体引起的折行不需再敲字符），不写回主题设置', async () => {
-    const { services, textarea, slot } = renderInput('session-a', 'composer', undefined, true)
+    const { services, textarea, slot } = renderInput('session-a', undefined, true)
     Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
     fireEvent.input(textarea, { target: { value: '长草稿' } })
     await waitFor(() => expect(slot?.style.height).toBe('100px'))
@@ -104,7 +98,7 @@ describe('CC-21 输入字体测高响应与生命周期', () => {
   })
 
   it('跟随态下消息字体变化同样触发重测', async () => {
-    const { services, textarea, slot } = renderInput('session-a', 'composer', undefined, true)
+    const { services, textarea, slot } = renderInput('session-a', undefined, true)
     Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
     fireEvent.input(textarea, { target: { value: '长草稿' } })
     await waitFor(() => expect(slot?.style.height).toBe('100px'))
@@ -145,7 +139,7 @@ describe('CC-21 输入字体测高响应与生命周期', () => {
           real()
         }
       })
-      const { textarea, slot, unmount } = renderInput('session-a', 'composer', undefined, true)
+      const { textarea, slot, unmount } = renderInput('session-a', undefined, true)
       Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
       fireEvent.input(textarea, { target: { value: '长草稿' } })
       await waitFor(() => expect(slot?.style.height).toBe('100px'))
@@ -171,8 +165,38 @@ describe('CC-21 输入字体测高响应与生命周期', () => {
 })
 
 describe('SolidInputBar', () => {
+  it('编辑器主操作提交消息，生成中空草稿停止、有草稿入队，原命令仍走会话端口', async () => {
+    const { services, textarea } = renderInput()
+    expect(screen.getByRole('button', { name: '提交消息' })).toBeDisabled()
+    fireEvent.input(textarea, { target: { value: '直接发送' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交消息' }))
+    await waitFor(() => expect(services.commands.calls[0]?.args).toEqual(['session-a', { text: '直接发送', attachments: [] }]))
+    services.runtime.update({ generating: true })
+    fireEvent.click(screen.getByRole('button', { name: '停止当前生成' }))
+    await waitFor(() => expect(services.commands.calls[1]).toMatchObject({ command: 'cancel', args: ['session-a'] }))
+    fireEvent.input(textarea, { target: { value: '下一条问题' } })
+    fireEvent.click(screen.getByRole('button', { name: '加入发送队列' }))
+    expect(textarea.value).toBe('')
+    expect(services.sessionUi.get('session-a', 'queued-messages', [])).toEqual([expect.objectContaining({ text: '下一条问题' })])
+    expect(services.commands.calls).toHaveLength(2)
+  })
+
+  it('自然流编辑器按正文增高而非给槽位写固定高度，长草稿封顶后内部滚动', async () => {
+    const { textarea, slot, controlCenter } = renderInput('session-a', undefined, true)
+    slot!.style.setProperty('--cc-input-flow', '1')
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 110 })
+    fireEvent.input(textarea, { target: { value: '多行内容' } })
+    await waitFor(() => expect(textarea.style.height).toBe('110px'))
+    expect(slot!.style.height).toBe('auto')
+    expect(controlCenter!.style.getPropertyValue('--cc-input-extra-height')).toBe('')
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 320 })
+    fireEvent.input(textarea, { target: { value: '更长内容' } })
+    expect(textarea.style.height).toBe('180px')
+    expect(textarea.style.overflowY).toBe('auto')
+  })
+
   it('temporarily expands upward to three times the static input height without writing to appearance', async () => {
-    const { services, textarea, slot, controlCenter } = renderInput('session-a', 'composer', undefined, true)
+    const { services, textarea, slot, controlCenter } = renderInput('session-a', undefined, true)
     expect(slot).toBeTruthy()
     Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
 
@@ -621,7 +645,7 @@ describe('SolidInputBar', () => {
 
   it('可选 provider 在空草稿时低频请求并显示模型 ghost text', async () => {
     const provider: InputPredictionProvider = { predict: vi.fn(async () => '模型建议继续') }
-    const { textarea } = renderInput('session-a', 'composer', provider)
+    const { textarea } = renderInput('session-a', provider)
     expect(await screen.findByText('模型建议继续', {}, { timeout: 1_500 })).toBeTruthy()
     expect(provider.predict).toHaveBeenCalledTimes(1)
     fireEvent.keyDown(textarea, { key: 'Tab' })
@@ -644,7 +668,7 @@ describe('Agent 原生预测（#394）', () => {
   const SOURCE = 'local:session-a'
 
   it('随文档进入 ghost（源标注 native），Tab 接受并消费该实例', async () => {
-    const { services, textarea } = renderInput('session-a', undefined, undefined, false, SOURCE)
+    const { services, textarea } = renderInput('session-a', undefined, false, SOURCE)
     const projected = predictionDocument(SOURCE, { type: 'assist.prediction', placeholder: '先帮我看看这个仓库的结构', actions: [] })
     const eventId = projected.assist.prediction?.eventId
     expect(eventId).toBeTruthy()
@@ -660,7 +684,7 @@ describe('Agent 原生预测（#394）', () => {
   })
 
   it('草稿是预测前缀时续显剩余；输入分歧即拒绝（消费）', async () => {
-    const { services, textarea } = renderInput('session-a', undefined, undefined, false, SOURCE)
+    const { services, textarea } = renderInput('session-a', undefined, false, SOURCE)
     const projected = predictionDocument(SOURCE, { type: 'assist.prediction', placeholder: '先帮我看看这个仓库的结构', actions: [] })
     const eventId = projected.assist.prediction?.eventId
     services.runtime.replaceDocument(projected, { ownerKey: 'owner-a' })
@@ -675,7 +699,7 @@ describe('Agent 原生预测（#394）', () => {
   })
 
   it('空草稿上按退格即拒绝', async () => {
-    const { services, textarea } = renderInput('session-a', undefined, undefined, false, SOURCE)
+    const { services, textarea } = renderInput('session-a', undefined, false, SOURCE)
     const projected = predictionDocument(SOURCE, { type: 'assist.prediction', placeholder: '继续审计这个仓库', actions: [] })
     const eventId = projected.assist.prediction?.eventId
     services.runtime.replaceDocument(projected, { ownerKey: 'owner-a' })
@@ -687,7 +711,7 @@ describe('Agent 原生预测（#394）', () => {
 
   it('原生预测在场时不发起本地 provider 请求（原生优先）', async () => {
     const provider: InputPredictionProvider = { predict: vi.fn(async () => '本地模型建议') }
-    const { services } = renderInput('session-a', undefined, provider, false, SOURCE)
+    const { services } = renderInput('session-a', provider, false, SOURCE)
     services.runtime.replaceDocument(
       predictionDocument(SOURCE, { type: 'assist.prediction', placeholder: '先帮我看看这个仓库的结构', actions: [] }),
       { ownerKey: 'owner-a' },
@@ -708,7 +732,7 @@ describe('Agent 原生预测（#394）', () => {
   })
 
   it('#395：文档 source 不匹配时不用它（原生预测与文档历史都不参与）', async () => {
-    const { services, textarea } = renderInput('session-a', undefined, undefined, false, 'local:other-session')
+    const { services, textarea } = renderInput('session-a', undefined, false, 'local:other-session')
     services.runtime.replaceDocument(
       predictionDocument(SOURCE, { type: 'assist.prediction', placeholder: '先帮我看看这个仓库的结构', actions: [] }),
       { ownerKey: 'owner-a' },
@@ -726,7 +750,7 @@ describe('Agent 原生预测（#394）', () => {
   })
 
   it('#395：source 匹配时文档历史参与 ghost 补全', async () => {
-    const { services, textarea } = renderInput('session-a', undefined, undefined, false, SOURCE)
+    const { services, textarea } = renderInput('session-a', undefined, false, SOURCE)
     services.runtime.replaceDocument(
       predictionDocument(SOURCE, { type: 'message.completed', role: 'user', parts: [{ kind: 'text', text: '继续做' }] }),
       { ownerKey: 'owner-a' },
@@ -781,5 +805,81 @@ describe('#699 输入区附件', () => {
     fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
     await waitFor(() => expect(services.commands.calls.filter(call => call.command === 'attach')).toHaveLength(2))
     expect(document.querySelectorAll('.input-attachment')).toHaveLength(1)
+  })
+})
+
+
+describe('#728 input ownership and accessible commands', () => {
+  it('routes delayed picker results to the initiating session and prevents duplicate pickers', async () => {
+    const { services, switchSession } = renderInput()
+    const attachment = { id: '/a.png', path: '/a.png' }
+    let resolve!: (value: typeof attachment[]) => void
+    const picker = vi.fn(() => new Promise<typeof attachment[]>(done => { resolve = done }))
+    services.commands.setHandler('attach', picker)
+    const button = screen.getByRole('button', { name: '添加附件' })
+    fireEvent.click(button)
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(picker).toHaveBeenCalledTimes(1)
+    switchSession('session-b')
+    resolve([attachment])
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(services.sessionUi.get('session-a', 'attachments', [])).toEqual([attachment])
+    expect(services.sessionUi.get('session-b', 'attachments', [])).toEqual([])
+    expect(screen.queryByText('a.png')).toBeNull()
+    switchSession('session-a')
+    expect(await screen.findByText('a.png')).toBeTruthy()
+  })
+
+  it('shows picker failures and allows retry without losing the draft', async () => {
+    const { services, textarea } = renderInput()
+    fireEvent.input(textarea, { target: { value: 'keep this draft' } })
+    services.commands.setHandler('attach', vi.fn(async () => { throw new Error('picker denied') }))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('picker denied')
+    expect(textarea.value).toBe('keep this draft')
+    expect(screen.getByRole('button', { name: '添加附件' })).toBeEnabled()
+  })
+
+  it('ignores picker completion after the input unmounts', async () => {
+    const { services, unmount } = renderInput()
+    let resolve!: (value: { id: string; path: string }[]) => void
+    services.commands.setHandler('attach', () => new Promise(done => { resolve = done }))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    unmount()
+    resolve([{ id: '/late.png', path: '/late.png' }])
+    await Promise.resolve()
+    expect(services.sessionUi.get('session-a', 'attachments', [])).toEqual([])
+  })
+
+  it('leaves composition and selected-text copy to the browser without cancelling a turn', async () => {
+    const { services, textarea } = renderInput()
+    services.runtime.update({ generating: true })
+    fireEvent.compositionStart(textarea)
+    fireEvent.keyDown(textarea, { key: 'Escape' })
+    fireEvent.keyDown(textarea, { key: 'c', ctrlKey: true })
+    fireEvent.compositionEnd(textarea)
+    fireEvent.input(textarea, { target: { value: 'selected' } })
+    textarea.setSelectionRange(0, 4)
+    fireEvent.keyDown(textarea, { key: 'c', ctrlKey: true })
+    expect(services.commands.calls.filter(call => call.command === 'cancel')).toHaveLength(0)
+    textarea.setSelectionRange(4, 4)
+    services.commands.setHandler('cancel', async () => { throw new Error('cancel unavailable') })
+    fireEvent.keyDown(textarea, { key: 'Escape' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('cancel unavailable')
+  })
+
+  it('associates command suggestions with the focused textbox and updates the active option', () => {
+    const { textarea } = renderInput()
+    fireEvent.input(textarea, { target: { value: '/' } })
+    const list = screen.getByRole('listbox', { name: '命令建议' })
+    expect(textarea).toHaveAttribute('aria-controls', list.id)
+    const selected = () => document.getElementById(textarea.getAttribute('aria-activedescendant')!)
+    expect(selected()).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(textarea, { key: 'ArrowDown' })
+    expect(selected()).toHaveAttribute('aria-selected', 'true')
+    expect(document.activeElement).toBe(textarea)
+    fireEvent.input(textarea, { target: { value: 'hello' } })
+    expect(textarea).not.toHaveAttribute('aria-activedescendant')
   })
 })

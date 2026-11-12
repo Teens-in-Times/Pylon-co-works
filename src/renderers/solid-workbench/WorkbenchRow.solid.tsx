@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { Index, Match, Show, Switch, createMemo, createSignal } from 'solid-js'
 import { normalizeToolVisualState } from './toolConnectorProjection.ts'
-import type { Message, RenderMessage } from '../../domains/chat/messageTypes.ts'
+import type { RenderMessage } from '../../domains/chat/messageTypes.ts'
 import type { MessageListItem } from '../../domains/workbench/messageListPort.ts'
 import { coalesceAdjacentDisplayTextParts, type ContentPart } from '../../domains/workbench/content/contentPartSchema.ts'
 import { createToolConnectorLayoutPort } from '../../domains/workbench/toolConnectorLayoutPort.ts'
@@ -153,7 +153,7 @@ function WorkbenchMessageContent(props: {
 }) {
   const message = () => props.renderMessage.message
   const parts = () => {
-    const canonical = (message() as Message & { semanticParts?: readonly ContentPart[] }).semanticParts
+    const canonical = message().semanticParts
     if (canonical && canonical.length > 0) return canonical
     return [{ kind: 'markdown', text: message().content }] as const satisfies readonly ContentPart[]
   }

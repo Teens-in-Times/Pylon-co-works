@@ -1,22 +1,14 @@
-import { createEffect, onCleanup, onMount, untrack, type Accessor, type Setter } from 'solid-js'
+import { createEffect, createMemo, on, onCleanup, onMount, untrack, type Accessor, type Setter } from 'solid-js'
 import { appClients } from '../../app/appClients.ts'
 import { reportRuntimeError } from '../../app/runtimeError'
-import { runtimeEventClient } from '../../infrastructure/tauri/runtimeEventClient.ts'
+import { browserEventFeed } from '../../infrastructure/tauri/browserEventFeed.ts'
 import type { SheetContext } from '../../workspace-sheets/sheetTypes'
 import type { BrowserSnapshot, BrowserToolId } from './browserSheetTypes.ts'
 
 /**
- * wireBrowserSheetEffects — Browser Sheet 的 effect 编排（#520 S3-P0-3 自
- * BrowserSheetView 拆出）。
- *
- * 覆盖宿主原有的 7 个副作用：原生子 WebView 可见性、status 探测 + Tauri 事件订阅
- * （经 runtimeEventClient 传输层收口，#520 S1-P1）、bounds 重同步、开发预览
- * postMessage、预览 mock 状态投影、工具面板打开即刷新快照、卸载回收 WebView。
- * 各 effect 的依赖面、untrack 旁路与清理语义逐条保真；注册顺序与拆分前一致。
- *
- * 事件订阅改经 runtimeEventClient：dispose 语义与原 onCleanup 里的
- * `.then(stop => stop()).catch(() => {})` 逐条对应（dispose 前 settle → 立即注销；
- * settle 前 dispose → settle 后补注销；注册失败只在清理处吸收）。
+ * Browser Sheet 的生命周期编排：原生可见性和 bounds、状态探测、窗口事件的本地
+ * 订阅、预览消息、工具快照与卸载回收。
+ * 活动态探测与事件订阅分开：切 Sheet 只更新本实例状态，不重新注册原生监听。
  */
 export interface BrowserSheetEffectsDeps {
   /** 环境探测结果（挂载期常量，非响应式）。 */
@@ -43,16 +35,17 @@ export interface BrowserSheetEffectsDeps {
 
 export function wireBrowserSheetEffects(deps: BrowserSheetEffectsDeps): void {
   const { browserPreview, browserRuntimeAvailable, viewportRef } = deps
+  // 状态事件总会替换 snapshot 对象；原生命令只响应其实际所需的标量变化。
+  // 尤其 setVisible 自身会广播 status，直接追踪整个 snapshot 会形成 IPC 反馈循环。
+  const phase = createMemo(() => deps.snapshot().phase)
+  const isActive = createMemo(() => deps.ctx().isActive)
+  const sidebarCollapsed = createMemo(() => deps.ctx().sidebarCollapsed)
+  const overlayOpen = createMemo(deps.modalOverlayOpen)
 
   // 同步原生子 WebView 的可见性。不能用 CSS 代替：Tauri child WebView 位于
   // 宿主窗口的原生层，DOM 树上的 display:none 对它没有效果。
-  // 原 useEffect [browserPreview, browserRuntimeAvailable, ctx.isActive, isSheetActive,
-  // snapshot.phase, modalOverlayOpen]。
-  createEffect(() => {
-    const rawActive = deps.ctx().isActive
+  createEffect(on([isActive, overlayOpen, phase], ([rawActive, overlayOpen, phase]) => {
     const active = rawActive !== false
-    const overlayOpen = deps.modalOverlayOpen()
-    const phase = deps.snapshot().phase
     // 旧的独立组件调用方没有 isActive 字段；不向它们引入一个额外的
     // 未 mock 命令，SheetLayout（生产路径）会始终提供显式布尔值。
     if (!browserRuntimeAvailable || browserPreview || typeof rawActive !== 'boolean' || phase !== 'ready') return
@@ -60,14 +53,11 @@ export function wireBrowserSheetEffects(deps: BrowserSheetEffectsDeps): void {
     void appClients.browser
       .setVisible(nativeVisible)
       .catch(error => reportRuntimeError('切换浏览器可见性', error))
-  })
+  }))
 
-  // status 探测 + Tauri 事件订阅（原 useEffect [applySnapshot, browserPreview,
-  // browserRuntimeAvailable, ctx.isActive, isSheetActive, recordCurrentPage]——回调身份
-  // 依赖链收敛到 ctx.isActive 一处，其余为模块级常量）。
-  createEffect(() => {
+  // 活动态变化重新探测；迟到响应只能写回该次探测仍存活的 owner。
+  createEffect(on(isActive, rawActive => {
     if (!browserRuntimeAvailable) return
-    const rawActive = deps.ctx().isActive
     let disposed = false
     const client = appClients.browser
     const commit = (next: BrowserSnapshot) => {
@@ -96,8 +86,16 @@ export function wireBrowserSheetEffects(deps: BrowserSheetEffectsDeps): void {
       }
     }
     void client.status().then(raw => void startSessionIfNeeded(raw as BrowserSnapshot)).catch(() => {})
-    const status = runtimeEventClient.subscribe<BrowserSnapshot>('pylon:browser-status', payload => commit(payload))
-    const page = runtimeEventClient.subscribe<{ tabId: number; active: boolean; url?: string | null; title?: string | null }>('pylon:browser-page', payload => {
+    onCleanup(() => { disposed = true })
+  }))
+
+  onMount(() => {
+    if (!browserRuntimeAvailable) return
+    let disposed = false
+    const status = browserEventFeed.subscribe<BrowserSnapshot>('pylon:browser-status', payload => {
+      if (!disposed) deps.applySnapshot(payload)
+    })
+    const page = browserEventFeed.subscribe<{ tabId: number; active: boolean; url?: string | null; title?: string | null }>('pylon:browser-page', payload => {
       if (disposed) return
       deps.setSnapshot(previous => ({
         ...previous,
@@ -117,16 +115,8 @@ export function wireBrowserSheetEffects(deps: BrowserSheetEffectsDeps): void {
     })
   })
 
-  // 原 useEffect [syncBounds, sidebarCollapsed]：syncBounds 身份随 (browserRuntimeAvailable,
-  // isSheetActive, snapshot.phase) 变化，叠加折叠变化即时重同步 WebView bounds。
-  createEffect(() => {
-    // 依赖面（读取即注册）：活动态、phase、折叠。
-    const active = deps.ctx().isActive !== false
-    const phase = deps.snapshot().phase
-    const collapsed = deps.ctx().sidebarCollapsed
-    void active
-    void phase
-    void collapsed
+  // 活动态、运行阶段和折叠变化后重新同步原生区域边界。
+  createEffect(on([isActive, phase, sidebarCollapsed], () => {
     const element = viewportRef.current
     if (!element) return
     const observer = new ResizeObserver(() => deps.syncBounds())
@@ -137,12 +127,10 @@ export function wireBrowserSheetEffects(deps: BrowserSheetEffectsDeps): void {
       observer.disconnect()
       window.removeEventListener('resize', deps.syncBounds)
     })
-  })
+  }))
 
   // 开发代理页会把跨域页面中的链接点击通过 postMessage 交回这里；
   // 原生 Tauri WebView 则由 Rust 的初始化脚本处理同一语义。
-  // （原 effect deps [browserPreview, navigateTo, tabCommand]——回调身份依赖链收敛到
-  // 环境常量，闭包读信号恒最新，onMount 一次性注册等价。）
   onMount(() => {
     if (!browserPreview) return
     const onPreviewMessage = (event: MessageEvent<unknown>) => {
@@ -179,12 +167,10 @@ export function wireBrowserSheetEffects(deps: BrowserSheetEffectsDeps): void {
     onCleanup(() => window.removeEventListener('pylon:browser-status', onMockStatus))
   })
 
-  // 原 useEffect [activeTool, inspectPage, snapshot.phase]：面板打开即刷新页面快照。
-  createEffect(() => {
-    const tool = deps.activeTool()
-    const phase = deps.snapshot().phase
+  // 面板打开即刷新页面快照。
+  createEffect(on([deps.activeTool, phase], ([tool, phase]) => {
     if ((tool === 'downloads' || tool === 'console') && phase === 'ready') void deps.inspectPage()
-  })
+  }))
 
   onMount(() => {
     onCleanup(() => {

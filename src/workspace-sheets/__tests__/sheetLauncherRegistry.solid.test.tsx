@@ -1,18 +1,6 @@
 // @vitest-environment jsdom
 /** @jsxImportSource solid-js */
-/**
- * SheetLauncher Registry 卡片（注册分类 / 检索索引 / 空态 / 徽标 / 图标降级）。
- *
- * #515：迁移自 sheetLauncherRegistry.test.tsx（React RTL → @solidjs/testing-library，
- * 实体直连 SheetLauncher.solid.tsx）。改写点登记：
- * - 实体 props 形态是 `latest: () => SheetLauncherProps` 访问器隧道（照 App.solid.tsx
- *   用法），`render(() => <SheetLauncher latest={() => props} />)`；
- * - `render(<SheetLauncher {...props}/>)` → `render(() => <SheetLauncher latest={() => props}/>)`，
- *   每用例先组好 props 对象再传入；
- * - 补显式 `afterEach(cleanup)`（vitest globals 未开）；
- * - 断言集逐字保留（分类标题、可访问名、data-launch-icon、关键词检索、空态文案、
- *   「暂不可用」中文徽标、未知图标键降级）。
- */
+/** Registry-driven discovery, search, keyboard selection and icon fallback. */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SheetLauncher from '../SheetLauncher.solid.tsx'
@@ -69,9 +57,21 @@ describe('SheetLauncher Registry 卡片', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('输入框向辅助技术暴露当前键盘选项并执行该项', () => {
+    const onOpenSheet = vi.fn()
+    renderLauncher(launcherProps({ onOpenSheet }))
+    const input = screen.getByRole('combobox', { name: '搜索 Sheet、Agent 或管理入口' })
+    fireEvent.input(input, { target: { value: '运行日志' } })
+    const option = screen.getByRole('option', { name: /Runtime/, selected: true })
+    expect(document.getElementById(input.getAttribute('aria-activedescendant')!)).toBe(option)
+    expect(input.getAttribute('aria-controls')).toBe(screen.getByRole('listbox').id)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onOpenSheet).toHaveBeenCalledWith('runtime', 'Runtime')
+  })
+
   it('注册关键词参与 Command 搜索', () => {
     renderLauncher(launcherProps())
-    fireEvent.input(screen.getByPlaceholderText('搜索 Sheet、Agent 或管理入口...'), { target: { value: 'diagnostic' } })
+    fireEvent.input(screen.getByRole('combobox', { name: '搜索 Sheet、Agent 或管理入口' }), { target: { value: 'diagnostic' } })
     expect(screen.getByRole('option', { name: /Runtime/ })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Browser/ })).toBeNull()
   })
@@ -79,10 +79,10 @@ describe('SheetLauncher Registry 卡片', () => {
   // #327：中文界面下英文条目标题不可搜——描述与中英关键词都必须进索引串。
   it('中文关键词与中文描述均可命中条目', () => {
     renderLauncher(launcherProps())
-    const input = screen.getByPlaceholderText('搜索 Sheet、Agent 或管理入口...')
+    const input = screen.getByRole('combobox', { name: '搜索 Sheet、Agent 或管理入口' })
 
     fireEvent.input(input, { target: { value: '设置' } })
-    expect(screen.getByRole('option', { name: /Settings/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /设置.*主题、Agent/ })).toBeInTheDocument()
 
     fireEvent.input(input, { target: { value: '运行日志' } })
     expect(screen.getByRole('option', { name: /Runtime/ })).toBeInTheDocument()
@@ -100,7 +100,7 @@ describe('SheetLauncher Registry 卡片', () => {
 
   it('有 Agent 但查询无命中时给出换词提示，不谎报「没有可用 Agent」', () => {
     renderLauncher(launcherProps({ agents: [{ id: 'peri', name: 'Peri' }] }))
-    fireEvent.input(screen.getByPlaceholderText('搜索 Sheet、Agent 或管理入口...'), { target: { value: 'zzz-无此条目' } })
+    fireEvent.input(screen.getByRole('combobox', { name: '搜索 Sheet、Agent 或管理入口' }), { target: { value: 'zzz-无此条目' } })
 
     expect(screen.getByText('没有匹配的 Agent')).toBeInTheDocument()
     expect(screen.queryByText('还没有可用的 Agent')).toBeNull()

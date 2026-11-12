@@ -11,12 +11,15 @@
  * - 覆盖层 store 写入外的 React `act` 包裹移除（Solid 侧无需 act，信号同步通知）。
  */
 import { createSignal } from 'solid-js'
-import { cleanup, render, waitFor } from '@solidjs/testing-library'
+import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SheetContext, SheetRecord } from '../../../workspace-sheets/sheetTypes'
 import DocsSheetView from '../DocsSheetView.solid'
 import { FakeInvoke } from '../../../test/fakeInvoke'
 import { useModalOverlayStore } from '../../../app/modalOverlayStore'
+import { reportRuntimeError } from '../../../app/runtimeError'
+
+vi.mock('../../../app/runtimeError', () => ({ reportRuntimeError: vi.fn() }))
 
 vi.mock('../../../infrastructure/tauri/env.ts', () => ({
   IS_TAURI: true,
@@ -74,6 +77,19 @@ describe('#371 Docs Sheet WebView 同步（bounds / visible）', () => {
   function callsOf(cmd: string) {
     return fakeInvoke.calls.filter(call => call.cmd === cmd)
   }
+
+  it('加载失败提供重试并在成功后恢复导航', async () => {
+    let attempts = 0
+    fakeInvoke.registerMany({ docs_sheet_start: () => {
+      attempts++
+      return attempts === 1 ? Promise.reject(new Error('missing docs')) : Promise.resolve(readySnapshot())
+    } })
+    render(() => <DocsSheetView sheet={sheet} ctx={baseCtx} />)
+    fireEvent.click(await screen.findByRole('button', { name: '重试打开文档' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled())
+    expect(attempts).toBe(2)
+    expect(reportRuntimeError).toHaveBeenCalledWith('打开文档站', expect.any(Error))
+  })
 
   it('活动态自动 start；折叠切换重同步 bounds（次数递增）', async () => {
     const [ctx, setCtx] = createSignal<SheetContext>(baseCtx)

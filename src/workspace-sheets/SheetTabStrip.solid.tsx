@@ -158,8 +158,7 @@ export default function SheetTabStrip(p: { latest: () => SheetTabStripProps }) {
 
   const focusSheet = async (sheet: SheetRecord): Promise<boolean> => {
     const targetAgentId = sheet.kind === 'agent' ? sheet.agentId : undefined
-    const currentActiveAgent = useIdentityStore.getState().activeAgent || activeAgent()
-    if (!targetAgentId || targetAgentId === currentActiveAgent) {
+    if (!targetAgentId) {
       latest().onFocus(sheet.id)
       return true
     }
@@ -243,6 +242,12 @@ export default function SheetTabStrip(p: { latest: () => SheetTabStripProps }) {
                 } else if (event.key === 'ArrowRight') {
                   event.preventDefault()
                   moveFocus(sheet.id, 1)
+                } else if (event.key === 'Home' || event.key === 'End') {
+                  event.preventDefault()
+                  const target = event.key === 'Home' ? sheets()[0] : sheets().at(-1)
+                  if (target) void focusSheet(target).then(focused => {
+                    if (focused) requestAnimationFrame(() => tabRefs.get(target.id)?.querySelector<HTMLButtonElement>('.sheet-tab-focus')?.focus())
+                  })
                 } else if ((event.key === 'Delete' || event.key === 'Backspace') && !sheet.pinned) {
                   event.preventDefault()
                   latest().onClose(sheet.id)

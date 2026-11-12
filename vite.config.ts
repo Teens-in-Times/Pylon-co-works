@@ -3,9 +3,6 @@ import solid from 'vite-plugin-solid'
 // @tailwindcss/vite 4.x 只有 default 导出（无命名导出 tailwindcss）。
 import tailwindcss from '@tailwindcss/vite'
 
-// #279 逐梯队 Solid 化 → #515/#520 全量终态：凡 `.solid.tsx` 后缀即 solid 编译；
-// React 面已整体退役（#520 W4），全仓只剩 solid 编译管线。
-const SOLID_WORKBENCH_FILES = /src\/.*\.solid(?:\.test)?\.tsx$/
 
 /**
  * 开发浏览器的真实页面代理。
@@ -117,11 +114,14 @@ function injectBrowserPreviewBridge(html: string, pageUrl: string): string {
 export default defineConfig({
   plugins: [
     // Tailwind v4（TW 施工书 20260914）：只处理 src/styles/tailwind.css 入口，
-    // 无 preflight，不触碰 React/Solid 编译。
+    // 无 preflight，JSX 统一由 Solid 编译。
     tailwindcss(),
     browserPreviewProxy(),
-    solid({ include: SOLID_WORKBENCH_FILES }),
+    solid(),
   ],
+  optimizeDeps: {
+    entries: ['index.html'],
+  },
   server: {
     port: 5173,
     strictPort: true,
@@ -129,7 +129,7 @@ export default defineConfig({
     // 监视它毫无收益，还会在 cargo 构建进行中因 chokidar 对被锁 exe 加 watch 而
     // 抛 EBUSY，把整个 dev server 带崩（实发于 2026-09-18/19）。
     watch: {
-      ignored: ['**/src-tauri/**'],
+      ignored: ['**/src-tauri/**', '**/target/**', '**/artifacts/**', '**/dist*/**'],
     },
   },
   envPrefix: ['VITE_', 'TAURI_'],

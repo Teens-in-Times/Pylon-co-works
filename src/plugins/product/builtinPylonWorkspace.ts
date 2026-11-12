@@ -1,3 +1,4 @@
+import type { ContextPanelContribution } from '../../plugin-runtime/context-panel/contextPanelTypes.ts'
 import type { BuiltinPluginDefinition } from '../../plugin-runtime/pluginRuntime.ts'
 import { BUILTIN_WORKSPACE_TYPES } from '../core/sheet/builtinWorkspacePlugins.ts'
 import { BUILTIN_SEARCH_PROVIDERS } from '../core/search/builtinSearchProviders.ts'
@@ -13,9 +14,7 @@ import { createBuiltinWorkspaceCommandDefinitions } from '../core/sheet/builtinW
 import { createBuiltinBrowserCommandDefinitions } from '../core/browser/builtinBrowserCommands.ts'
 import { registerBuiltinBrowserAgentSessionAccess } from '../core/browser/builtinBrowserAgentSessionAccess.ts'
 
-// #515 贡献面翻转：sidebar / context-panel 第一方贡献组件是 **Solid 实体**（此前注册
-// React 薄桥）。本文件留在 React 类型图（.ts），不得静态 import .solid 文件——按 P52 D4
-// 经 glob 缝（运行期模块解析，零类型图边）加载，solid `lazy` 保留代码分割。
+// First-party Solid panels are lazy-loaded so inactive workspace surfaces do not enter the initial bundle.
 const SessionsPanel = lazy(() => {
   const load = import.meta.glob<{ default: Component }>('../../components/sidebar/SessionsPanel.solid.tsx')['../../components/sidebar/SessionsPanel.solid.tsx']
   if (!load) return Promise.reject(new Error('SessionsPanel Solid 实体未进入 Vite module graph'))
@@ -36,6 +35,28 @@ const FileContextPanel = lazy(() => {
   if (!load) return Promise.reject(new Error('FileContextPanel Solid 实体未进入 Vite module graph'))
   return load()
 })
+
+/** Built-in inspectors require their matching workspace; global plugin panels remain independent. */
+export const BUILTIN_CONTEXT_PANEL_CONTRIBUTIONS: readonly ContextPanelContribution[] = [
+  {
+    id: 'builtin.context-panel.agent',
+    workspaceKind: 'agent',
+    label: '工作资源',
+    when: context => context.workspaceKind === 'agent',
+    order: 100,
+    renderKind: 'first-party-solid',
+    component: AgentContextPanel,
+  },
+  {
+    id: 'builtin.context-panel.file',
+    workspaceKind: 'file',
+    label: '关联',
+    when: context => context.workspaceKind === 'file',
+    order: 100,
+    renderKind: 'first-party-solid',
+    component: FileContextPanel,
+  },
+]
 
 /**
  * 左栏「模块区」的真实模块（搜索 + 会话）。搜索是独立面板（可隐藏/拖走），
@@ -78,22 +99,7 @@ export function createBuiltinPylonWorkspacePlugin(): BuiltinPluginDefinition {
       }
       // issue #82：浏览器 Agent 会话贡献——session/new 前按档位注入浏览器 MCP 桥。
       registerBuiltinBrowserAgentSessionAccess(context.sessionCreation)
-      context.contextPanel.register({
-        id: 'builtin.context-panel.agent',
-        workspaceKind: 'agent',
-        label: '上下文',
-        order: 100,
-        renderKind: 'first-party-solid',
-        component: AgentContextPanel,
-      })
-      context.contextPanel.register({
-        id: 'builtin.context-panel.file',
-        workspaceKind: 'file',
-        label: '关联',
-        order: 100,
-        renderKind: 'first-party-solid',
-        component: FileContextPanel,
-      })
+      for (const panel of BUILTIN_CONTEXT_PANEL_CONTRIBUTIONS) context.contextPanel.register(panel)
       for (const provider of BUILTIN_SEARCH_PROVIDERS) {
         context.services.register('search', provider.providerId, provider)
       }

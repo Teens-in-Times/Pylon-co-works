@@ -319,7 +319,6 @@ const RULES: LayerRule[] = [
       // 域内动作经 app/runtimeError 上报错误（错误口现居 app；下沉待清偿）
       'src/domains/identity/identityProfileActions.ts -> src/app/runtimeError.ts': '域内动作经 app/runtimeError 上报错误（错误口下沉待清偿）',
       'src/domains/identity/identitySessionActions.ts -> src/app/runtimeError.ts': '域内动作经 app/runtimeError 上报错误（错误口下沉待清偿）',
-      'src/domains/search/searchService.ts -> src/app/runtimeError.ts': '域内动作经 app/runtimeError 上报错误（错误口下沉待清偿）',
       'src/domains/theme/customPresetStore.ts -> src/app/runtimeError.ts': '域内动作经 app/runtimeError 上报错误（错误口下沉待清偿）',
       'src/domains/theme/presetActions.ts -> src/app/runtimeError.ts': '域内动作经 app/runtimeError 上报错误（错误口下沉待清偿）',
       'src/domains/theme/themeStore.ts -> src/app/runtimeError.ts': '域内动作经 app/runtimeError 上报错误（错误口下沉待清偿）',

@@ -17,6 +17,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SheetLauncher from '../SheetLauncher.solid.tsx'
 import type { SheetLauncherProps } from '../SheetLauncher.solid.tsx'
 import { useIdentityStore } from '../../domains/identity/identityStore'
+import { useRuntimeStore } from '../../domains/runtime/runtimeStore'
+import { activateAgentSheet } from '../activateAgentSheet'
 import { resetStores } from '../../test/resetStores'
 
 afterEach(cleanup)
@@ -72,7 +74,7 @@ describe('SheetLauncher Agent 激活事务', () => {
       onOpenSheet,
     })} />)
 
-    fireEvent.click(screen.getByRole('option', { name: /Hermes.*hermes/ }))
+    fireEvent.click(screen.getByRole('option', { name: /Hermes/ }))
 
     expect(invoke).toHaveBeenCalledWith('switch_agent', { name: 'hermes' })
     expect(onOpenSheet).not.toHaveBeenCalled()
@@ -82,5 +84,54 @@ describe('SheetLauncher Agent 激活事务', () => {
 
     await waitFor(() => expect(onOpenSheet).toHaveBeenCalledWith('agent', 'Hermes', 'hermes'))
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('首个 Agent 已被配置选中但尚未启动时，等待真实激活后再打开', async () => {
+    useIdentityStore.setState({ activeAgent: '' })
+    useIdentityStore.getState().setAgents([{ id: 'qa-ui', name: 'UI验收Agent', active: true }])
+    expect(useIdentityStore.getState().activeAgent).toBe('qa-ui')
+    const pending = deferred<unknown>()
+    invoke.mockImplementation(command => command === 'switch_agent' ? pending.promise : Promise.resolve({ agent: 'qa-ui', status: 'connected' }))
+    const props = launcherProps({ agents: [{ id: 'qa-ui', name: 'UI验收Agent' }] })
+    render(() => <SheetLauncher latest={() => props} />)
+    fireEvent.click(screen.getByRole('option', { name: /UI验收Agent/ }))
+    expect(invoke).toHaveBeenCalledWith('switch_agent', { name: 'qa-ui' })
+    expect(props.onOpenSheet).not.toHaveBeenCalled()
+    pending.resolve(null)
+    await waitFor(() => expect(props.onOpenSheet).toHaveBeenCalledWith('agent', 'UI验收Agent', 'qa-ui'))
+    expect(props.onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('同 Agent 激活失败时保留 launcher，不能以配置选中冒充成功', async () => {
+    invoke.mockRejectedValueOnce(new Error('Agent 启动失败'))
+    const props = launcherProps({ agents: [{ id: 'peri', name: 'Peri' }] })
+    render(() => <SheetLauncher latest={() => props} />)
+    fireEvent.click(screen.getByRole('option', { name: /Peri/ }))
+    await waitFor(() => expect(screen.getByRole('option', { name: /Peri/ })).not.toHaveAttribute('aria-disabled', 'true'))
+    expect(props.onOpenSheet).not.toHaveBeenCalled()
+    expect(props.onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it('已连接 Agent 直接打开，不重启运行时', async () => {
+    useRuntimeStore.getState().setAgentStatus('peri', { agent: 'peri', status: 'connected' })
+    const props = launcherProps({ agents: [{ id: 'peri', name: 'Peri' }] })
+    render(() => <SheetLauncher latest={() => props} />)
+    fireEvent.click(screen.getByRole('option', { name: /Peri/ }))
+    await waitFor(() => expect(props.onOpenSheet).toHaveBeenCalledWith('agent', 'Peri', 'peri'))
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('同一 Agent 的并行打开共用一次启动，但各自完成打开动作', async () => {
+    const pending = deferred<unknown>()
+    invoke.mockImplementation(command => command === 'switch_agent' ? pending.promise : Promise.resolve({ agent: 'peri', status: 'connected' }))
+    const open = vi.fn()
+    const focus = vi.fn()
+    const first = activateAgentSheet('peri', 'Peri', open)
+    const second = activateAgentSheet('peri', 'Peri', focus)
+    expect(invoke.mock.calls.filter(([command]) => command === 'switch_agent')).toHaveLength(1)
+    pending.resolve(null)
+    expect(await Promise.all([first, second])).toEqual([true, true])
+    expect(open).toHaveBeenCalledOnce()
+    expect(focus).toHaveBeenCalledOnce()
   })
 })

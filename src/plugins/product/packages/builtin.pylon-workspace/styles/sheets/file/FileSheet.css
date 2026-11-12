@@ -571,25 +571,9 @@
   place-items: center;
   min-height: 100%;
   padding: var(--ui-space-7);
-  background:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px),
-    var(--bg-panel);
-  background-size: 32px 32px;
-  background-position: -1px -1px;
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
-.file-tab-empty::before {
-  content: 'EDITOR / NO FILE';
-  position: absolute;
-  top: 16px;
-  left: 18px;
-  color: var(--text-placeholder);
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  background:var(--surface-raised);
+  font-family:var(--font);
+  font-size:13px;
 }
 
 .file-empty-card {
@@ -599,12 +583,11 @@
   align-items: center;
   gap: 8px;
   padding: 28px 32px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 0;
   color: var(--text-dim);
   text-align: center;
-  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
-  box-shadow: 0 16px 40px color-mix(in srgb, var(--text) 5%, transparent);
+  background:transparent;
 }
 
 .file-empty-card strong {
@@ -612,6 +595,7 @@
   font-family: var(--font);
   font-size: 14px;
 }
+.file-empty-card p { margin:0; line-height:1.7; color:var(--text-dim); }
 
 .file-empty-mark {
   display: grid;
@@ -1007,8 +991,8 @@
 }
 .file-working-diff { padding: 4px 10px 0; }
 .file-status-dirty { color: var(--editor-modified-mark, var(--warning)); font-weight: 700; }
-.app[data-interface-mode="modern-gui"] .file-activity-button,.app[data-interface-mode="modern-gui"] .file-tree-row,.app[data-interface-mode="modern-gui"] .file-tab,.app[data-interface-mode="modern-gui"] .file-tab-close{border-radius:8px}
-.app[data-interface-mode="modern-gui"] .file-editor{margin:8px 8px 8px 0;overflow:hidden;border:1px solid var(--border);border-radius:13px;background:color-mix(in srgb,var(--surface-panel) 58%,transparent)}
+.app[data-interface-mode="modern-gui"] .file-activity-button,.app[data-interface-mode="modern-gui"] .file-tree-row,.app[data-interface-mode="modern-gui"] .file-tab,.app[data-interface-mode="modern-gui"] .file-tab-close{border-radius:2px}
+.app[data-interface-mode="modern-gui"] .file-editor{margin:0;overflow:hidden;border:0;border-radius:0;background:var(--surface-canvas)}
 
 /*
  * File code projection contract (issue38 · issue #69 unified geometry model).
@@ -1217,3 +1201,5 @@
 
 /* 变更行标记在编辑态（CodeMirror）的对应载体：working-diff 面板 + 行背景，
    行盒本身保留同宽标记轨（border-left 透明），因此正文左缘不因是否有变更而位移。 */
+
+.file-tab:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

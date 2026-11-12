@@ -20,6 +20,22 @@ function Harness() {
 }
 
 describe('Select', () => {
+  it('缺失的持久化选项不冒充第一个值，禁用时关闭已打开的列表', () => {
+    let disable!: () => void
+    render(() => {
+      const [disabled, setDisabled] = createSignal(false)
+      disable = () => setDisabled(true)
+      return <Select ariaLabel="动态选项" value="removed" options={options} disabled={disabled()} onChange={() => {}} />
+    })
+    const trigger = screen.getByRole('combobox', { name: '动态选项' })
+    expect(trigger).toHaveTextContent('请选择')
+    fireEvent.click(trigger)
+    expect(screen.getByRole('listbox')).toBeTruthy()
+    disable()
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(trigger).toBeDisabled()
+  })
+
   beforeEach(() => {
     Element.prototype.scrollIntoView = vi.fn()
   })

@@ -123,7 +123,8 @@ describe('GatewayRiskPanel browser 模式（无后端）', () => {
 
   it('提示需要 Tauri 后端，不调 invoke', () => {
     render(() => <GatewayRiskPanel />)
-    expect(screen.getByText(/Gateway 管理需要 Tauri 后端/)).toBeInTheDocument()
+    expect(screen.getByText(/实际消息连接需要在桌面应用中启动/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '管理平台连接' })).toBeInTheDocument()
     expect(fakeInvoke.calls).toHaveLength(0)
   })
 })

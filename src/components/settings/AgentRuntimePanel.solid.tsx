@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createSignal, For, Show } from 'solid-js'
+import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js'
 import { appClients } from '../../app/appClients.ts'
 import { errorCode as wireErrorCode } from '../../infrastructure/tauri/errorPayload.ts'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
@@ -27,6 +27,8 @@ import AgentRuntimeCard from './AgentRuntimeCard.solid.tsx'
 import AgentCandidateList from './AgentCandidateList.solid.tsx'
 import AgentCreateForm, { type AgentCreateDraftInput } from './AgentCreateForm.solid.tsx'
 import { emptyDraft, agentConfig, agentsDocument, type Draft } from './agentRuntimePanelDrafts'
+import { activateAgentSheet } from '../../workspace-sheets/activateAgentSheet.ts'
+import { useWorkspaceStore } from '../../domains/workspace/workspaceStore.ts'
 
 function invocationError(executable: string, args: string[]): string | null {
   const error = validateInvocation({ executable, args }).issues.find(issue => issue.severity === 'error')
@@ -47,12 +49,11 @@ interface AgentRuntimePanelProps {
  * createAgentCandidateProvisioning；反馈双通道（feedback/toast/冲突横幅）在
  * createAgentPanelFeedback；呈现分别在 AgentRuntimeCard / AgentCandidateList /
  * AgentCreateForm。
- *
- * #515 W1：Solid 实体。
- * store 消费经 createZustandSignal（selector 只读 store）；副作用用
- * createEffect/onCleanup 承担，跨渲染可变量用组件体局部 let。
  */
 export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
+  let mounted = true
+  onCleanup(() => { mounted = false })
+  let testSequence = 0
   const agentClient = appClients.agent()
   const agents = createZustandSignal(useIdentityStore, s => s.agents)
   const activeAgent = createZustandSignal(useIdentityStore, s => s.activeAgent)
@@ -69,6 +70,10 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
   // B1：最近一次草稿验证返回的启动计划（与真实 spawn 同源；env 已在后端掩码）。
   const [draftLaunchPlan, setDraftLaunchPlan] = createSignal<{ argv: string[] } | null>(null)
   const [showCreate, setShowCreate] = createSignal(false)
+  const [activatingId, setActivatingId] = createSignal<string | null>(null)
+  const [createdAgent, setCreatedAgent] = createSignal<{ id: string; name: string } | null>(null)
+  const [createPhase, setCreatePhase] = createSignal<'testing' | 'saving' | null>(null)
+  const [expandedAgentIds, setExpandedAgentIds] = createSignal<Record<string, boolean>>({})
   // 组件体只跑一次：聚焦过账（原 useRef）用普通可变变量。
   let focusedInitialAgent: string | null = null
 
@@ -130,6 +135,8 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
   })
 
   const startEdit = (agent: AgentEntry) => {
+    testSequence += 1
+    setTestingId(null)
     setEditingId(agent.id)
     setDraft(emptyDraft(agent))
     setFeedback(null)
@@ -139,6 +146,13 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
 
   /** 草稿任一字段变更：指纹更新 + 旧验证立即失效（状态机保证）。 */
   const patchDraft = (updater: (current: Draft) => Draft) => {
+    if (draftMachine().phase === 'testing') {
+      testSequence += 1
+      setTestingId(null)
+      setDraftLaunchPlan(null)
+      const agentId = editingId()
+      if (agentId) setTestResult(current => ({ ...current, [agentId]: '配置已修改，请重新测试连接。' }))
+    }
     setDraft(current => {
       const next = updater(current)
       setDraftMachine(machine => agentDraftReducer(machine, {
@@ -245,10 +259,13 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
 
   const testConnection = async (agentId: string) => {
     if (testingId()) return
+    const sequence = ++testSequence
+    const isCurrent = () => mounted && sequence === testSequence
     setTestingId(agentId)
     setTestResult(current => ({ ...current, [agentId]: '测试中…' }))
     try {
       const result = await agentClient.testAgentConnection(agentId)
+      if (!isCurrent()) return
       setTestResult(current => ({
         ...current,
         [agentId]: result.ok
@@ -261,10 +278,11 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
         reportPanelError('测试 Agent 连接', result.error ?? new Error('Agent 连接失败'), agentId)
       }
     } catch (error) {
+      if (!isCurrent()) return
       const detail = reportPanelError('测试 Agent 连接', error, agentId)
       setTestResult(current => ({ ...current, [agentId]: detail.message }))
     } finally {
-      setTestingId(null)
+      if (isCurrent()) setTestingId(null)
     }
   }
 
@@ -273,16 +291,21 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
     const current = draft()
     const invalid = invocationError(current.exe, current.args)
     if (invalid) { setFeedback(invalid); return }
+    const sequence = ++testSequence
+    const isCurrent = () => mounted && sequence === testSequence
     // 在发起验证前捕获草稿指纹：验证期间用户再改草稿，状态机会作废本次验证。
     const testedFingerprint = agentDraftFingerprint({ name: current.name, provider: current.provider, exe: current.exe, args: current.args })
     setDraftMachine(machine => agentDraftReducer(machine, { type: 'testBegin' }))
     // Solid setter 同步生效：此处读到的已是 testBegin 后的机器（testRequestId 已 +1）。
     const requestId = draftMachine().testRequestId
     setTestingId(agentId)
+    setDraftLaunchPlan(null)
+    setTestResult(currentState => ({ ...currentState, [agentId]: '测试中…' }))
     try {
       const result = await agentClient.testAgentCandidate(agentId, {
         name: current.name.trim(), provider: current.provider.trim(), transport: 'subprocess', exe: current.exe.trim(), args: [...current.args],
       })
+      if (!isCurrent()) return
       setDraftLaunchPlan(result.launchPlan && 'argv' in result.launchPlan ? { argv: result.launchPlan.argv } : null)
       if (!result.ok) throw new Error(result.error?.message ?? '连接失败')
       setDraftMachine(machine => agentDraftReducer(machine, {
@@ -292,19 +315,22 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
       setTestResult(currentState => ({ ...currentState, [agentId]: `连接成功（${result.durationMs}ms），现在可以保存` }))
       setFeedback(null)
     } catch (error) {
+      if (!isCurrent()) return
       const message = `连接失败：${error instanceof Error ? error.message : String(error)}`
       setDraftMachine(machine => agentDraftReducer(machine, {
         type: 'testEnd', requestId, ok: false, testedFingerprint, message,
       }))
       setTestResult(currentState => ({ ...currentState, [agentId]: message }))
-    } finally { setTestingId(null) }
+    } finally { if (isCurrent()) setTestingId(null) }
   }
 
-  /** B1：取消进行中的草稿验证——在途结果作废（状态机递增请求序号），可立即重测。
-   * testingId 同步复位：Promise 仍会 resolve，但其 finally 与 testEnd 都是无害幂等。 */
+  /** A cancelled probe cannot overwrite a later probe's status or busy lock. */
   const cancelDraftTest = () => {
+    testSequence += 1
     setDraftMachine(machine => agentDraftReducer(machine, { type: 'testCancel' }))
     setTestingId(null)
+    const agentId = editingId()
+    if (agentId) setTestResult(current => ({ ...current, [agentId]: '验证已取消，可以重新测试。' }))
   }
 
   const restartRuntime = async (agentId: string) => {
@@ -340,26 +366,49 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
     const invalid = invocationError(createDraft.exe, createDraft.args)
     if (invalid) { setFeedback(invalid); return }
     setSavingId(id)
+    setCreatePhase('testing')
     setFeedback(null)
     const config = agentConfig(createDraft.name, createDraft.exe, createDraft.args, createDraft.provider, agents().length === 0)
+    let stored = false
     // SAFETY: AgentCreateConfig 是扁平 JSON 对象的命名类型；此断言只把它扩宽为按**键名**读取的
     // 视图（assertCustomProfileFieldsAllowed 仅遍历 Object.keys，不读值），结构不变、不丢字段。
     assertCustomProfileFieldsAllowed(config as unknown as Record<string, unknown>)
     try {
+      const validation = await agentClient.testAgentCandidate(id, { ...config, provider: config.provider ?? createDraft.provider })
+      if (!mounted) return
+      if (!validation.ok) {
+        const detail = reportPanelError('验证手动 Agent', validation.error ?? new Error('连接验证未通过'), id)
+        setFeedback(`连接验证未通过：${detail.message}。请修正启动入口后重试，草稿已保留。`)
+        return
+      }
+      resolvePanelError('验证手动 Agent', id)
+      setCreatePhase('saving')
       await agentClient.ensureConfigRevision()
+      if (!mounted) return
       await agentClient.createAgent(id, config)
-      await refreshAgents()
+      stored = true
+      setCreatedAgent({ id, name: createDraft.name })
       setShowCreate(false)
+      await refreshAgents()
       setConfigConflict(false)
       setFeedback(null)
       resolvePanelError('新建 Agent', id)
       notify(`已新建 Agent ${id}`)
     } catch (error) {
+      if (!mounted) return
+      if (stored) {
+        reportPanelError('刷新 Agent 列表', error, id)
+        setConfigConflict(true)
+        setFeedback(`${createDraft.name} 已保存，但列表刷新失败。请重新载入配置，无需重复创建。`)
+        return
+      }
       // 施工文档 §4.6：embedded source 首次配置——create 撞 config_read_only 时，
       // 自动改为在 exe 旁初始化外部 agents.yaml（同一最小配置）。
-      if (wireErrorCode(error) === 'config_read_only') {
+      if (createPhase() === 'saving' && wireErrorCode(error) === 'config_read_only') {
         try {
           await agentClient.initializeAgentsConfig(id, agentsDocument(id, config))
+          setCreatedAgent({ id, name: createDraft.name })
+          setShowCreate(false)
           await refreshAgents()
           resolvePanelError('初始化 Agent 配置', id)
           setShowCreate(false)
@@ -372,7 +421,21 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
       reportConfigMutationError('新建 Agent', error, id)
     } finally {
       setSavingId(null)
+      setCreatePhase(null)
     }
+  }
+
+  const openAgent = async (id: string, name: string) => {
+    if (activatingId()) return
+    setActivatingId(id)
+    try {
+      const opened = await activateAgentSheet(id, name, () => { if (mounted) useWorkspaceStore.getState().openSheet({ kind: 'agent', agentId: id, title: name }) })
+      if (!mounted) return
+      if (!opened) setFeedback(`${name} 尚未连接，请检查启动入口或运行日志。`)
+    } catch (error) {
+      const detail = reportPanelError('打开 Agent 对话', error, id)
+      setFeedback(detail.message)
+    } finally { setActivatingId(null) }
   }
 
   return (
@@ -387,43 +450,7 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
         </button>
       </Show>
 
-      <Show when={agents().length === 0}>
-        <div class="set-hint" role="status">
-          当前没有 Agent 配置。点击“新建 Agent”创建首个外部配置。
-        </div>
-      </Show>
-
-      <For each={agents()}>{agent => {
-        const status = () => selectAgentStatus(agent.id, activeAgent(), agentStatuses())
-        return (
-          <AgentRuntimeCard
-            agent={agent}
-            activeAgent={activeAgent()}
-            status={status()}
-            isEditing={editingId() === agent.id}
-            draft={draft()}
-            onPatchDraft={patchDraft}
-            draftLaunchPlan={draftLaunchPlan()}
-            draftMachinePhase={draftMachine().phase}
-            probeFailure={probeFailureByAgentId().get(agent.id)}
-            detecting={detecting()}
-            onRedetect={() => { void detectRuntimes(true) }}
-            savingId={savingId()}
-            testingId={testingId()}
-            testResultText={testResult()[agent.id]}
-            onStartEdit={() => startEdit(agent)}
-            onSaveEdit={() => { void saveEdit(agent.id) }}
-            onTestDraftConnection={() => { void testDraftConnection(agent.id) }}
-            onCancelDraftTest={cancelDraftTest}
-            onCancelEdit={() => { setEditingId(null); setDraftMachine(initialAgentDraftState()) }}
-            onSetDefault={() => { void setDefault(agent.id) }}
-            onTestConnection={() => { void testConnection(agent.id) }}
-            onRestartRuntime={() => { void restartRuntime(agent.id) }}
-            onDeleteAgent={() => { void deleteAgent(agent) }}
-          />
-        )
-      }}</For>
-
+      <Show when={!showCreate()}>
       <AgentCandidateList
         candidates={detection.candidates()}
         resolveImportedAgentId={candidate => {
@@ -445,7 +472,7 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
         candidateValidation={provisioning.candidateValidation()}
         importedCandidateIds={provisioning.importedCandidateIds()}
         candidateErrors={provisioning.candidateErrors()}
-        provisioningCandidateId={provisioning.provisioningCandidateId()}
+        provisioningCandidateId={provisioning.provisioningCandidateId() ?? savingId() ?? testingId() ?? activatingId()}
         provisioningPhase={provisioning.provisioningPhase()}
         onCancelValidation={provisioning.cancelCandidateValidation}
         onValidateAndImport={candidate => { void provisioning.validateAndImportCandidate(candidate) }}
@@ -453,15 +480,59 @@ export default function AgentRuntimePanel(props: AgentRuntimePanelProps) {
         onActivateImported={candidate => { void provisioning.activateImportedCandidate(candidate) }}
         onUpdateCandidateDraft={provisioning.updateCandidateDraft}
       />
-
-      <div class="set-preset-row" style={{ 'margin-top': '12px' }}>
-        <button class="ps-btn sm" type="button" onClick={() => setShowCreate(value => !value)}>
-          {showCreate() ? '收起新建' : '新建 Agent'}
-        </button>
-      </div>
+      </Show>
 
       <Show when={showCreate()}>
-        <AgentCreateForm busy={savingId() !== null} onCreate={createAgent} />
+        <div class="flex items-center justify-between gap-3 border-t border-stroke-subtle pt-5">
+          <h4 class="m-0 text-[16px] font-semibold">手动添加 Agent</h4>
+          <button class="ps-btn sm" type="button" disabled={savingId() !== null} onClick={() => setShowCreate(false)}>返回发现结果</button>
+        </div>
+        <AgentCreateForm busy={savingId() !== null} phase={createPhase()} onCreate={createAgent} />
+      </Show>
+      <Show when={createdAgent()}>
+        <div class="flex items-center justify-between flex-wrap gap-3 py-4 border-t border-stroke-subtle" role="status">
+          <span class="text-[13px]">{createdAgent()!.name} 已添加，可以开始对话。</span>
+          <button class="ps-btn sm primary" type="button" disabled={activatingId() !== null} onClick={() => { void openAgent(createdAgent()!.id, createdAgent()!.name) }}>{activatingId() ? '连接中…' : '打开对话'}</button>
+        </div>
+      </Show>
+      <Show when={agents().length > 0}>
+        <section class="mt-6 pt-5 border-t border-stroke-subtle" aria-label="已配置的 Agent">
+          <header class="flex items-baseline justify-between gap-3 mb-1"><h4 class="m-0 text-[17px] font-semibold">已配置的 Agent</h4><span class="text-[12px] text-text-dim">{agents().length} 个运行时</span></header>
+          <For each={agents()}>{agent => {
+        const status = () => selectAgentStatus(agent.id, activeAgent(), agentStatuses())
+        return (
+          <AgentRuntimeCard
+            agent={agent}
+            expanded={expandedAgentIds()[agent.id] === true}
+            onToggleExpanded={() => setExpandedAgentIds(current => ({ ...current, [agent.id]: !current[agent.id] }))}
+            onOpenAgent={() => { void openAgent(agent.id, agent.name) }}
+            activating={activatingId() === agent.id}
+            activeAgent={activeAgent()}
+            status={status()}
+            isEditing={editingId() === agent.id}
+            draft={draft()}
+            onPatchDraft={patchDraft}
+            draftLaunchPlan={draftLaunchPlan()}
+            draftMachinePhase={draftMachine().phase}
+            probeFailure={probeFailureByAgentId().get(agent.id)}
+            detecting={detecting()}
+            onRedetect={() => { void detectRuntimes(true) }}
+            savingId={savingId() ?? provisioning.provisioningCandidateId() ?? activatingId()}
+            testingId={testingId()}
+            testResultText={testResult()[agent.id]}
+            onStartEdit={() => startEdit(agent)}
+            onSaveEdit={() => { void saveEdit(agent.id) }}
+            onTestDraftConnection={() => { void testDraftConnection(agent.id) }}
+            onCancelDraftTest={cancelDraftTest}
+            onCancelEdit={() => { setEditingId(null); setDraftMachine(initialAgentDraftState()) }}
+            onSetDefault={() => { void setDefault(agent.id) }}
+            onTestConnection={() => { void testConnection(agent.id) }}
+            onRestartRuntime={() => { void restartRuntime(agent.id) }}
+            onDeleteAgent={() => { void deleteAgent(agent) }}
+          />
+        )
+      }}</For>
+        </section>
       </Show>
     </div>
   )

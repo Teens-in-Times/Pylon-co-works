@@ -187,7 +187,8 @@ export function createAgentCandidateProvisioning(options: {
   }
 
   const activateImportedCandidate = async (candidate: AgentRuntimeCandidate) => {
-    const agentId = importedRef[candidate.candidateId] ?? candidate.alreadyImportedAgentId
+    const configured = options.agents().find(agent => agent.id === candidate.alreadyImportedAgentId || agent.provider === currentDraft(candidate).provider)
+    const agentId = importedRef[candidate.candidateId] ?? configured?.id
     if (!agentId) return
     const operation = begin(candidate.candidateId, 'activating')
     if (!operation) return

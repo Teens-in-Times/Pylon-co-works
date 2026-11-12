@@ -117,7 +117,8 @@ bun run lint                 # ESLint
 bun run test                 # Vitest 全量测试
 bun run test:unit            # domains 与 infrastructure 单元测试
 bun run build                # TypeScript + Vite 构建
-bun run check:solid          # Solid 工作台边界与契约检查
+bun run check:types          # 全前端 Solid/TypeScript 类型检查
+bun run check:architecture   # 插件、渲染器、分层与样式契约检查
 bun run check:rust           # Rust 测试与构建
 bun run check:frontend       # 前端完整门禁
 bun run check:all            # 前端、Rust、Solid 全量门禁
@@ -130,7 +131,7 @@ bun run test src/domains/theme
 bun run test src/renderers/solid-workbench
 ```
 
-修改渲染器时至少运行相关 Vitest、`bun run check:solid` 和 `bun run build`；修改 Rust/Tauri 时运行相关 Rust 测试和 `bun run check:rust`。
+修改渲染器时至少运行相关 Vitest、`bun run check:architecture` 和 `bun run build`（含统一类型检查）；修改 Rust/Tauri 时运行相关 Rust 测试、`bun run check:rust` 和独立的 `bun run check:clippy`。
 
 构建 Windows 便携版：
 

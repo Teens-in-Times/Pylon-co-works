@@ -96,6 +96,17 @@ describe('候选验证与导入生命周期', () => {
     expect(invoke.mock.calls.filter(([command]) => command === 'update_agents_config')).toHaveLength(0)
   })
 
+  it('报告没有 imported id 时也可激活当前注册表中同 provider 的 Agent', async () => {
+    const original = invoke.getMockImplementation()!
+    invoke.mockImplementation((command: string, args?: unknown) => command === 'agent_status'
+      ? { agent: 'existing-hermes', agentId: 'existing-hermes', status: 'connected', generation: 1 }
+      : original(command, args))
+    const h = mount([{ id: 'existing-hermes', name: 'Existing Hermes', provider: 'hermes' }])
+    await h.result.activateImportedCandidate(candidate)
+    expect(invoke).toHaveBeenCalledWith('switch_agent', { name: 'existing-hermes' })
+    expect(invoke.mock.calls.filter(([command]) => command === 'update_agents_config')).toHaveLength(0)
+  })
+
   it('验证期间编辑草稿，迟到成功不得落盘', async () => {
     let finish: ((value: unknown) => void) | undefined
     const original = invoke.getMockImplementation()!

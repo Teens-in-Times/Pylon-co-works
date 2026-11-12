@@ -48,7 +48,7 @@ export default function Select(props: SelectProps) {
   const [activeIndex, setActiveIndex] = createSignal(0)
   const [position, setPosition] = createSignal({ left: 0, top: 0, width: 0, maxHeight: 280 })
   const selectedIndex = () => Math.max(0, props.options.findIndex(option => option.value === props.value))
-  const selected = () => props.options.find(option => option.value === props.value) ?? props.options[0]
+  const selected = () => props.options.find(option => option.value === props.value)
 
   const placeMenu = () => {
     const rect = triggerRef?.getBoundingClientRect()
@@ -56,11 +56,12 @@ export default function Select(props: SelectProps) {
     const roomBelow = window.innerHeight - rect.bottom - 12
     const roomAbove = rect.top - 12
     const openAbove = roomBelow < 180 && roomAbove > roomBelow
-    const maxHeight = Math.max(96, Math.min(320, openAbove ? roomAbove : roomBelow))
+    const maxHeight = Math.max(32, Math.min(320, openAbove ? roomAbove : roomBelow))
+    const width = Math.min(Math.max(rect.width, 180), Math.max(0, window.innerWidth - 16))
     setPosition({
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 180) - 8)),
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
       top: openAbove ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4,
-      width: Math.max(rect.width, 180),
+      width,
       maxHeight,
     })
   }
@@ -80,6 +81,13 @@ export default function Select(props: SelectProps) {
     setOpen(false)
     requestAnimationFrame(() => triggerRef?.focus())
   }
+
+  createEffect(() => {
+    if (props.disabled || props.options.length === 0) { setOpen(false); return }
+    if (open() && (!props.options[activeIndex()] || props.options[activeIndex()]?.disabled)) {
+      setActiveIndex(enabledIndex(props.options, -1, 1))
+    }
+  })
 
   createEffect(() => {
     if (!open()) return
@@ -116,9 +124,10 @@ export default function Select(props: SelectProps) {
       aria-controls={listboxId}
       aria-activedescendant={open() && activeIndex() >= 0 ? activeOptionId() : undefined}
       aria-haspopup="listbox"
-      disabled={props.disabled}
+      disabled={props.disabled || props.options.length === 0}
       onClick={() => open() ? setOpen(false) : openMenu()}
       onKeyDown={event => {
+        if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           event.preventDefault()
           if (!open()) openMenu()
@@ -134,6 +143,7 @@ export default function Select(props: SelectProps) {
           else openMenu()
         } else if (event.key === 'Escape' && open()) {
           event.preventDefault()
+          event.stopPropagation()
           setOpen(false)
         } else if (event.key === 'Tab') {
           setOpen(false)
@@ -148,7 +158,7 @@ export default function Select(props: SelectProps) {
         }
       }}
     >
-      <span class="pylon-select-value">{selected()?.label ?? '—'}</span>
+      <span class="pylon-select-value">{selected()?.label ?? '请选择'}</span>
       <LucideIcon name="ChevronDown" size={14} />
     </button>
     <Show when={open()}>

@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, onMount, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, createUniqueId, onMount, Show } from 'solid-js'
 import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
 import { shallowEqual } from '../infrastructure/state/solidStoreKernel'
 import { createRegistrySignal } from '../infrastructure/state/solidSheetSupport.solid.tsx'
@@ -33,7 +33,6 @@ import { HOSTED_PLUGIN_MANAGER_PAGE_ID, SETTINGS_SECTION_LABELS, sectionZone, SE
 import type { WorkspaceViewProps } from '../plugin-runtime/workspaces/workspaceTypes.ts'
 import type { SettingsSheetState } from '../workspace-sheets/settingsSheetState.ts'
 import type { RendererSettingsCatalogEntry } from './settings/rendererSettingsCatalog.ts'
-// ---- settings 避让域 Solid 化已收口（#515 W1 终局批）：岛全部退役，宿主与组件同为 Solid，solid-in-solid 直连。 ----
 import { type RenderCtx, ZoneGroupFields } from './settings/themeFieldRenderer.solid.tsx'
 import SidebarModulesPanel from './settings/SidebarModulesPanel.solid.tsx'
 import SettingsSectionHeaderSolid from './settings/SettingsSectionHeader.solid.tsx'
@@ -57,8 +56,7 @@ import GlobalPresetSectionSolid from './settings/GlobalPresetSection.solid.tsx'
 import { Group } from './settings/settingsSectionShared.solid.tsx'
 
 /**
- * 设置贡献目录的共享投影（`useSettingsContributionCatalog` 的 Solid 形态，#515 内联；
- * 注册表订阅经 createRegistrySignal，语义与 React useSyncExternalStore 版一致）。
+ * 设置贡献目录的响应式投影；注册表订阅经 createRegistrySignal 随 owner 回收。
  * 须在响应式 owner 内调用。
  */
 export function createSettingsContributionCatalog() {
@@ -106,15 +104,12 @@ interface SettingsProps extends WorkspaceViewProps<SettingsSheetState> {}
  * 各 section 组件）、搜索框与预览栏 chrome 态。Agent 运维事务在
  * settings/AgentSettingsSection；全局预设事务在 settings/GlobalPresetSection；
  * 区域分区骨架在 settings/ZonePresetSection；速搜定位在 useSettingsSearchNavigation。
- *
- * #515 W1（终局批）：Solid 实体——settings/* 子组件全部 .solid 直连；settings agent
- * 避让域（AgentSettingsSection 及其子树）Solid 化后，ReactIslandHost/glob React 岛
- * 已全部退役；原 useSettingsSearchNavigation hook 的定位态内联。
  */
 export default function Settings(props: SettingsProps) {
   // #154 阶段 4：设置由固定覆盖层迁入 sheet 体系。导航真值（domain/section/pluginPageId/
   // agentId）改为 sheet 状态（持久化、随 workspace 布局落盘），本组件只保留视图局部态。
   // 深链 `pylon:open-settings` 的打开/聚焦/patch 由 App 层 openOrFocusSettingsSheet 统一处理。
+  const previewBodyId = createUniqueId()
   const activeDomain = () => props.state.domain
   const activeSection = () => props.state.section
   const activePluginPageId = () => props.state.pluginPageId ?? null
@@ -393,7 +388,7 @@ export default function Settings(props: SettingsProps) {
       {/* #154 阶段 4：对话框外壳（role=dialog/焦点陷阱/settings-header/关闭钮）随覆盖层退役；
           一二级导航迁入注册表 sidebar（SettingsSheetSidebar），主区只保留 正文 + 速搜 + 预览。 */}
       <div class="settings-tabs-root">
-        <div class="settings-body" data-settings-domain={activeDomain()} data-settings-section={activeSection()}>
+        <div class="settings-body" role="region" aria-label="设置内容" data-settings-domain={activeDomain()} data-settings-section={activeSection()}>
           <Show when={!activePluginPageId()}>
             <SettingsSectionHeaderSolid
               section={activeSection()}
@@ -404,7 +399,7 @@ export default function Settings(props: SettingsProps) {
           <Show when={!activePluginPageId() && (previewZone() || activeSection() === 'renderers')}>
             <div class="set-toolbar">
               <div class="set-search-wrap">
-                <input class="set-search" value={searchQuery()} onInput={e => setSearchQuery(e.currentTarget.value)}
+                <input class="set-search" type="search" aria-label="搜索当前设置" value={searchQuery()} onInput={e => setSearchQuery(e.currentTarget.value)}
                   placeholder="搜索设置项…（如 语法、停滞、透明）" />
                 <Show when={searchQuery()}>
                   <button type="button" class="set-search-clear" onClick={() => setSearchQuery('')} aria-label="清除搜索">✕</button>
@@ -437,14 +432,14 @@ export default function Settings(props: SettingsProps) {
               <button type="button" class="settings-preview-toggle"
                 onClick={togglePreviewCollapsed}
                 aria-expanded={!previewCollapsed()}
-                aria-controls="settings-preview-body"
+                aria-controls={previewBodyId}
                 title={previewCollapsed() ? '展开预览栏' : '折叠预览栏'}
                 aria-label={previewCollapsed() ? '展开预览栏' : '折叠预览栏'}>
                 {previewCollapsed() ? '‹' : '›'}
               </button>
             </div>
             <Show when={!previewCollapsed()}>
-              <div id="settings-preview-body" class="settings-preview-body">
+              <div id={previewBodyId} class="settings-preview-body">
                 <Show when={activeSection() === 'renderers'} fallback={<SettingsPreviewSolid zone={previewZone()!} />}>
                   <RendererSettingsPreviewSolid
                     entry={rendererPreviewEntry()}

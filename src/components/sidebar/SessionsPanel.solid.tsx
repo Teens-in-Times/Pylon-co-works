@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { open } from '@tauri-apps/plugin-dialog'
 import { LucideIcon } from '../LucideIcon.solid.tsx'
@@ -9,6 +9,7 @@ import { useModalOverlayStore } from '../../app/modalOverlayStore'
 import type { AgentSidebarContributionProps } from '../../plugin-runtime/sidebar/sidebarTypes.ts'
 import type { WorkspaceSession } from '../../domains/session/workspaceSession.ts'
 import { resolveSessionDisplayName } from '../../domains/identity/identityStore.ts'
+import { createDialogFocus } from '../ui/dialogFocus.ts'
 
 // #515 批7：CwdSettingsPanel 已是 Solid 实体（settings 批）——React 岛退役，直连实体。
 import CwdSettingsPanel from '../settings/CwdSettingsPanel.solid.tsx'
@@ -60,6 +61,24 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
   const [pickingCwd, setPickingCwd] = createSignal(false)
   const [collapsedCwd, setCollapsedCwd] = createSignal<Set<string>>(loadCollapsedWorkspaces())
   const [editingCwdId, setEditingCwdId] = createSignal<string | null>(null)
+  let settingsDialog: HTMLDivElement | undefined
+  createDialogFocus(() => settingsDialog, editingCwdId, () => setEditingCwdId(null))
+  const activeWorkspaceId = () => props.sessions.find(session => session.id === props.activeSessionId)?.workspaceId
+  const activeWorkspace = () => props.workspaces.find(workspace => workspace.id === activeWorkspaceId())
+  const createSession = () => {
+    const workspace = activeWorkspace()
+    if (workspace) props.onCreateWorkspaceSession(workspace.id)
+    else props.onCreateLooseSession()
+  }
+  let revealedSessionId: string | null = null
+  createEffect(() => {
+    const sessionId = props.activeSessionId
+    const session = props.sessions.find(item => item.id === sessionId)
+    if (!session || revealedSessionId === sessionId) return
+    revealedSessionId = sessionId
+    const groupId = session.workspaceId || LOOSE_GROUP_ID
+    if (untrack(collapsedCwd).has(groupId)) setCollapsedCwd(previous => { const next = new Set(previous); next.delete(groupId); return next })
+  })
 
   createEffect(() => {
     const collapsed = collapsedCwd()
@@ -140,13 +159,6 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
     useModalOverlayStore.getState().setOverlayOpen('workspace-settings', veilOpen)
     onCleanup(() => useModalOverlayStore.getState().setOverlayOpen('workspace-settings', false))
   })
-  // 手写 Dialog 的 Escape 退路（radix 原行为：无论焦点在哪，Esc 都关闭）。
-  createEffect(() => {
-    if (!editingWorkspace()) return
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setEditingCwdId(null) }
-    document.addEventListener('keydown', onKeyDown)
-    onCleanup(() => document.removeEventListener('keydown', onKeyDown))
-  })
 
   // 会话列表**不再被搜索过滤**：搜索已是独立模块、自己呈现结果（一个查询驱动两处呈现
   // 会让人分不清哪边是「结果」）。这里只负责分组与选择。
@@ -186,9 +198,13 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
     const displayName = () => resolveSessionDisplayName(session)
     return (
       <div role="treeitem" tabIndex={0} class={`session-item ${props.activeSessionId === session.id ? 'active' : ''}`}
+        aria-selected={props.activeSessionId === session.id}
+        aria-label={displayName()}
+        title={displayName()}
         data-pinned={pinned() ? 'true' : undefined}
         onClick={() => props.onSelectSession(session.id)}
         onKeyDown={event => {
+          if (event.target !== event.currentTarget) return
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); props.onSelectSession(session.id) }
           // 改名输入框预填**当前显示名**（用户看到什么就改什么）；提交后 name 即新名、
           // 并置 renamedByUser，显示从此不再被 Agent 标题顶替。
@@ -216,7 +232,7 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
         </Show>
         {/* 运行指示点跟着时间走（不再占名字左边的列）：那一列让位给置顶图标，
             名字才能与工作区名对齐。 */}
-        <span class="session-dot" data-running={liveGenerating().has(session.source) ? 'true' : undefined} />
+        <span class="session-dot" data-running={liveGenerating().has(session.source) ? 'true' : undefined} title={liveGenerating().has(session.source) ? '正在回复' : undefined} />
         {/* 时间与设置钮共用一个流内格子：默认只显示时间，悬停/聚焦时按钮淡入顶替。 */}
         <span class="session-tail">
           <span class="session-meta">{formatTime(session.lastReplyAt || session.lastActiveAt || session.createdAt)}</span>
@@ -237,8 +253,9 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
     onSettings?: () => void,
   ) => {
     const folded = () => collapsedCwd().has(groupId)
+    const sessionCount = () => groupId === LOOSE_GROUP_ID ? grouping().loose.length : grouping().byWorkspace.get(groupId)?.length || 0
     return (
-      <div class="cwd-group-head">
+      <div class="cwd-group-head" data-current={activeWorkspaceId() === groupId ? 'true' : undefined}>
         {/* 折叠**没有**独立按钮：整个组头就是开关（用户要求去掉最左侧那个 `>`）。
             目录路径保留为 tooltip。 */}
         <button class="cwd-group-toggle" type="button" onClick={() => toggleCwd(groupId)} title={rootPath} aria-label={`${folded() ? '展开' : '折叠'} ${label}`} aria-expanded={!folded()}>
@@ -248,6 +265,7 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
             }><LucideIcon name="Inbox" size={15} /></Show>
           </span>
           <span class="cwd-group-name">{label}</span>
+          <Show when={sessionCount() > 0}><span class="ml-auto shrink-0 text-[10px] font-normal text-text-dim">{sessionCount()}</span></Show>
         </button>
         <div class="cwd-group-meta">
           <span class="cwd-group-actions">
@@ -269,7 +287,7 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
         {/* 空组不渲染会话容器：它自带 1px/2px 内边距，展开态比折叠态高几像素，
             于是「点空工作区的折叠/展开」会引起一次细微跳动（用户实机报的）。 */}
         <Show when={sessions().length > 0}>
-          <div class={`cwd-group-sessions${folded() ? ' is-collapsed' : ''}`} role="group" aria-hidden={folded()}>
+          <div class={`cwd-group-sessions${folded() ? ' is-collapsed' : ''}`} role="group" aria-hidden={folded()} inert={folded()}>
             <div class="cwd-group-sessions-inner"><For each={sessions()}>{renderSession}</For></div>
           </div>
         </Show>
@@ -279,6 +297,11 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
 
   return (
     <>
+      <div class="px-2 pb-2">
+        <button type="button" aria-label="新会话" class="session-new-action flex min-h-9 w-full items-center gap-2 rounded-[3px] border border-border bg-bg-input px-3 text-left text-xs font-medium text-text hover:border-accent hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent" onClick={createSession} title={activeWorkspace() ? `在 ${activeWorkspace()!.name} 中新建会话` : '新建不绑定工作目录的会话'}>
+          <LucideIcon name="Plus" size={15} /><span>新会话</span><Show when={activeWorkspace()}><span class="ml-auto min-w-0 truncate text-[10px] font-normal text-text-dim">{activeWorkspace()!.name}</span></Show>
+        </button>
+      </div>
       <div class="session-list" role="tree" aria-label="工作区与会话">
         <Show when={showNewCwd()}>
           <div class="cwd-new">
@@ -331,6 +354,7 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
         <Portal>
           <div class="dialog-overlay" onClick={() => setEditingCwdId(null)} />
           <div
+            ref={element => { settingsDialog = element }}
             class="dialog-content settings-surface agent-settings-dialog cwd-settings-dialog"
             role="dialog"
             aria-modal="true"

@@ -10,6 +10,8 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
 import OverviewSheetView from '../OverviewSheetView.solid.tsx'
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes'
 import { FakeInvoke } from '../../test/fakeInvoke'
+import { useIdentityStore } from '../../domains/identity/identityStore.ts'
+import { resetStores } from '../../test/resetStores.ts'
 
 const { invokeRef } = vi.hoisted(() => ({
   invokeRef: { current: null as null | ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) },
@@ -59,6 +61,8 @@ afterEach(() => cleanup())
 
 describe('CR-002 Overview 恢复会话失败呈现', () => {
   it('事务冲突 → error 槽显示 message，不导航', async () => {
+    resetStores()
+    useIdentityStore.setState({ agents: [{ id: 'peri', name: 'Peri', provider: 'ACP' }], activeAgent: 'peri' })
     const ctx = makeCtx()
     render(() => <OverviewSheetView sheet={sheet} ctx={ctx} />)
     const button = await screen.findByRole('button', { name: /归属冲突存档/ })

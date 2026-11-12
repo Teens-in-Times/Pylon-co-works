@@ -4,8 +4,24 @@
 // 注意：mock 后端有状态（update_agents_config revision 递增），本文件按原脚本顺序执行。
 import { describe, expect, it } from 'vitest'
 import { mockInvokeCommand } from '../mockTauri.ts'
+import { createGatewayClient } from '../../infrastructure/tauri/gatewayClient.ts'
 
 describe('demo mock backend 命令路由（原 test-demo-mock-backend.mts）', () => {
+  it('Gateway typed client routes catalog and instance mutations through the preview model', async () => {
+    const client = createGatewayClient({ invoke: (command, args) => mockInvokeCommand(command, args as Record<string, unknown> | undefined) })
+    expect((await client.catalog()).find(item => item.platform === 'qq')?.availability).toBe('builtIn')
+    const input = { id: 'qq-integration', platform: 'qq', label: '集成测试', enabled: true, autoStart: false }
+    await client.createInstance(input)
+    expect(await client.instances()).toEqual(expect.arrayContaining([expect.objectContaining({ id: input.id })]))
+    await client.updateInstance(input.id, { label: '已更新' })
+    await client.setInstanceCredentials(input.id, 'app:preview-secret')
+    expect(await client.startInstance(input.id)).toMatchObject({ status: 'error', lastError: expect.stringContaining('浏览器预览') })
+    expect(await client.restartInstance(input.id)).toMatchObject({ status: 'error' })
+    await client.stopInstance(input.id)
+    await client.removeInstance(input.id)
+    expect((await client.instances()).some(instance => instance.id === input.id)).toBe(false)
+  })
+
   it('数据类命令形状', async () => {
     const agents = await mockInvokeCommand('list_agents') as Array<{ id: string; name: string }>
     expect(Array.isArray(agents) && agents.length >= 2, 'list_agents 必须返回 agent 数组').toBe(true)

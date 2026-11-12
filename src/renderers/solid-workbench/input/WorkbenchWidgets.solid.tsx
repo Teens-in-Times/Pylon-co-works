@@ -1,5 +1,6 @@
 /** @jsxImportSource solid-js */
- import { For, Show, createEffect, createSignal, createUniqueId, onCleanup, onMount } from 'solid-js'
+import { createEffect, createSignal, createUniqueId, onCleanup } from 'solid-js'
+import { WorkbenchSelector } from './WorkbenchSelector.solid.tsx'
 import { useSolidWorkbench } from '../SolidWorkbenchContext.solid.tsx'
 import { resolveCcWidgetGroup } from '../../../domains/cc/widgetDefinitions.ts'
 import {
@@ -35,31 +36,58 @@ function nextValue(values: readonly string[], current: string): string {
 export function SolidModelWidget(props: { draftValue?: () => string; onDraftChange?: (value: string) => void; forceDropdown?: boolean } = {}) {
   const workbench = useSolidWorkbench(); const runtime = () => workbench.runtimeSnapshot(); const appearance = () => workbench.appearanceSnapshot()
   const [open,setOpen]=createSignal(false); const [error,setError]=createSignal(''); const [pending,setPending]=createSignal(false)
-  let root: HTMLDivElement|undefined; let trigger: HTMLButtonElement|undefined; const menuId=`cc-model-menu-${createUniqueId()}`
+  let requestGeneration = 0
+  onCleanup(() => { requestGeneration += 1 })
+  let trigger: HTMLButtonElement|undefined; const menuId=`cc-model-menu-${createUniqueId()}`
   // 会话切换时关闭菜单（2026-09-14）：控件常态显示后，若残留 open 状态会带着
   // 上一次会话的菜单进入新会话。与 SolidModeWidget 的会话切换处理保持一致。
   let previousSessionId = workbench.input().sessionId
   const entries=()=>resolveModelOptionEntries(runtime(),props.draftValue?.(),props.draftValue?workbench.input().agentAdvertisedModels:undefined); const models=()=>entries().map(x=>x.id)
-  const model=()=>props.draftValue?.()||runtime().activeModel||entries()[0]?.id||'unconfigured-model'; const mode=()=>props.forceDropdown?'menu':(appearance().modelSwitchMode??'menu')
-  // 可选项（排除当前值）。为空时菜单只能是一片空白 —— 那是"点了没反应"的观感，
-  // 所以下面渲染一条不可点的占位，而不是留个空盒子。
-  const selectable=()=>entries().filter(x=>x.id!==model())
+  const model=()=>props.draftValue?.()||runtime().activeModel||entries()[0]?.id||''; const mode=()=>props.forceDropdown?'menu':(appearance().modelSwitchMode??'menu')
   // #51：「不可切换」≠「切换失败」——无草稿绑定的真实会话里，候选为空意味着
   // 该 agent 没有宣告任何模型面（restart 后未恢复/agent 不支持），控件置禁用并
   // 说明原因，而不是让用户反复点出一串长报错。草稿态（空态选型）不受限。
   const unsurfaced=()=>!props.onDraftChange&&entries().length===0
   const width=()=>appearance().modelWidth??120, height=()=>appearance().modelHeight??28, radius=()=>appearance().modelRadius??0, fontSize=()=>appearance().modelFontSize??12
   const bg=()=>appearance().modelBgColor, fg=()=>appearance().modelTextColor; const close=(focus=false)=>{setOpen(false);if(focus)queueMicrotask(()=>trigger?.focus())}
-  const choose=async(target:string)=>{ if(pending()) return; if(props.onDraftChange){props.onDraftChange(target);close(true);return}; const sid=workbench.input().sessionId;if(!sid||target===model()){close(true);return}; setPending(true);setError(''); try {const r=await workbench.commands.setModel(sid,target);if(!r.ok)setError(r.error||MODEL_SWITCH_FAIL)} finally {setPending(false);close(true)} }
-  createEffect(()=>{const currentSessionId=workbench.input().sessionId;if(currentSessionId!==previousSessionId)close();previousSessionId=currentSessionId})
-  onMount(()=>{const pd=(e:PointerEvent)=>{if(open()&&!root?.contains(e.target as Node))close()};document.addEventListener('pointerdown',pd);onCleanup(()=>document.removeEventListener('pointerdown',pd))})
-  const triggerStyle=()=>({width:`${width()}px`,height:`${height()}px`,'border-radius':`${radius()}px`,'font-size':`${fontSize()}px`,background:bg(),color:fg()})
-  return <div ref={el=>root=el} class="solid-model-widget"><Show when={error()}>{m=><span class="cc-widget-error" role="alert" aria-live="assertive" title={m()}>{shortControlCenterError(m(),MODEL_SWITCH_FAIL)}</span>}</Show><div class="cc-model-root"><button ref={el=>trigger=el} type="button" class="cc-model-trigger" style={triggerStyle()} disabled={unsurfaced()} title={unsurfaced()?'该 agent 未宣告可切换模型':undefined} aria-haspopup={mode()==='menu'?'listbox':undefined} aria-expanded={mode()==='menu'?open():undefined} aria-controls={mode()==='menu'?menuId:undefined} onClick={()=>mode()==='menu'?setOpen(v=>!v):void choose(nextValue(models(),model()))}>{pending()?'......':model()}</button><Show when={mode()==='menu'&&open()}><div id={menuId} class="cc-model-menu" style={{width:`${width()}px`}} role="listbox" aria-label="模型列表" data-popover="control-center" onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();close(true)}}}><Show when={selectable().length>0} fallback={<div class="cc-model-empty" role="presentation">当前 Agent 未上报可选模型</div>}><For each={selectable()}>{item=><button type="button" role="option" aria-selected={false} class="cc-model-item" onClick={()=>void choose(item.id)}>{item.label||item.id}</button>}</For></Show></div></Show></div></div>
+  const choose = async (target: string) => {
+    if (pending()) return
+    if (props.onDraftChange) { props.onDraftChange(target); close(true); return }
+    const sessionId = workbench.input().sessionId
+    if (!sessionId || target === model()) { close(true); return }
+    const generation = ++requestGeneration
+    setPending(true)
+    setError('')
+    try {
+      const result = await workbench.commands.setModel(sessionId, target)
+      if (generation === requestGeneration && !result.ok) setError(result.error || MODEL_SWITCH_FAIL)
+    } catch (cause) {
+      if (generation === requestGeneration) setError(cause instanceof Error ? cause.message : MODEL_SWITCH_FAIL)
+    } finally {
+      if (generation === requestGeneration) { setPending(false); close(true) }
+    }
+  }
+  createEffect(() => {
+    const sessionId = workbench.input().sessionId
+    if (sessionId !== previousSessionId) {
+      requestGeneration += 1
+      setPending(false)
+      setError('')
+      close()
+    }
+    previousSessionId = sessionId
+  })
+  const triggerStyle=()=>({width:`${width()}px`,height:`${height()}px`,'border-radius':`${radius()}px`,'font-size':`${fontSize()}px`,'--cc-widget-background':bg(),'--cc-widget-color':fg()})
+  return <WorkbenchSelector kind="model" id={menuId} label="模型" value={model()} entries={entries()}
+    open={open()} pending={pending()} errorDetail={error()} cycle={mode()==='cycle'} style={triggerStyle()}
+    disabled={unsurfaced()} error={error() ? shortControlCenterError(error(), MODEL_SWITCH_FAIL) : undefined}
+    onTrigger={element => { trigger = element }} onOpen={setOpen} onClose={close}
+    onChoose={value => void choose(value)} onCycle={() => { void choose(nextValue(models(),model())) }} />
 }
 
-/** 权限模式控件：本体只显示后端机器值（不翻译），外观与交互跟模型／思考强度控件同一套语言。
- *  颜色：字段留空（`permissionTextColor === ''`）时不写 inline color，交给 CSS 的 [data-mode] 语义色
- *  （auto 黄 / bypass 红 / edit 紫 / default 灰）—— 危险模式一眼可见。 */
+/** Permission labels are readable; commands retain the provider's raw id.
+ * Empty color leaves semantic mode styling in charge. Custom color values stay
+ * available to classic/tactical and the editor; modern uses a continuous toolbar. */
 export function SolidModeWidget(props: {
   draftValue?: () => string
   onDraftChange?: (value: string) => void
@@ -67,22 +95,52 @@ export function SolidModeWidget(props: {
 } = {}) {
   const workbench = useSolidWorkbench(); const runtime = () => workbench.runtimeSnapshot(); const appearance = () => workbench.appearanceSnapshot()
   const [open,setOpen]=createSignal(false); const [error,setError]=createSignal(''); const [pending,setPending]=createSignal(false)
-  let root: HTMLDivElement|undefined; let trigger: HTMLButtonElement|undefined; let previousSessionId = workbench.input().sessionId
+  let requestGeneration = 0
+  onCleanup(() => { requestGeneration += 1 })
+  let trigger: HTMLButtonElement|undefined; let previousSessionId = workbench.input().sessionId
   const menuId=`cc-mode-menu-${createUniqueId()}`
   const entries=()=>resolveModeOptionEntries(runtime(), props.draftValue?.())
   const mode=()=>props.draftValue?.()||runtime().activeMode||entries()[0]?.id||'default'
   const switchMode=()=>props.forceDropdown?'menu':(appearance().permissionSwitchMode??'menu')
   const close=(focus=false)=>{setOpen(false);if(focus)queueMicrotask(()=>trigger?.focus())}
-  const choose=async(target:string)=>{ if(pending()) return; if(props.onDraftChange){props.onDraftChange(target);close(true);return}; const sid=workbench.input().sessionId;if(!sid||target===mode()){close(true);return}; setPending(true);setError(''); try {const r=await workbench.commands.setMode(sid,target);if(!r.ok)setError(r.error||MODE_SWITCH_FAIL)} finally {setPending(false);close(true)} }
-  createEffect(()=>{const currentSessionId=workbench.input().sessionId;if(currentSessionId!==previousSessionId)close();previousSessionId=currentSessionId})
-  onMount(()=>{const pd=(e:PointerEvent)=>{if(open()&&!root?.contains(e.target as Node))close()};document.addEventListener('pointerdown',pd);onCleanup(()=>document.removeEventListener('pointerdown',pd))})
+  const choose = async (target: string) => {
+    if (pending()) return
+    if (props.onDraftChange) { props.onDraftChange(target); close(true); return }
+    const sessionId = workbench.input().sessionId
+    if (!sessionId || target === mode()) { close(true); return }
+    const generation = ++requestGeneration
+    setPending(true)
+    setError('')
+    try {
+      const result = await workbench.commands.setMode(sessionId, target)
+      if (generation === requestGeneration && !result.ok) setError(result.error || MODE_SWITCH_FAIL)
+    } catch (cause) {
+      if (generation === requestGeneration) setError(cause instanceof Error ? cause.message : MODE_SWITCH_FAIL)
+    } finally {
+      if (generation === requestGeneration) { setPending(false); close(true) }
+    }
+  }
+  createEffect(() => {
+    const sessionId = workbench.input().sessionId
+    if (sessionId !== previousSessionId) {
+      requestGeneration += 1
+      setPending(false)
+      setError('')
+      close()
+    }
+    previousSessionId = sessionId
+  })
   const cycle=()=>{void choose(nextValue(entries().map(e=>e.id), mode()))}
   const width=()=>appearance().permissionWidth??120, height=()=>appearance().permissionHeight??28, radius=()=>appearance().permissionRadius??0, fontSize=()=>appearance().permissionFontSize??12
   const bg=()=>appearance().permissionBgColor
-  // 留空 = 跟模式：不写 inline color（`undefined` 会被 style 对象丢掉），语义色由 CSS [data-mode] 给。
+  // No explicit value means CSS can supply the mode's semantic color.
   const color=()=>appearance().permissionTextColor||undefined
-  const triggerStyle=()=>({width:`${width()}px`,height:`${height()}px`,'border-radius':`${radius()}px`,'font-size':`${fontSize()}px`,background:bg(),...(color()?{color:color()}:{})})
-  return <div ref={el=>root=el} class="solid-permission-widget" style={{'margin-left':`${previousWidgetGapPx('mode')}px`}}><Show when={error()}>{m=><span class="cc-widget-error" role="alert" aria-live="assertive" title={m()}>{shortControlCenterError(m(),MODE_SWITCH_FAIL)}</span>}</Show><button ref={el=>trigger=el} type="button" class="cc-permission-trigger" data-mode={mode()} style={{...triggerStyle(),display:'flex','align-items':'center','justify-content':'center'}} aria-haspopup={switchMode()==='menu'?'listbox':undefined} aria-expanded={switchMode()==='menu'?open():undefined} aria-controls={switchMode()==='menu'?menuId:undefined} onClick={()=>switchMode()==='cycle'?cycle():setOpen(v=>!v)}>{pending()?'......':mode()}</button><Show when={switchMode()==='menu'&&open()}><div id={menuId} class="cc-model-menu" role="listbox" aria-label="权限模式选项" data-popover="control-center" onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();close(true)}}} style={{width:`${width()}px`}}><For each={entries().filter(x=>x.id!==mode())}>{item=><button type="button" role="option" class="cc-model-item" onClick={()=>void choose(item.id)}>{item.id}</button>}</For></div></Show></div>
+  const triggerStyle=()=>({width:`${width()}px`,height:`${height()}px`,'border-radius':`${radius()}px`,'font-size':`${fontSize()}px`,'--cc-widget-background':bg(),'--cc-widget-color':color()})
+  return <WorkbenchSelector kind="mode" id={menuId} label="权限模式" value={mode()} entries={entries()}
+    open={open()} pending={pending()} errorDetail={error()} cycle={switchMode()==='cycle'} style={triggerStyle()} rootStyle={{'margin-left':`${previousWidgetGapPx('mode')}px`}}
+     error={error() ? shortControlCenterError(error(), MODE_SWITCH_FAIL) : undefined}
+    onTrigger={element => { trigger = element }} onOpen={setOpen} onClose={close}
+    onChoose={value => void choose(value)} onCycle={() => { cycle() }} />
 }
 
 /** Session-create reasoning preference. It uses the same compact control language
@@ -90,31 +148,72 @@ export function SolidModeWidget(props: {
 export function SolidReasoningWidget(props: { draftValue?: () => string; onDraftChange?: (value: string) => void } = {}) {
   const workbench = useSolidWorkbench(); const runtime = () => workbench.runtimeSnapshot(); const appearance = () => workbench.appearanceSnapshot()
   const [open,setOpen]=createSignal(false); const [error,setError]=createSignal(''); const [pending,setPending]=createSignal(false)
-  let root: HTMLDivElement|undefined; let trigger: HTMLButtonElement|undefined; let previousSessionId = workbench.input().sessionId
+  let requestGeneration = 0
+  onCleanup(() => { requestGeneration += 1 })
+  let trigger: HTMLButtonElement|undefined; let previousSessionId = workbench.input().sessionId
   const menuId=`cc-reasoning-menu-${createUniqueId()}`
   const entries=()=>resolveReasoningOptionEntries(runtime(), resolveDocumentOptionValue(runtime().document?.session.options, 'reasoning'))
   const current=()=>resolveDocumentOptionValue(runtime().document?.session.options, 'reasoning') || props.draftValue?.() || entries()[0]?.id || ''
-    const choose=async(value:string)=>{ if(pending()) return; if(props.onDraftChange){props.onDraftChange(value);close(true);return}; const sid=workbench.input().sessionId;if(!sid||value===current()){close(true);return}; const option=runtime().document?.session.options?.find(isReasoningOption); const previous=current(); setPending(true);setError(''); try {const result=await workbench.commands.setConfigOption(sid,option?.id||'reasoning_effort',value,{expectedValue:previous,...(option?.version==null?{}:{expectedVersion:option.version})});if(!result.ok)setError(result.error||REASONING_SWITCH_FAIL)} finally {setPending(false);close(true)} }
-  createEffect(()=>{const currentSessionId=workbench.input().sessionId;if(currentSessionId!==previousSessionId)close();previousSessionId=currentSessionId})
-  onMount(()=>{const pd=(e:PointerEvent)=>{if(open()&&!root?.contains(e.target as Node))close()};document.addEventListener('pointerdown',pd);onCleanup(()=>document.removeEventListener('pointerdown',pd))})
+  const choose = async (value: string) => {
+    if (pending()) return
+    if (props.onDraftChange) { props.onDraftChange(value); close(true); return }
+    const sessionId = workbench.input().sessionId
+    if (!sessionId || value === current()) { close(true); return }
+    const option = runtime().document?.session.options?.find(isReasoningOption)
+    const previous = current()
+    const generation = ++requestGeneration
+    setPending(true)
+    setError('')
+    try {
+      const result = await workbench.commands.setConfigOption(sessionId, option?.id || 'reasoning_effort', value, {
+        expectedValue: previous,
+        ...(option?.version == null ? {} : { expectedVersion: option.version }),
+      })
+      if (generation === requestGeneration && !result.ok) setError(result.error || REASONING_SWITCH_FAIL)
+    } catch (cause) {
+      if (generation === requestGeneration) setError(cause instanceof Error ? cause.message : REASONING_SWITCH_FAIL)
+    } finally {
+      if (generation === requestGeneration) { setPending(false); close(true) }
+    }
+  }
+  createEffect(() => {
+    const sessionId = workbench.input().sessionId
+    if (sessionId !== previousSessionId) {
+      requestGeneration += 1
+      setPending(false)
+      setError('')
+      close()
+    }
+    previousSessionId = sessionId
+  })
   const mode=()=>appearance().reasoningSwitchMode??'menu'
   const cycle=()=>{const ids=entries().map(e=>e.id);const i=ids.indexOf(current());void choose(ids[(i+1+ids.length)%ids.length]||current())}
   const width=()=>appearance().reasoningWidth??120, height=()=>appearance().reasoningHeight??28, radius=()=>appearance().reasoningRadius??0, fontSize=()=>appearance().reasoningFontSize??12
   const bg=()=>appearance().reasoningBgColor, fg=()=>appearance().reasoningTextColor; const close=(focus=false)=>{setOpen(false);if(focus)queueMicrotask(()=>trigger?.focus())}
-  const triggerStyle=()=>({width:`${width()}px`,height:`${height()}px`,'border-radius':`${radius()}px`,'font-size':`${fontSize()}px`,background:bg(),color:fg()})
-  return <div ref={el=>root=el} class="solid-reasoning-widget" style={{'margin-left':`${previousWidgetGapPx('reasoning')}px`}}><Show when={error()}>{m=><span class="cc-widget-error" role="alert" aria-live="assertive" title={m()}>{shortControlCenterError(m(),REASONING_SWITCH_FAIL)}</span>}</Show><button ref={el=>trigger=el} type="button" class="cc-reasoning-trigger" style={{...triggerStyle(),display:'flex','align-items':'center','justify-content':'center'}} aria-haspopup={mode()==='menu'?'listbox':undefined} aria-expanded={mode()==='menu'?open():undefined} aria-controls={mode()==='menu'?menuId:undefined} onClick={()=>mode()==='cycle'?cycle():setOpen(v=>!v)}>{pending()?'......':current()}</button><Show when={mode()==='menu'&&open()}><div id={menuId} class="cc-model-menu" role="listbox" aria-label="思考强度选项" data-popover="control-center" onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();close(true)}}} style={{width:`${width()}px`}}><For each={entries().filter(x=>x.id!==current())}>{item=><button type="button" role="option" class="cc-model-item" onClick={()=>void choose(item.id)}>{item.id}</button>}</For></div></Show></div>
+  const triggerStyle=()=>({width:`${width()}px`,height:`${height()}px`,'border-radius':`${radius()}px`,'font-size':`${fontSize()}px`,'--cc-widget-background':bg(),'--cc-widget-color':fg()})
+  return <WorkbenchSelector kind="reasoning" id={menuId} label="思考强度" value={current()} entries={entries()}
+    open={open()} pending={pending()} errorDetail={error()} cycle={mode()==='cycle'} style={triggerStyle()} rootStyle={{'margin-left':`${previousWidgetGapPx('reasoning')}px`}}
+     error={error() ? shortControlCenterError(error(), REASONING_SWITCH_FAIL) : undefined}
+    onTrigger={element => { trigger = element }} onOpen={setOpen} onClose={close}
+    onChoose={value => void choose(value)} onCycle={() => { cycle() }} />
 }
 
-/** First-batch host renderer: the registered send block includes its icon layer;
- * the effect layer (highlight/shadow) is still pending. */
+/** Send/cancel keeps the same workbench command boundary in every visual mode. */
 export function SolidCcSendButton(props: { disabled?: boolean; mode: 'inline' | 'external' }) {
   const workbench = useSolidWorkbench()
   const appearance = () => workbench.appearanceSnapshot()
   const runtime = () => workbench.runtimeSnapshot()
   const send = () => window.dispatchEvent(new CustomEvent('pylon:solid-input-send'))
-  const cancel = () => {
+  const cancel = async () => {
     const sessionId = workbench.input().sessionId
-    if (sessionId) void workbench.commands.cancel(sessionId)
+    if (!sessionId) return
+    const ui = workbench.sessionUi.capture(sessionId)
+    try {
+      const result = await workbench.commands.cancel(sessionId)
+      if (result.status === 'rejected') ui.set('input-error', result.error || '停止失败，请重试')
+    } catch (cause) {
+      ui.set('input-error', cause instanceof Error ? cause.message : '停止失败，请重试')
+    }
   }
   const icon = () => runtime().generating ? appearance().sendButtonIconGenerating : appearance().sendButtonIcon
   const round = () => appearance().sendButtonIconRound === 'on'

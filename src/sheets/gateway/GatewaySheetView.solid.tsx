@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { appClients } from '../../app/appClients.ts'
-import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError'
+import { formatRuntimeError, reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError'
 import type { AdapterCatalogItem, AdapterInstance, GatewayInstanceInput } from '../../infrastructure/tauri/gatewayClient'
 import type { GatewayStatus, PlatformSession } from '../../infrastructure/tauri/gatewayContracts.ts'
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes'
@@ -14,6 +14,8 @@ import {
   FIELD_ROW,
   FIELD_VALUE,
   FILTER_INPUT,
+  FORM_GRID,
+  FORM_FIELD,
   HEADER,
   HINT,
   INSTANCE_CARD,
@@ -24,7 +26,6 @@ import {
   INSTANCE_STATUS_ERROR,
   INSTANCE_STATUS_STARTING,
   INSTANCE_STATUS_STOPPED,
-  KICKER,
   MAIN,
   MAIN_TITLE,
   ROUTE,
@@ -58,27 +59,9 @@ import {
 } from './gatewaySheetStyles.ts'
 
 /**
- * GatewaySheetView — 网关平台概览（W3-01）+ 实例管理（I12-W5）+ 交互优化（P79）
- * + 视觉美化（P82：页头状态摘要、统一 section 卡片层级、状态点章、按钮分级、
- * 空态引导；classic 直角 / modern-gui 圆角双模式均沿 token 体系）。
- *
- * gateway_status 只读概览：适配器/平台会话两分区（GatewaySidebar）；主区平台概览
- * （routes 表 + inject 只读提示「归 Prism」不编辑）。I12-W5：实例分区展示真实
- * 实例/状态/错误/凭据状态与启停删操作；创建仅限 builtIn 平台（未实现平台不可用）；
- * 凭据提交后清空前端 secret state（不残留明文）。
- *
- * P79 交互优化：
- * - 实例状态轮询（3s，可见时才拉）：状态翻转（starting→connected/error）无后端
- *   推送通道，此前必须重开 sheet 才能看到「已连接」；
- * - 凭据表单按 catalog credentialFields 动态渲染（QQ = App ID + Client Secret 两框，
- *   提交按字段顺序 join ':'）——不再要求用户手拼单串；无字段描述的平台回退单框；
- * - 删除二段确认（误点保护，3s 自动回弹）——#520 K 域起由 ui/ConfirmArmButton 统一承载。
- *
- * #520 K 域：「新增路由」表单簇（8 字段 + formError + 保存事务 + writeStatus）
- * 拆至 GatewayRouteForm.solid.tsx，宿主只注入 client/实例目录/sheet 作用域。
- *
- * #515：Solid 实体，行为与 React 版逐行同构——一次性拉取的 effect 落 onMount，
- * 依赖响应值的 effect 落 createEffect（对照注释逐条标注）；文本输入 onChange→onInput。
+ * 网关工作面：读取状态/平台目录并编排实例操作，路由写回事务归 GatewayRouteForm。
+ * 目录决定可创建的平台与凭据字段；凭据提交后清空明文草稿。
+ * 可见时轮询实例快照，操作在途禁重复提交，删除由 ConfirmArmButton 二次确认。
  */
 
 function statusLabel(status: AdapterInstance['status']): string {
@@ -106,6 +89,7 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
   const [instances, setInstances] = createSignal<AdapterInstance[]>([])
   const [catalog, setCatalog] = createSignal<AdapterCatalogItem[]>([])
   const [instanceError, setInstanceError] = createSignal('')
+  const [instancePending, setInstancePending] = createSignal(false)
   // P79：凭据草稿按 catalog 字段顺序存放（无字段描述的平台回退单框 = index 0）
   const [credentialDrafts, setCredentialDrafts] = createSignal<Record<string, string[]>>({})
   const [createForm, setCreateForm] = createSignal<{ platform: string; id: string; label: string }>({ platform: '', id: '', label: '' })
@@ -159,7 +143,7 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
       setInstanceError('')
       resolveRuntimeErrors({ key: operationKey('读取网关实例') })
     } catch (err) {
-      setInstanceError(err instanceof Error ? err.message : String(err))
+      setInstanceError(formatRuntimeError('读取网关实例', err).message)
       reportRuntimeError('读取网关实例', err, undefined, {
         key: operationKey('读取网关实例'), scope: sheetScope(), source: 'gateway',
       })
@@ -185,13 +169,15 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
   // 挂载期间低频轮询让「已连接/错误」自动可见（此前必须重开 sheet 才能看到）。
   onMount(() => {
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'hidden') return
+      if (document.visibilityState === 'hidden' || instancePending()) return
       void reloadInstances()
     }, INSTANCE_REFRESH_MS)
     onCleanup(() => window.clearInterval(timer))
   })
 
   const runInstanceAction = async (operation: string, action: () => Promise<unknown>) => {
+    if (instancePending()) return false
+    setInstancePending(true)
     try {
       await action()
       // The mutation itself succeeded; retire its prior notification before
@@ -200,11 +186,15 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
       // permanently failed.
       resolveRuntimeErrors({ key: operationKey(operation) })
       await reloadInstances()
+      return true
     } catch (err) {
-      setInstanceError(err instanceof Error ? err.message : String(err))
+      setInstanceError(formatRuntimeError(operation, err).message)
       reportRuntimeError(operation, err, undefined, {
         key: operationKey(operation), scope: sheetScope(), source: 'gateway',
       })
+      return false
+    } finally {
+      setInstancePending(false)
     }
   }
 
@@ -218,8 +208,9 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
       enabled: true,
       autoStart: false,
     }
-    await runInstanceAction('创建网关实例', () => gatewayClient.createInstance(input))
-    setCreateForm({ platform: form.platform, id: '', label: '' })
+    if (await runInstanceAction('创建网关实例', () => gatewayClient.createInstance(input))) {
+      setCreateForm({ platform: form.platform, id: '', label: '' })
+    }
   }
 
   const credentialFieldsFor = (platform: string) => {
@@ -251,7 +242,7 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
   // 样式绞杀（P93 批 3）：原 GatewaySheet.css 的 utility 化，常量单一来源见
   // gatewaySheetStyles.ts（#520 K 域随表单拆分收拢）。gateway-* 类名保留为
   // gateway/styles/adaptive.css（modern-gui 覆写 + status-pulse 动画）锚点。
-  const SHEET = 'gateway-sheet flex-1 flex min-w-0 text-text font-[family-name:var(--font)]'
+  const SHEET = 'gateway-sheet flex-1 flex min-w-0 bg-surface-raised text-text font-[family-name:var(--font)]'
   const INSTANCE_REFRESH_MS = 3000
 
   return (
@@ -281,8 +272,7 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
         <Show when={error()}><p class={HINT} role="status">网关状态读取失败，详情见右下角错误中心</p></Show>
         <header class={HEADER}>
           <div>
-            <div class={KICKER}>GATEWAY</div>
-            <h2 class={MAIN_TITLE}>平台概览</h2>
+            <h2 class={MAIN_TITLE}>平台概览</h2><p class="m-0 mt-2 text-[13px] leading-relaxed text-text-dim">连接消息平台，让 Agent 在你常用的会话中工作。</p>
           </div>
           <div class={SUMMARY} aria-label="网关状态摘要">
             <span class={SUMMARY_CHIP}><span class={SUMMARY_NUM}>{instances().length}</span> 实例</span>
@@ -333,13 +323,13 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
         />
 
         {/* I12-W5：实例管理（真实实例/状态/错误/操作；未实现平台不可用） */}
-        <section class={SECTION}>
+        <section class={SECTION} aria-busy={instancePending()}>
           <div class={SECTION_HEAD}>
             <h3 class={SECTION_TITLE}>实例</h3>
             <span class={SECTION_META}>状态每 {INSTANCE_REFRESH_MS / 1000} 秒自动刷新</span>
           </div>
-          <p class={SECTION_HINT}>启动前需配置凭据；状态翻转自动刷新，无需重开页面</p>
-          <Show when={instanceError()}><p class={HINT} role="status">网关实例操作失败，详情见右下角错误中心</p></Show>
+          <p class={SECTION_HINT}>为每个消息平台创建独立实例，配置凭据后即可启动。</p>
+          <Show when={instanceError()}><p class={HINT} role="status">{instanceError()}</p></Show>
           <Show when={instances().length === 0} fallback={
             <ul class={INSTANCE_LIST}>
               <For each={instances()}>{instance => {
@@ -364,9 +354,9 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
                     </div>
                     <Show when={instance.lastError}><p class="file-section-hint" role="status">上次运行错误：{instance.lastError}</p></Show>
                     <div class={EDIT_ROW}>
-                      <button type="button" class={TEMPLATE_BTN_PRIMARY} disabled={instance.status === 'starting'} onClick={() => void runInstanceAction('启动网关实例', () => gatewayClient.startInstance(instance.id))}>启动</button>
-                      <button type="button" class={TEMPLATE_BTN} disabled={instance.status === 'stopped' || instance.status === 'starting'} onClick={() => void runInstanceAction('停止网关实例', () => gatewayClient.stopInstance(instance.id))}>停止</button>
-                      <button type="button" class={TEMPLATE_BTN} disabled={instance.status === 'starting'} onClick={() => void runInstanceAction('重启网关实例', () => gatewayClient.restartInstance(instance.id))}>重启</button>
+                      <button type="button" class={TEMPLATE_BTN_PRIMARY} disabled={instancePending() || instance.status === 'starting' || instance.status === 'connected'} onClick={() => void runInstanceAction('启动网关实例', () => gatewayClient.startInstance(instance.id))}>启动</button>
+                      <button type="button" class={TEMPLATE_BTN} disabled={instancePending() || instance.status === 'stopped' || instance.status === 'starting'} onClick={() => void runInstanceAction('停止网关实例', () => gatewayClient.stopInstance(instance.id))}>停止</button>
+                      <button type="button" class={TEMPLATE_BTN} disabled={instancePending() || instance.status === 'starting'} onClick={() => void runInstanceAction('重启网关实例', () => gatewayClient.restartInstance(instance.id))}>重启</button>
                       {/* P79：删除二段确认（误点保护，3s 自动回弹）——#520 K 域起由
                           ui/ConfirmArmButton 统一承载；armed 态换危险配色。 */}
                       <ConfirmArmButton
@@ -374,7 +364,7 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
                         confirmLabel="确认删除"
                         class={TEMPLATE_BTN}
                         confirmClass={TEMPLATE_BTN_DANGER}
-                        disabled={instance.status !== 'stopped'}
+                        disabled={instancePending() || instance.status !== 'stopped'}
                         ariaLabel={`删除 ${instance.id}`}
                         confirmAriaLabel={`确认删除 ${instance.id}`}
                         onConfirm={() => void runInstanceAction('删除网关实例', () => gatewayClient.removeInstance(instance.id))}
@@ -382,9 +372,9 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
                     </div>
                     {/* P79：凭据字段按 catalog credentialFields 渲染（secret → 密码框）；
                         提交按字段顺序 join ':'；无字段描述的平台回退单框。 */}
-                    <div class={EDIT_ROW}>
+                    <div class={FORM_GRID}>
                       <For each={(fields().length > 0 ? fields() : FALLBACK_CREDENTIAL_FIELDS)}>{(field, index) => (
-                        <input
+                        <label class={FORM_FIELD}>{field.label}{field.required ? '' : '（可选）'}<input
                           class={FILTER_INPUT}
                           type={field.secret ? 'password' : 'text'}
                           placeholder={`${field.label}${field.required ? '' : '（可选）'}`}
@@ -392,9 +382,10 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
                           onInput={e => setCredentialDraft(instance.id, index(), e.currentTarget.value)}
                           aria-label={`${instance.id} ${field.label}`}
                           autocomplete="off"
-                        />
+                          disabled={instancePending()}
+                        /></label>
                       )}</For>
-                      <button type="button" class={TEMPLATE_BTN} disabled={!readyToSave()} onClick={() => void submitCredentials(instance)}>保存凭据</button>
+                      <button type="button" class={`${TEMPLATE_BTN} self-end justify-self-start`} disabled={instancePending() || !readyToSave()} onClick={() => void submitCredentials(instance)}>保存凭据</button>
                     </div>
                   </li>
                 )
@@ -408,15 +399,15 @@ export default function GatewaySheetView(props: GatewaySheetViewProps) {
           </div>
           <p class={SECTION_HINT}>仅显示已实现平台；创建后配置凭据并启动。未实现平台（如微信）不可创建。</p>
           <Show when={availablePlatforms().length === 0} fallback={
-            <div class={EDIT_ROW}>
-              <select class={FILTER_INPUT} aria-label="平台" value={createForm().platform} onChange={e => setCreateForm(prev => ({ ...prev, platform: e.currentTarget.value }))}>
+            <fieldset class={`${FORM_GRID} p-0 border-0`} disabled={instancePending()}>
+              <label class={FORM_FIELD}>平台<select class={FILTER_INPUT} aria-label="平台" value={createForm().platform} onChange={e => setCreateForm(prev => ({ ...prev, platform: e.currentTarget.value }))}>
                 <option value="">选择平台</option>
                 <For each={availablePlatforms()}>{item => <option value={item.platform}>{item.label}</option>}</For>
-              </select>
-              <input class={FILTER_INPUT} placeholder="实例 id" value={createForm().id} onInput={e => setCreateForm(prev => ({ ...prev, id: e.currentTarget.value }))} aria-label="实例 id" />
-              <input class={FILTER_INPUT} placeholder="标签（可选）" value={createForm().label} onInput={e => setCreateForm(prev => ({ ...prev, label: e.currentTarget.value }))} aria-label="实例标签" />
-              <button type="button" class={TEMPLATE_BTN} disabled={!createForm().platform || !createForm().id.trim()} onClick={() => void createInstance()}>创建</button>
-            </div>
+              </select></label>
+              <label class={FORM_FIELD}>实例标识<input class={FILTER_INPUT} placeholder="如 qq-work" value={createForm().id} onInput={e => setCreateForm(prev => ({ ...prev, id: e.currentTarget.value }))} aria-label="实例 id" /></label>
+              <label class={FORM_FIELD}>显示名称（可选）<input class={FILTER_INPUT} placeholder="如 工作群助手" value={createForm().label} onInput={e => setCreateForm(prev => ({ ...prev, label: e.currentTarget.value }))} aria-label="实例标签" /></label>
+              <button type="button" class={`${TEMPLATE_BTN} self-end justify-self-start`} disabled={instancePending() || !createForm().platform || !createForm().id.trim()} onClick={() => void createInstance()}>{instancePending() ? '处理中…' : '创建'}</button>
+            </fieldset>
           }>
             <p class="file-section-hint">无可用平台（未实现平台不可用）</p>
           </Show>

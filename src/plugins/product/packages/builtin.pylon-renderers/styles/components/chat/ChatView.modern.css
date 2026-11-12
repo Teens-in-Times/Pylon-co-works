@@ -1,279 +1,195 @@
-/* #699 现代 GUI 聊天样式层。
-   全部规则限定 `.app[data-interface-mode="modern-gui"]`：终端模式继续走 ChatView.css 的行式结构，
-   这里只负责现代模式的气泡/头像/工具卡/推理块与分组节奏。加载顺序在 ChatView.css 之后（styleAssets）。 */
+/* Modern workbench: one reading column, a quiet execution rail, and one composer.
+   Mode-specific geometry lives with the renderer; persisted widget identities stay unchanged. */
+.term-assistant-role-mark, .term-reasoning-icon, .input-submit-btn { display:none; }
 
 .app[data-interface-mode="modern-gui"] .term {
-  --modern-avatar-size: 28px;
-  --modern-avatar-gap: 10px;
-  --modern-row-gap: 20px;
-  --modern-inline-gap: 8px;
+  --modern-avatar-size:24px;
+  --modern-avatar-gap:12px;
+  --modern-row-gap:28px;
+  --modern-inline-gap:8px;
 }
-
-/* ── 行节奏：组首 20px、组内 8px。用 padding 而非 margin，行高测量（offsetHeight）
-   才包含间距，虚拟化的 estimate 不会因为间距而偏小。终端模式的 .term-row + .term-row
-   margin-top 必须先归零，否则会和这里的 padding 叠加成双倍间距。 ── */
-.app[data-interface-mode="modern-gui"] :is(.term-row, .term-row + .term-row) { margin-block: 0; }
-.app[data-interface-mode="modern-gui"] .plain-message-list__row:not(:first-child) {
-  padding-block-start: var(--modern-inline-gap);
+.app[data-interface-mode="modern-gui"] :is(.term-row-user,.term-row-assistant,.term-row-reasoning) {
+  width:100%; max-width:100%; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none;
 }
-.app[data-interface-mode="modern-gui"] .plain-message-list__row[data-group-start]:not(:first-child) {
-  padding-block-start: var(--modern-row-gap);
-}
-
-/* ── 元信息：头像缩写 + 名称 + 时间 ── */
+.app[data-interface-mode="modern-gui"] :is(.term-row,.term-row + .term-row) { margin-block:0; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not(:first-child) { padding-block-start:var(--modern-inline-gap); }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row[data-group-start]:not(:first-child) { padding-block-start:var(--modern-row-gap); }
 .app[data-interface-mode="modern-gui"] .term-row-time {
-  display: inline;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.85;
+  display:inline; color:var(--text-dim); font-size:11px; font-variant-numeric:tabular-nums; opacity:.72;
 }
 
-/* ── 用户消息：右对齐气泡 + 右侧头像 ── */
+/* Questions and answers share an aligned left edge. Only questions carry a surface. */
 .app[data-interface-mode="modern-gui"] .term-user {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--modern-avatar-size);
-  grid-template-areas:
-    'meta avatar'
-    'bubble avatar';
-  align-items: start;
-  justify-items: end;
-  column-gap: var(--modern-avatar-gap);
-  row-gap: 4px;
-  padding: var(--ui-space-1) 2px;
+  display:grid; grid-template-columns:var(--modern-avatar-size) minmax(0,1fr);
+  grid-template-areas:'avatar meta' '. bubble'; align-items:start; justify-items:start;
+  column-gap:var(--modern-avatar-gap); row-gap:6px; padding:4px 0;
+  border:0; border-radius:0; background:transparent; box-shadow:none;
 }
 .app[data-interface-mode="modern-gui"] .term-user-avatar {
-  grid-area: avatar;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--modern-avatar-size);
-  height: var(--modern-avatar-size);
-  border-radius: 50%;
-  border: var(--line-width-1) solid var(--stroke-subtle);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  user-select: none;
+  grid-area:avatar; display:inline-flex; align-items:center; justify-content:center;
+  width:24px; height:24px; border-radius:3px; border:0;
+  background:var(--accent-soft); color:var(--accent); font-size:11px; font-weight:600; line-height:1; user-select:none;
 }
-/* ChatView.css 为了让终端行保持原 DOM，把这两层默认压成 display:contents；
-   现代模式必须显式取回盒子，否则 grid-area 不生效、气泡会消失。 */
 .app[data-interface-mode="modern-gui"] .term-user-meta {
-  grid-area: meta;
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-end;
-  gap: var(--ui-space-2);
-  min-width: 0;
-  color: var(--text-dim);
-  font-size: 12px;
+  grid-area:meta; display:flex; align-items:center; justify-content:flex-start; gap:10px;
+  min-height:24px; min-width:0; color:var(--text-dim); font-size:12px;
 }
-.app[data-interface-mode="modern-gui"] .term-user-name {
-  color: var(--text);
-  font-weight: 600;
-}
-/* 头像已经承担「谁在说」，现代模式不再重复终端的前缀符号 */
-.app[data-interface-mode="modern-gui"] .term-user-prefix { display: none; }
+.app[data-interface-mode="modern-gui"] .term-user-name { color:var(--text); font-weight:600; }
+.app[data-interface-mode="modern-gui"] .term-user-prefix { display:none; }
 .app[data-interface-mode="modern-gui"] .term-user-bubble {
-  grid-area: bubble;
-  display: block;
-  justify-self: end;
-  max-width: min(78%, 720px);
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: var(--line-width-1) solid var(--stroke-subtle);
-  background: var(--message-user-bg, var(--surface-raised));
-  color: var(--msg-text, var(--chat-text, var(--text)));
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent);
+  grid-area:bubble; display:block; justify-self:start; width:fit-content; max-width:min(100%,78ch);
+  padding:12px 16px; border-radius:4px; border:1px solid var(--stroke-faint);
+  background:var(--message-user-bg,var(--surface-raised)); color:var(--msg-text,var(--text)); box-shadow:none;
 }
-.app[data-interface-mode="modern-gui"] .term-user-bubble .term-user-content { display: block; }
-/* 组内续行不重复头像与 meta（保留头像格位，气泡右缘不跳） */
-.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-user-avatar {
-  visibility: hidden;
-}
-.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-user-meta {
-  display: none;
-}
+.app[data-interface-mode="modern-gui"] .term-user-content { display:block; line-height:1.65; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-user { grid-template-areas:'. bubble'; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-user-avatar { display:none; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-user-meta { display:none; }
 
-/* ── 助手消息：无气泡阅读列 + 左侧头像槽位 ── */
-.app[data-interface-mode="modern-gui"] .term-assistant { padding: var(--ui-space-1) 2px; }
+.app[data-interface-mode="modern-gui"] .term-assistant {
+  display:grid; grid-template-columns:var(--modern-avatar-size) minmax(0,1fr);
+  grid-template-areas:'avatar meta' '. body'; align-items:start;
+  column-gap:var(--modern-avatar-gap); padding:4px 0; position:relative;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant > :is(.term-assistant-role-mark,.term-assistant-dot,.term-assistant-dot-img) {
+  grid-area:avatar; display:inline-flex; align-items:center; justify-content:center;
+  width:24px; height:24px; margin:0; color:var(--accent); border-radius:3px; object-fit:contain;
+}
+.app[data-interface-mode="modern-gui"] .term-assistant-role-mark { background:var(--surface-raised); border:1px solid var(--stroke-subtle); }
+.app[data-interface-mode="modern-gui"] .term-assistant-dot { font-size:15px; line-height:24px; }
 .app[data-interface-mode="modern-gui"] .term-assistant-meta {
-  display: flex;
-  align-items: baseline;
-  gap: var(--ui-space-2);
-  min-width: 0;
-  margin-bottom: 4px;
-  color: var(--text-dim);
-  font-size: 12px;
+  grid-area:meta; display:flex; align-items:center; gap:10px; min-height:24px; min-width:0;
+  padding-right:32px; margin-bottom:6px; font-size:12px; color:var(--text-dim);
 }
-.app[data-interface-mode="modern-gui"] .term-assistant-name {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-}
-.app[data-interface-mode="modern-gui"] .term-assistant.has-dot {
-  display: grid;
-  grid-template-columns: var(--modern-avatar-size) minmax(0, 1fr);
-  grid-template-areas:
-    'avatar meta'
-    'avatar body';
-  align-items: start;
-  column-gap: var(--modern-avatar-gap);
-}
-.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot,
-.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot-img {
-  grid-area: avatar;
-  justify-self: center;
-  flex: none;
-  width: auto;
-  height: auto;
-  margin-top: 0;
-}
-.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot {
-  font-size: 16px;
-  line-height: 22px;
-}
-.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-dot-img {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  object-fit: contain;
-}
-.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-meta {
-  grid-area: meta;
-  margin-bottom: 2px;
-}
-.app[data-interface-mode="modern-gui"] .term-assistant.has-dot > .term-assistant-body {
-  grid-area: body;
-  min-width: 0;
-  max-width: 78ch;
-}
-/* 组内续行：保留头像列宽、隐藏头像与 meta */
-.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-assistant.has-dot > :is(.term-assistant-dot, .term-assistant-dot-img) {
-  visibility: hidden;
-}
-.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-assistant-meta {
-  display: none;
-}
-/* 复制按钮：悬浮在 meta 行右端，不侵入正文 */
+.app[data-interface-mode="modern-gui"] .term-assistant-name { color:var(--text); font-size:13px; font-weight:600; }
+.app[data-interface-mode="modern-gui"] .term-assistant-body { grid-area:body; min-width:0; max-width:78ch; line-height:1.7; }
+.app[data-interface-mode="modern-gui"] .term-assistant-body .term-p { margin-block:0 12px; }
+.app[data-interface-mode="modern-gui"] .term-assistant-body > :last-child { margin-bottom:0; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-assistant { grid-template-areas:'. body'; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-assistant > :is(.term-assistant-role-mark,.term-assistant-dot,.term-assistant-dot-img) { display:none; }
+.app[data-interface-mode="modern-gui"] .plain-message-list__row:not([data-group-start]) .term-assistant-meta { display:none; }
 .app[data-interface-mode="modern-gui"] .term-assistant .copy-btn {
-  top: 0;
-  right: 2px;
-  border-radius: 8px;
-  border-color: var(--stroke-subtle);
-  background: var(--surface-raised);
+  top:2px; right:0; width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+  padding:0; border:0; border-radius:3px; background:transparent; color:var(--text-dim);
 }
-.app[data-interface-mode="modern-gui"] .term-assistant .copy-btn:focus-visible { opacity: 1; }
+.app[data-interface-mode="modern-gui"] .term-assistant .copy-btn:hover { background:var(--surface-raised); color:var(--text); }
+.app[data-interface-mode="modern-gui"] .term-assistant:focus-within .copy-btn { opacity:1; }
 
-/* ── 推理块：灰底 + 左强调边 ── */
-.app[data-interface-mode="modern-gui"] .term-reasoning {
-  padding: 6px 10px;
-  border-left: var(--line-width-2) solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--text-dim) 7%, transparent);
+/* Execution details sit on a continuous quiet rail, below the message hierarchy. */
+.app[data-interface-mode="modern-gui"] .term-row-reasoning { padding-left:36px; }
+.app[data-interface-mode="modern-gui"] .term-reasoning { padding:0; border:0; border-radius:0; background:transparent; }
+.app[data-interface-mode="modern-gui"] .term-reasoning-head {
+  min-height:30px; width:auto; gap:8px; padding:2px 0; font-size:12px; font-style:normal; color:var(--text-dim);
 }
-.app[data-interface-mode="modern-gui"] .term-row-reasoning {
-  padding-left: calc(var(--modern-avatar-size) + var(--modern-avatar-gap));
-}
-.app[data-interface-mode="modern-gui"] .term-reasoning-head { min-height: 24px; }
-.app[data-interface-mode="modern-gui"] .term-reasoning-body {
-  margin: var(--ui-space-1) 0 0;
-  padding: 0;
-  border-left: 0;
-}
-
-/* ── 工具卡：卡片化 + 状态 pill ── */
+.app[data-interface-mode="modern-gui"] .term-reasoning-icon { display:inline-flex; color:var(--text-dim); }
+.app[data-interface-mode="modern-gui"] .term-reasoning-toggle { display:inline-flex; margin-left:2px; opacity:.65; }
+.app[data-interface-mode="modern-gui"] .term-reasoning-head:hover { color:var(--text); }
+.app[data-interface-mode="modern-gui"] .term-reasoning-body { margin:4px 0 8px 6px; padding:6px 0 6px 14px; border-left:1px solid var(--stroke-subtle); line-height:1.65; }
 .app[data-interface-mode="modern-gui"] .term-tool {
-  padding: 0;
-  margin: 2px 0;
-  border: var(--line-width-1) solid var(--stroke-subtle);
-  border-radius: 10px;
-  background: var(--surface-panel);
-  overflow: hidden;
+  padding:0; margin:0 0 0 36px; border:0; border-left:1px solid var(--stroke-subtle); border-radius:0; background:transparent; overflow:hidden;
 }
-.app[data-interface-mode="modern-gui"] .term-tool-head {
-  min-height: 36px;
-  padding: 0 12px;
-  gap: var(--ui-space-2);
-  align-items: center;
+.app[data-interface-mode="modern-gui"] .term-tool-head { min-height:34px; padding:5px 10px; gap:8px; align-items:center; font-size:12px; }
+.app[data-interface-mode="modern-gui"] .term-tool-head:hover { opacity:1; background:var(--surface-raised); }
+.app[data-interface-mode="modern-gui"] .term-tool-name { max-width:45%; flex:0 1 auto; font-weight:600; color:var(--text); }
+.app[data-interface-mode="modern-gui"] .term-tool-summary { color:var(--text-dim); }
+.app[data-interface-mode="modern-gui"] .term-tool-state-label { margin-left:auto; padding:0; border-radius:0; background:transparent; font-size:11px; white-space:nowrap; }
+.app[data-interface-mode="modern-gui"] .term-tool-duration { flex-shrink:0; font-size:11px; color:var(--text-dim); white-space:nowrap; }
+.app[data-interface-mode="modern-gui"] .term-tool-head[aria-expanded]::after {
+  content:''; flex:0 0 5px; width:5px; height:5px; margin:0 2px 0 4px;
+  border-right:1px solid currentColor; border-bottom:1px solid currentColor; transform:rotate(-45deg); opacity:.55;
 }
-.app[data-interface-mode="modern-gui"] .term-tool-head:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.app[data-interface-mode="modern-gui"] .term-tool-state-label {
-  margin-left: auto;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  line-height: 16px;
-  white-space: nowrap;
-}
-.app[data-interface-mode="modern-gui"] .term-tool[data-status="ok"] .term-tool-state-label {
-  color: var(--tool-ok, var(--success));
-  background: color-mix(in srgb, var(--tool-ok, var(--success)) 12%, transparent);
-}
-.app[data-interface-mode="modern-gui"] .term-tool[data-status="err"] .term-tool-state-label {
-  color: var(--tool-err, var(--danger));
-  background: color-mix(in srgb, var(--tool-err, var(--danger)) 12%, transparent);
-}
-.app[data-interface-mode="modern-gui"] .term-tool[data-status="run"] .term-tool-state-label {
-  color: var(--tool-run, var(--accent));
-  background: color-mix(in srgb, var(--tool-run, var(--accent)) 14%, transparent);
-}
-.app[data-interface-mode="modern-gui"] .term-tool-body {
-  margin-left: 0;
-  padding: 8px 12px;
-  border-top: var(--line-width-1) solid var(--stroke-subtle);
-  background: var(--surface-sunken);
-}
+.app[data-interface-mode="modern-gui"] .term-tool-head[aria-expanded="true"]::after { transform:rotate(45deg); }
+.app[data-interface-mode="modern-gui"] .term-tool[data-status="ok"] .term-tool-state-label { color:var(--tool-ok,var(--success)); }
+.app[data-interface-mode="modern-gui"] .term-tool[data-status="err"] .term-tool-state-label { color:var(--tool-err,var(--danger)); }
+.app[data-interface-mode="modern-gui"] .term-tool[data-status="run"] .term-tool-state-label { color:var(--tool-run,var(--accent)); }
+.app[data-interface-mode="modern-gui"] .term-tool-body { margin:0; padding:8px 12px 12px; border:0; background:var(--surface-raised); }
+.app[data-interface-mode="modern-gui"] .term-row-error { padding:10px 14px; border:1px solid var(--danger-edge); border-radius:3px; background:var(--state-danger-surface); }
+.app[data-interface-mode="modern-gui"] .term-row-search-active { border-radius:4px; }
+.app[data-interface-mode="modern-gui"] :is(.term-user-content,.term-assistant-body,.term-user-name,.term-assistant-name) { overflow-wrap:anywhere; }
+.app[data-interface-mode="modern-gui"] :is(.term-user-meta,.term-assistant-meta) { flex-wrap:wrap; }
+.app[data-interface-mode="modern-gui"] .term-tool-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 
-/* ── 错误 / 系统行：警示卡片 ── */
-.app[data-interface-mode="modern-gui"] .term-row-error {
-  padding: 8px 12px;
-  border: var(--line-width-1) solid var(--danger-edge);
-  border-radius: 8px;
-  background: var(--state-danger-surface);
-}
-
-/* ── 搜索命中：圆角与气泡一致，避免方框压在气泡上 ── */
-.app[data-interface-mode="modern-gui"] .term-row-search-active { border-radius: 12px; }
-
-/* ── 输入区附件：现代版式给圆角与强调色，chip 从输入行上沿浮起 ── */
-.app[data-interface-mode="modern-gui"] .input-attachments { gap: 8px; padding: 0 0 8px; }
-.app[data-interface-mode="modern-gui"] .input-attachment {
-  padding: 3px 4px 3px 10px;
-  border-radius: 999px;
-  border-color: var(--stroke-subtle);
-  background: var(--surface-raised);
-  color: var(--text-dim);
-}
-.app[data-interface-mode="modern-gui"] .input-attachment-remove { border-radius: 999px; }
-.app[data-interface-mode="modern-gui"] .input-attach-btn { width: 28px; height: 28px; border-radius: 8px; }
-.app[data-interface-mode="modern-gui"] .input-attach-btn:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--stroke-default);
-  background: var(--accent-soft);
-}
-
-/* ── 终端模式小幅改良：只提操作按钮对比度（间距在 ChatView.css 的 cadence 段，结构不变） ── */
-.app[data-interface-mode="terminal-like"] .term-assistant .copy-btn,
-.app[data-interface-mode="terminal-like"] .term-assistant .copy-btn:focus-visible {
-  color: var(--text);
-  border-color: var(--stroke-default);
-}
-
-/* ── 输入区与阅读列同宽 ──
-   中控原先铺满主区。两侧栏折叠后主区可涨到 1500px+，输入条会拉成一整条横带、与消息列
-   脱开；折叠状态因此把「输入区/消息列不同宽」这个既有错位放大成显眼的断层。
-   这里按阅读列宽收窄并居中；窄窗（≤720px 时 `.term` 收内边距）同步镜像，避免输入条比
-   消息列更宽。终端模式不受影响。 */
+/* The editor and toolbar form a single surface. Normal flow allows attachments and
+   long drafts to grow without overlapping controls; edit mode retains the layout canvas. */
 .app[data-interface-mode="modern-gui"] .solid-workbench-content-column > .control-center {
-  width: calc(100% - 2 * var(--cc-margin-x, 20px));
-  max-width: min(var(--reading-column-max-width, 960px), calc(100% - 2 * var(--ui-space-6)));
-  margin-inline: auto;
+  width:calc(100% - 2 * var(--cc-margin-x,20px));
+  max-width:min(var(--reading-column-max-width,960px),calc(100% - 48px)); margin-inline:auto;
 }
-@media (max-width: 720px) {
-  .app[data-interface-mode="modern-gui"] .solid-workbench-content-column > .control-center {
-    max-width: min(var(--reading-column-max-width, 960px), calc(100% - 2 * var(--ui-space-4)));
-  }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) {
+  height:auto; min-height:var(--cc-min-height,76px); padding:0;
+  border:1px solid var(--stroke-default); border-radius:4px; background:var(--surface-panel); box-shadow:none;
+  transition:border-color 120ms ease;
 }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing):focus-within { border-color:var(--accent-edge); }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-bg { display:block; height:100%; }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-input-shadow-clip { display:none; }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-body {
+  display:flex; flex-direction:column; justify-content:flex-start; gap:0; width:100%; max-width:100%; height:auto; margin:0; padding:0; overflow:visible;
+}
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-input-slot {
+  --cc-input-flow:1;
+  position:relative; inset:auto; width:100%; height:auto; min-height:88px; max-width:100%; margin:0;
+}
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-input-slot > .cc-widget,
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-input-slot > .cc-widget > *,
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .input-bar { height:auto; }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .input-bar.cli-mode .input-row {
+  min-height:88px; height:auto; margin:0; padding:12px 12px 12px 16px;
+  gap:6px; align-items:flex-end; border:0; border-radius:4px 4px 0 0; background:transparent; box-shadow:none;
+}
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .input-editor-stack { height:auto; min-height:60px; }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .input-textarea,
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .input-ghost-suggestion {
+  padding:0; line-height:1.6; font-size:var(--cc-input-font-size,15px);
+}
+.app[data-interface-mode="modern-gui"] .input-bar.cli-mode .cli-prefix { display:none; }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing):has(.input-textarea:focus-visible) { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .input-row::before {
+  content:''; position:absolute; top:0; left:4px; right:4px; height:1px; background:var(--text); opacity:var(--cc-input-highlight-opacity,0); pointer-events:none;
+}
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) > .cc-send-button { display:none; }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .input-submit-btn {
+  display:inline-flex; align-items:center; justify-content:center; flex:0 0 32px;
+  width:32px; height:32px; padding:0; border:0; border-radius:3px; background:var(--accent); color:var(--text-on-accent); cursor:pointer;
+}
+.app[data-interface-mode="modern-gui"] .input-submit-btn:hover:not(:disabled) { filter:brightness(1.08); }
+.app[data-interface-mode="modern-gui"] .input-submit-btn:disabled { opacity:.35; cursor:default; }
+.app[data-interface-mode="modern-gui"] .input-submit-btn[data-action="stop"] { background:var(--text); color:var(--bg-panel); }
+.app[data-interface-mode="modern-gui"] .input-attach-btn { width:28px; height:32px; flex:0 0 28px; padding:4px; border:0; border-radius:3px; background:transparent; color:var(--text-dim); }
+.app[data-interface-mode="modern-gui"] .input-attach-btn:hover:not(:disabled) { color:var(--text); background:var(--surface-raised); }
+.app[data-interface-mode="modern-gui"] .input-attachments { gap:6px; padding:10px 12px 0 16px; }
+.app[data-interface-mode="modern-gui"] .input-attachment { padding:3px 4px 3px 8px; border-radius:2px; border-color:var(--stroke-subtle); background:var(--surface-raised); color:var(--text-dim); }
+.app[data-interface-mode="modern-gui"] .input-attachment-remove { border-radius:2px; }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-status-row {
+  min-height:40px; padding:5px 10px; flex-wrap:wrap; gap:4px; border-top:1px solid var(--stroke-faint); color:var(--text-dim); font-family:var(--font);
+}
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-status-group { flex:1; flex-wrap:wrap; gap:2px; }
+.app[data-interface-mode="modern-gui"] .cc-status-row :is(.solid-permission-widget,.solid-reasoning-widget) { margin-left:0 !important; }
+.app[data-interface-mode="modern-gui"] .cc-status-row :is(.cc-model-trigger,.cc-permission-trigger,.cc-reasoning-trigger) { gap:6px; justify-content:flex-start; padding-inline:6px; font-family:inherit; }
+/* A modern toolbar has one shared surface. Stored per-widget colors remain
+   available in classic/tactical layouts and the customization canvas. */
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-status-row :is(.cc-model-trigger,.cc-permission-trigger,.cc-reasoning-trigger,.cc-usage-pill) { background:transparent; color:var(--text); }
+.app[data-interface-mode="modern-gui"] .control-center:not(.cc-editing) .cc-status-row :is(.cc-model-trigger,.cc-permission-trigger,.cc-reasoning-trigger):hover { background:var(--surface-raised); }
+.app[data-interface-mode="modern-gui"] .cc-selector-icon { display:inline-flex; flex-shrink:0; color:var(--text-dim); }
+.app[data-interface-mode="modern-gui"] .cc-selector-chevron { display:inline-flex; margin-left:auto; flex-shrink:0; opacity:.55; }
+.app[data-interface-mode="modern-gui"] .cc-trigger-label { min-width:0; flex:1; text-align:left; }
+.app[data-interface-mode="modern-gui"] .cc-usage-pill { opacity:.75; font-size:11px; }
+.app[data-interface-mode="modern-gui"] .cc-command-hint { font-size:11px; }
+.app[data-interface-mode="modern-gui"] .command-palette { padding-block:4px; border:1px solid var(--stroke-default); background:var(--surface-overlay); box-shadow:none; }
+.app[data-interface-mode="modern-gui"] .cmd-item { min-height:34px; }
+.app[data-interface-mode="modern-gui"] .cmd-item.active { box-shadow:inset 2px 0 var(--accent); }
+
+@media (max-width:720px) {
+  .app[data-interface-mode="modern-gui"] .term { --modern-avatar-size:22px; --modern-avatar-gap:8px; --modern-row-gap:22px; }
+  .app[data-interface-mode="modern-gui"] .term-user-bubble { max-width:100%; padding:10px 12px; }
+  .app[data-interface-mode="modern-gui"] :is(.term-row-reasoning,.term-tool) { margin-left:0; }
+  .app[data-interface-mode="modern-gui"] .term-row-reasoning { padding-left:30px; }
+  .app[data-interface-mode="modern-gui"] .solid-workbench-content-column > .control-center { max-width:calc(100% - 24px); }
+  .app[data-interface-mode="modern-gui"] .cc-status-row :is(.cc-model-trigger,.cc-permission-trigger,.cc-reasoning-trigger) { max-width:120px; }
+}
+.app[data-interface-mode="terminal-like"] .term-tool-head { min-height:26px; }
+.app[data-interface-mode="terminal-like"] .term-tool-state-label { flex-shrink:0; white-space:nowrap; color:var(--text-dim); }
+.app[data-interface-mode="terminal-like"] .cc-selector-chevron { display:inline-flex; flex-shrink:0; margin-left:4px; opacity:.55; }
+.app[data-interface-mode="terminal-like"] .term-reasoning-toggle { display:inline-flex; align-items:center; }
+.app[data-interface-mode="terminal-like"] .term-user { padding-block:4px; }
+.app[data-interface-mode="terminal-like"] .term-assistant .copy-btn { color:var(--text); border-color:var(--stroke-default); }

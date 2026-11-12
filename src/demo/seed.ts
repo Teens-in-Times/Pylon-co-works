@@ -3,7 +3,7 @@
  *
  * 内部幂等：agents/状态灯/模式不持久化（agents 来自 list_agents 后端，runtime 是瞬态），
  * 每次启动都必须补；sessions/消息缓存/sheets 持久化（hydrateSessions/openSheet 落盘），
- * 仅首次（sessions 为空）种入——否则二次启动 agents 空 → 主页「没有可用 Agent」。
+ * 首次或显式 reset 时种入；普通重载保留浏览器会话。
  * 顺序关键：① setAgents 必须先（内部 pruneAgentSheets 清无效 agent sheets）
  * ② sessions 持久化 ③ 每会话消息缓存（ChatView 恢复 + search 快照可查）
  * ④ sheets（agent 先开聚焦）⑤ setActiveSession（SheetLayout 子 effect 先跑，
@@ -45,8 +45,10 @@ export function seedDemo(setActiveSession: (id: string | null) => void, options:
     return
   }
 
-  // 仅首次（无会话）：种会话/消息缓存/sheets
-  if (identity.sessions.length === 0) {
+  // Both scenarios honor the explicit reset flag. Otherwise a standard reset
+  // silently keeps old visual snapshots and cannot reproduce the current seed.
+  if (options.reset || identity.sessions.length === 0) {
+    if (options.reset) resetDemoWorkspace()
     const sessions = buildDemoSessions()
     useIdentityStore.setState({ sessions, sessionsHydrated: true })
     persistSessions(localStorage, sessions)
@@ -72,7 +74,7 @@ export function seedDemo(setActiveSession: (id: string | null) => void, options:
   const hermesStatus: AgentStatus = { agent: 'hermes', agentId: 'hermes', status: 'error', transport: 'webhook', recentError: '心跳超时，等待重连', cwd: '/path/to/ops' }
   runtime.setAgentStatus('peri', periStatus)
   runtime.setAgentStatus('hermes', hermesStatus)
-  const firstSession = identity.sessions[0] ?? buildDemoSessions()[0]
+  const firstSession = useIdentityStore.getState().sessions[0] ?? buildDemoSessions()[0]
   runtime.setSessionMode({ agentId: firstSession.agentId, source: firstSession.source }, 'auto')
   if (options.withPermission) {
     runtime.setPermission({ type: 'receive', request: buildDemoPermissionRequest(), now: Date.now() })
@@ -108,14 +110,7 @@ function seedVisualQaDemo(setActiveSession: (id: string | null) => void, options
     persistMessageSnapshot(session.id, messages, localStorage)
   }
 
-  if (options.reset) {
-    useWorkspaceStore.setState({
-      workspaceSheets: createSheetState(),
-      sheetAgentStates: {},
-      touchedFiles: {},
-      touchVersions: {},
-    })
-  }
+  if (options.reset) resetDemoWorkspace()
 
   const agentSheets = buildDemoAgents().map(agent => ({
     agent,
@@ -173,4 +168,13 @@ function seedVisualQaDemo(setActiveSession: (id: string | null) => void, options
   if (options.withPermission) {
     runtime.setPermission({ type: 'receive', request: buildDemoPermissionRequest(), now: Date.now() })
   }
+}
+
+function resetDemoWorkspace(): void {
+  useWorkspaceStore.setState({
+    workspaceSheets: createSheetState(),
+    sheetAgentStates: {},
+    touchedFiles: {},
+    touchVersions: {},
+  })
 }

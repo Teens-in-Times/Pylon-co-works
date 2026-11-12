@@ -4,12 +4,8 @@ import type { Accessor } from 'solid-js'
 /**
  * createCopyFeedback — 「已复制 ✓」一次性反馈计时器（Solid hook）。
  *
- * #228 批次D 收敛 chat 复制按钮的复制粘贴计时器（MessageRow AssistantContent；
- * CodeBlock.solid.tsx 同形副本因 #221 在途文件域暂未接入，后续替换其
- * copied/copiedTimer/copy 三段即可）。markCopied 连点重置计时（pending timer
- * 先清后设），组件卸载经 onCleanup 回收。
- * 落点说明：solid-workbench 子树内非 .solid.tsx 文件禁止 import solid-js
- * （check-solid-workbench-boundaries），故 hook 放本模块而非 chat/ 目录。
+ * 消费者在剪贴板写入确认成功后调用 markCopied。重复成功会重置反馈计时，
+ * 组件卸载时回收计时器；不承担剪贴板 IO 或错误处理。
  */
 export function createCopyFeedback(resetMs = 2000): { copied: Accessor<boolean>; markCopied: () => void } {
   const [copied, setCopied] = createSignal(false)

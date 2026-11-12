@@ -9,7 +9,6 @@
  */
 import { IS_TAURI } from '../../infrastructure/tauri/env.ts'
 import { useIdentityStore, type Session } from '../identity/identityStore.ts'
-import { reportRuntimeError } from '../../app/runtimeError.ts'
 import { getMessageSearchText } from '../chat/messageSearchIndex.ts'
 import { toCanonicalOwnerKey } from '../events/eventSchema.ts'
 import { projectMessagesFromCanonical } from '../events/messageProjection.ts'
@@ -54,12 +53,7 @@ export async function searchAllMessagesTauri(query: string): Promise<{ results: 
     }), session)
   }
   // 阶段 1：后端命中行（payload/eventType；recall 与候选 owner 版一致）
-  let hits: CanonicalEventSearchHit[] = []
-  try {
-    hits = await repository.searchHits(needle, BACKEND_SEARCH_LIMIT)
-  } catch (error) {
-    reportRuntimeError('canonical 内容搜索失败', error)
-  }
+  const hits: CanonicalEventSearchHit[] = await repository.searchHits(needle, BACKEND_SEARCH_LIMIT)
   // 阶段 2：按 owner 分组去重 sequence，定向单行 compact 读（单元覆盖的行由
   // compact 语义解析出单元行）→ 该 owner 行集合流投影 → 消息搜索文本精确复核。
   const sequencesByOwner = new Map<string, number[]>()
@@ -75,16 +69,11 @@ export async function searchAllMessagesTauri(query: string): Promise<{ results: 
     if (!session) continue
     const rowBySequence = new Map<number, CanonicalEventRow>()
     await Promise.all(sequences.map(async sequence => {
-      try {
-        // #445：after_sequence = sequence-1 + limit 1——取回该位置附近的 compact
-        // 有效行（命中行自身，或覆盖它的单元行；compact 页按 delta run 边界收口，
-        // 预算内通常 1 行，最坏为邻接整段 run）。
-        const page = await repository.listCompact(ownerKey, sequence - 1, 1)
-        const row = page.events[0]
-        if (row) rowBySequence.set(row.sequence, row)
-      } catch (error) {
-        reportRuntimeError(`读取 canonical 命中行失败（${session.id}）`, error)
-      }
+      // Failures belong to the caller's retry state; incomplete reads must not
+      // masquerade as a successful search with missing matches.
+      const page = await repository.listCompact(ownerKey, sequence - 1, 1)
+      const row = page.events[0]
+      if (row) rowBySequence.set(row.sequence, row)
     }))
     if (rowBySequence.size === 0) continue
     const rows = [...rowBySequence.values()].sort((a, b) => a.sequence - b.sequence)
@@ -93,10 +82,8 @@ export async function searchAllMessagesTauri(query: string): Promise<{ results: 
     for (const message of messages) {
       const searchable = getMessageSearchText(message)
       if (!searchable.toLocaleLowerCase().includes(needle.toLocaleLowerCase())) continue
-      // ⚠️ messageId 是本次（拉回行子集）投影内的逻辑序号（user-1/msg-2…），不再
-      // 等于会话内全量投影的 Message.id——旧版全量拉流下两者一致。消费方
-      // SearchSheetView 只把它写进 pendingMessageLocation（当前无读取方）；导航
-      // 契约（FE-AUD-003）落地时需改带 owner+sequence 锚或恢复全量序号，见 #445。
+      // IDs belong to this partial projection. Navigation passes the query to
+      // the full conversation search instead of treating these IDs as anchors.
       results.push({
         sessionId: session.id,
         messageId: message.id,

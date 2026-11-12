@@ -1,22 +1,26 @@
 /* gateway 包自适应残量（样式绞杀 P93 批 3，lifecycle=adaptive）：
    只收 utilities 不宜表达的规则——modern-gui 模式覆写与 status-pulse 动画。
-   gateway-* / runtime-filter-input / template-apply 类名是本文件锚点
+   gateway-* / template-apply 类名是本文件锚点
    （GatewaySheetView 保留）。 */
 .app[data-interface-mode="modern-gui"] .gateway-section,
 .app[data-interface-mode="modern-gui"] .gateway-route,
 .app[data-interface-mode="modern-gui"] .gateway-instance-card {
-  border-radius: 12px;
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 4%, transparent);
+  border-radius: 2px;
+  box-shadow: none;
 }
 .app[data-interface-mode="modern-gui"] .gateway-route-head,
-.app[data-interface-mode="modern-gui"] .runtime-filter-input,
-.app[data-interface-mode="modern-gui"] .template-apply { border-radius: 9px; }
-.app[data-interface-mode="modern-gui"] .gateway-summary-chip { border-radius: 999px; }
-.app[data-interface-mode="modern-gui"] .gateway-instance-status { border-radius: 999px; }
-.app[data-interface-mode="modern-gui"] .gateway-empty { border-radius: 9px; }
+.app[data-interface-mode="modern-gui"] .gateway-control,
+.app[data-interface-mode="modern-gui"] .template-apply { border-radius: 4px; }
+.app[data-interface-mode="modern-gui"] .gateway-summary-chip { border-radius: 2px; }
+.app[data-interface-mode="modern-gui"] .gateway-instance-status { border-radius: 2px; }
+.app[data-interface-mode="modern-gui"] .gateway-empty { border-radius: 4px; }
 
 @keyframes gateway-status-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: .55; }
 }
 .gateway-status-pulse { animation: gateway-status-pulse 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gateway-status-pulse { animation:none; }
+}

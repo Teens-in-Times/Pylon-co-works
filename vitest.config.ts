@@ -3,12 +3,7 @@ import os from 'node:os'
 import { defineConfig } from 'vitest/config'
 import solid from 'vite-plugin-solid'
 
-// #279 逐梯队 Solid 化 → #515/#520 全量终态：solid 编译面扩展到全 src——
-// `.solid.tsx` 后缀即 solid 编译与 solid-dom 分组（与 vite.config.ts 同一正则）。
-// #520 W4：React 面退役，@vitejs/plugin-react 不再加载；原 react-dom/react-shared
-// 历史分组名已随 React 退役改名 jsdom-mock/jsdom-shared，承载非 solid 的
-// jsdom 逻辑/纯 DOM 测试。
-const SOLID_WORKBENCH_FILES = /src\/.*\.solid(?:\.test)?\.tsx$/
+// Production and tests share the same Solid JSX compiler.
 
 // #175：非 watch 模式 vitest 默认吃满 availableParallelism（20 核开发机 = 19 worker）。
 // 实测满载下全量必红：worker 内存峰值把 16GB 级开发机推进分页，事件循环整段冻结，
@@ -35,11 +30,10 @@ function testGroup(file: string): 'node' | 'node-shared' | 'jsdom-mock' | 'jsdom
 // - scripts/*.test.mts：node 环境（#228 批次F 起全部为 vitest describe/it +
 //   expect 形态，旧 runner 的顶层 assert + console.log 已迁清）
 // - src/**/*.test.{ts,tsx}：组件行为测试；文件内可用环境注释声明 jsdom
-// - Solid renderer 只转换 *.solid.tsx；其余 *.tsx 不含 JSX（#520 W4 起 React 面已退役）
-// 迁移期间保留原 run-frontend-tests.mts runner 作为兼容入口；vitest 为正式门禁。
+// - 所有 JSX 统一由 Solid 编译；后缀仅表达组件/测试类型。
 export default defineConfig({
   plugins: [
-    solid({ include: SOLID_WORKBENCH_FILES, hot: false }),
+    solid({ hot: false }),
   ],
   test: {
     // #220：前端计算核的 wasm 产物是测试前置。挂 globalSetup 而不是某个 npm script，
@@ -48,7 +42,7 @@ export default defineConfig({
     globalSetup: ['scripts/vitest-wasm-setup.mts'],
     projects: (['node', 'node-shared', 'jsdom-mock', 'jsdom-shared', 'solid-dom'] as const).map(name => ({
       plugins: [
-        solid({ include: SOLID_WORKBENCH_FILES, hot: false }),
+        solid({ hot: false }),
       ],
       test: {
         name,

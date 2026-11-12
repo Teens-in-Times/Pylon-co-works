@@ -110,11 +110,30 @@ export default function ErrorCenter() {
   const errors = createRegistrySignal({ subscribe: subscribeErrorCenter }, getErrors)
   const [open, setOpen] = createSignal(false)
   const [dockBottom, setDockBottom] = createSignal(130)
-  // 原 useEffect [errors.length]：错误清空即收起面板。
+  const [pendingRecovery, setPendingRecovery] = createSignal<ReadonlySet<string>>(new Set())
+  let badge: HTMLButtonElement | undefined
+  const closePanel = () => { setOpen(false); badge?.focus() }
+  const recover = async (entry: ErrorEntry) => {
+    if (pendingRecovery().has(entry.key)) return
+    setPendingRecovery(current => new Set([...current, entry.key]))
+    try { await runRecoveryAction(entry) }
+    finally { setPendingRecovery(current => { const next = new Set(current); next.delete(entry.key); return next }) }
+  }
+  createEffect(() => {
+    if (!open()) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      closePanel()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    onCleanup(() => window.removeEventListener('keydown', onKeyDown))
+  })
+  // Clearing notices closes the tray; the diagnostic history remains unchanged.
   createEffect(() => {
     if (errors().length === 0) setOpen(false)
   })
-  // 原 useLayoutEffect [errors.length]：面板展开期间测量底部 dock（中控）并把 tray
+  // 有通知期间测量底部 dock（中控）并把 tray
   // 垫在其上方；尺寸/位置变化经 resize + ResizeObserver 跟随。计数归零即不测量。
   createEffect(() => {
     if (errors().length === 0 || typeof window === 'undefined') return
@@ -155,20 +174,21 @@ export default function ErrorCenter() {
   const severity = () => highestSeverity(errors())
   return (
     <Show when={errors().length > 0}>
-      <button type="button" class={`error-center-badge severity-${severity()}`} onClick={() => setOpen(value => !value)}
-        title={`${errors().length} 个待处理运行错误`} aria-label="查看运行错误" aria-live="polite" aria-expanded={open()}>⚠ {errors().length}</button>
+      <button ref={element => { badge = element }} type="button" class={`error-center-badge severity-${severity()}`} onClick={() => setOpen(value => !value)}
+        title={`${errors().length} 个待处理运行错误`} aria-label="查看运行错误" aria-live="polite" aria-controls="pylon-error-center" aria-expanded={open()}>⚠ {errors().length}</button>
       <Show when={open()}>
         <section
           class={`error-center severity-${severity()}`}
+          id="pylon-error-center"
           role="region"
           aria-label="运行错误通知"
           style={{ '--error-center-bottom': `${dockBottom()}px` } as JSX.CSSProperties}
         >
           <div class="error-center-head">
             <strong>运行错误（{errors().length}）</strong>
-            <span class="error-center-head-hint">不会阻断当前工作</span>
+            <span class="error-center-head-hint">可在这里处理问题，隐藏通知不会删除运行记录</span>
             <button type="button" class="error-center-action" title="隐藏当前通知，历史事实仍保留" onClick={clearErrors}>全部清除</button>
-            <button type="button" class="error-center-action" aria-label="关闭错误面板" onClick={() => setOpen(false)}>✕</button>
+            <button type="button" class="error-center-action" aria-label="关闭错误面板" onClick={closePanel}>✕</button>
           </div>
           <ul class="error-center-list" aria-live="polite">
             <For each={errors()}>{entry => (
@@ -179,21 +199,25 @@ export default function ErrorCenter() {
                   <Show when={entry.count > 1}><small class="error-center-count">×{entry.count}</small></Show>
                   <ErrorTechnicalDetails entry={entry} />
                 </div>
-                <Show when={entry.recovery}>
-                  <button
-                    type="button"
-                    class="error-center-action"
-                    onClick={() => openRecovery(entry.recovery!)}
-                  >{recoveryLabel(entry.recovery!.kind)}</button>
-                </Show>
-                <Show when={entry.recoveryAction}>
-                  <button
-                    type="button"
-                    class="error-center-action"
-                    onClick={() => { void runRecoveryAction(entry) }}
-                  >{entry.recoveryAction!.label}</button>
-                </Show>
-                <button type="button" class="error-center-action error-center-dismiss" aria-label="关闭该错误" onClick={() => dismissError(entry.id)}>隐藏</button>
+                <div class="flex w-full flex-wrap items-center gap-2">
+                  <Show when={entry.recovery}>
+                    <button
+                      type="button"
+                      class="error-center-action"
+                      onClick={() => openRecovery(entry.recovery!)}
+                    >{recoveryLabel(entry.recovery!.kind)}</button>
+                  </Show>
+                  <Show when={entry.recoveryAction}>
+                    <button
+                      type="button"
+                      class="error-center-action"
+                      disabled={pendingRecovery().has(entry.key)}
+                      aria-busy={pendingRecovery().has(entry.key)}
+                      onClick={() => { void recover(entry) }}
+                    >{pendingRecovery().has(entry.key) ? '正在处理…' : entry.recoveryAction!.label}</button>
+                  </Show>
+                  <button type="button" class="error-center-action error-center-dismiss" aria-label="关闭该错误" onClick={() => dismissError(entry.id)}>隐藏</button>
+                </div>
               </li>
             )}</For>
           </ul>

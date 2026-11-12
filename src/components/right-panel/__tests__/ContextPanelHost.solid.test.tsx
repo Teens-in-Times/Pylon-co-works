@@ -13,7 +13,7 @@ import { cleanup, render } from '@solidjs/testing-library'
 import { createSignal } from 'solid-js'
 import ContextPanelHost from '../ContextPanelHost.solid.tsx'
 import AgentContextPanel from '../AgentContextPanel.solid.tsx'
-import { getContextPanelRegistry } from '../../../plugin-runtime/runtimeServices.ts'
+import { getCommandRegistry, getContextPanelRegistry } from '../../../plugin-runtime/runtimeServices.ts'
 import { createPluginIdentity } from '../../../plugin-runtime/pluginIdentity.ts'
 import type { AsyncDisposable } from '../../../plugin-runtime/registry/types.ts'
 import type { SheetContext, SheetRecord } from '../../../workspace-sheets/sheetTypes.ts'
@@ -21,6 +21,9 @@ import { createPreviewWorkbenchServices } from '../../../renderers/solid-workben
 import { createWorkbenchHostPort } from '../../../plugin-runtime/renderers/workbenchHostPort.ts'
 import { publishActiveWorkbenchHostPort } from '../../../application/agent-workbench/activeWorkbenchHostPort.ts'
 import { useRightRailStore, RIGHT_RAIL_DEFAULT_WIDTH } from '../../../domains/workspace/layoutRailsStore.ts'
+import { useWorkspaceStore } from '../../../domains/workspace/workspaceStore.ts'
+import { appClients } from '../../../app/appClients.ts'
+import { runtimeEventClient } from '../../../infrastructure/tauri/runtimeEventClient.ts'
 
 const registrations: AsyncDisposable[] = []
 
@@ -93,6 +96,8 @@ describe('ContextPanelHost', () => {
     render(() => <ContextPanelHost sheet={sheet} ctx={ctx} />)
 
     expect(await screen.findByRole('complementary')).toHaveStyle({ '--right-width': '347px' })
+    expect(screen.getByRole('heading', { name: '宽度' })).toBeInTheDocument()
+    expect(screen.queryByRole('tablist', { name: '右栏面板' })).not.toBeInTheDocument()
   })
 
   it('agent 搜索消费当前 Suite Host Port 的 document 与会话 UI 状态', async () => {
@@ -109,10 +114,19 @@ describe('ContextPanelHost', () => {
     const release = publishActiveWorkbenchHostPort(agentSheet.id, hostPort)
 
     render(() => <AgentContextPanel sheet={agentSheet} ctx={agentCtx} />)
+    hostPort.sessionUi.set('search-open', true)
     fireEvent.input(await screen.findByRole('textbox', { name: '搜索消息' }), { target: { value: '迁移结果' } })
 
     await waitFor(() => expect(screen.getByText('1/1')).toBeInTheDocument())
     expect(hostPort.sessionUi.get('search-query', '')).toBe('迁移结果')
+    const result = screen.getByRole('button', { name: '定位第 1 条匹配消息' })
+    expect(result).toHaveAttribute('aria-current', 'true')
+    hostPort.sessionUi.set('search-index', 7)
+    fireEvent.click(result)
+    expect(hostPort.sessionUi.get('search-index', -1)).toBe(0)
+    hostPort.sessionUi.set('search-index', 7)
+    fireEvent.input(screen.getByRole('textbox', { name: '搜索消息' }), { target: { value: '结果' } })
+    expect(hostPort.sessionUi.get('search-index', -1)).toBe(0)
     release()
     services.destroy()
   })
@@ -131,12 +145,14 @@ describe('ContextPanelHost', () => {
     // React 版的 rerender 语义改写：ctx 经信号重推（Solid 无 rerender API）。
     const [liveCtx, setLiveCtx] = createSignal<SheetContext>({ ...ctx, activeSession: 'session-a' })
     render(() => <AgentContextPanel sheet={agentSheet} ctx={liveCtx()} />)
+    fireEvent.click(screen.getByRole('button', { name: '搜索当前会话' }))
 
     const searchBox = () => screen.getByRole('textbox', { name: '搜索消息' })
     await waitFor(() => expect(searchBox()).toBeInTheDocument())
     fireEvent.input(searchBox(), { target: { value: 'first query' } })
     binding = { ...binding, sessionOwnerKey: 'owner-b', sessionId: 'session-b' }
     setLiveCtx({ ...ctx, activeSession: 'session-b' })
+    fireEvent.click(screen.getByRole('button', { name: '搜索当前会话' }))
     await waitFor(() => expect(searchBox()).toHaveValue(''))
     fireEvent.input(searchBox(), { target: { value: 'second query' } })
 
@@ -145,6 +161,39 @@ describe('ContextPanelHost', () => {
     await waitFor(() => expect(searchBox()).toHaveValue('first query'))
     release()
     services.destroy()
+  })
+
+  it('资源标签按会话保留，离开后返回不丢失选择', () => {
+    const agentSheet = { ...sheet, kind: 'agent' }
+    const agentCtx = { ...ctx, activeSession: 'resources-persisted-mode' }
+    const first = render(() => <AgentContextPanel sheet={agentSheet} ctx={agentCtx} />)
+    fireEvent.click(screen.getByRole('button', { name: '成果' }))
+    expect(screen.getByText('成果会出现在这里')).toBeInTheDocument()
+    first.unmount()
+    render(() => <AgentContextPanel sheet={agentSheet} ctx={agentCtx} />)
+    expect(screen.getByRole('button', { name: '成果' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('打开浏览器前固定来源会话，避免打开 Sheet 改变上下文后记错返回位置', async () => {
+    const patchMetadata = vi.spyOn(useWorkspaceStore.getState(), 'patchSheetMetadata').mockImplementation(() => undefined)
+    vi.spyOn(appClients.browser, 'status').mockResolvedValue({ instanceId: 0, activeTabId: null, phase: 'idle', tabs: [], zoomPercent: 90 })
+    vi.spyOn(runtimeEventClient, 'subscribe').mockReturnValue({ dispose: vi.fn() })
+    vi.spyOn(getCommandRegistry(), 'execute').mockResolvedValue(undefined)
+    const [activeSession, setActiveSession] = createSignal('source-session')
+    const agentSheet = { ...sheet, kind: 'agent' }
+    const agentCtx = {
+      ...ctx,
+      get activeSession() { return activeSession() },
+      openSheet: vi.fn(() => { setActiveSession('different-session'); return 'opened-browser' }),
+    }
+    render(() => <AgentContextPanel sheet={agentSheet} ctx={agentCtx} />)
+    fireEvent.click(screen.getByRole('button', { name: '网页' }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动内置浏览器' }))
+    expect(patchMetadata).toHaveBeenCalledWith('opened-browser', {
+      resourceReturnSheetId: agentSheet.id,
+      resourceReturnSessionId: 'source-session',
+      resourceReturnTitle: agentSheet.title,
+    })
   })
 
   it('按 order 渲染贡献标签并隔离单个贡献的渲染错误', async () => {

@@ -10,7 +10,7 @@ import {
 import { GATEWAY_ROUTE_RESETS, type GatewayRouteReset, type GatewayStatus, type GatewayWriteStatus } from '../../infrastructure/tauri/gatewayContracts.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
-import { EDIT_ROW, FILTER_INPUT, HINT, SECTION, SECTION_HEAD, SECTION_HINT, SECTION_TITLE, TEMPLATE_BTN_PRIMARY, TREE_ERROR } from './gatewaySheetStyles.ts'
+import { EDIT_ROW, FILTER_INPUT, FORM_GRID, FORM_FIELD, HINT, SECTION, SECTION_HEAD, SECTION_HINT, SECTION_TITLE, TEMPLATE_BTN_PRIMARY, TREE_ERROR } from './gatewaySheetStyles.ts'
 
 /**
  * GatewayRouteForm — 「新增路由」表单（#520 K 域自 GatewaySheetView 拆出）：
@@ -57,6 +57,7 @@ export default function GatewayRouteForm(props: GatewayRouteFormProps) {
   // I12 W6（LR2-WI02）：新 route 必须绑定 instance/profile/session；既有 legacy route
   // 在保存时经 migrateLegacyRouteBindings 自动补绑定（平台唯一 enabled instance 时）
   const saveRoute = async () => {
+    if (writeStatus().kind === 'saving') return
     const route: GatewayRouteShape = {
       source: editSource().trim(),
       agentId: editAgentId().trim(),
@@ -139,36 +140,29 @@ export default function GatewayRouteForm(props: GatewayRouteFormProps) {
       <div class={SECTION_HEAD}>
         <h3 class={SECTION_TITLE}>新增路由</h3>
       </div>
-      <p class={SECTION_HINT}>把平台会话（source）绑定到 agent：实例 / profile / session 为必填，其余可选</p>
-      <div class={EDIT_ROW}>
-        <input class={FILTER_INPUT} placeholder="source（如 qq:group:123）" value={editSource()} onInput={e => onSourceChange(e.currentTarget.value)} aria-label="路由 source" />
-        <input class={FILTER_INPUT} placeholder="agentId（如 peri）" value={editAgentId()} onInput={e => setEditAgentId(e.currentTarget.value)} aria-label="路由 agentId" />
-      </div>
-      <div class={EDIT_ROW}>
-        <select class={FILTER_INPUT} aria-label="路由 instance" value={editInstanceId()} onChange={e => setEditInstanceId(e.currentTarget.value)}>
-          <option value="">选择实例</option>
-          <For each={props.instances}>{instance => (
-            <option value={instance.id}>{instance.label || instance.id}（{instance.platform}）{instance.enabled ? '' : '· 未启用'}</option>
-          )}</For>
-        </select>
-        <select class={FILTER_INPUT} aria-label="路由 profile" value={editProfileId()} onChange={e => setEditProfileId(e.currentTarget.value)}>
-          <option value="">选择 profile</option>
-          <For each={profiles()}>{profile => (
-            <option value={profile.id}>{profile.name || profile.id}</option>
-          )}</For>
-        </select>
-        <input class={FILTER_INPUT} placeholder="session（如 战役1）" value={editSessionKey()} onInput={e => setEditSessionKey(e.currentTarget.value)} aria-label="路由 session" />
-      </div>
-      <div class={EDIT_ROW}>
-        <select class={FILTER_INPUT} aria-label="路由 reset" value={editReset()} onChange={e => setEditReset(e.currentTarget.value as GatewayRouteReset)}>
-          <For each={GATEWAY_ROUTE_RESETS}>{reset => (
-            <option value={reset}>{reset}</option>
-          )}</For>
-        </select>
-        <input class={FILTER_INPUT} placeholder="idleMinutes（可选）" type="number" min="0" value={editIdleMinutes()} onInput={e => setEditIdleMinutes(e.currentTarget.value)} aria-label="路由 idleMinutes" />
-        <input class={FILTER_INPUT} placeholder="allowFrom（逗号分隔，可选）" value={editAllowFrom()} onInput={e => setEditAllowFrom(e.currentTarget.value)} aria-label="路由 allowFrom" />
-        <button type="button" class={TEMPLATE_BTN_PRIMARY} onClick={() => void saveRoute()}>保存</button>
-      </div>
+      <p class={SECTION_HINT}>将平台消息发送给指定 Agent。选择实例和配置档案，并填写会话标识。</p>
+      <fieldset class="m-0 border-0 p-0 min-w-0 disabled:opacity-70" disabled={writeStatus().kind === 'saving'}>
+        <legend class="sr-only">新增路由字段</legend>
+        <div class={FORM_GRID}>
+          <label class={FORM_FIELD}>消息来源<input class={FILTER_INPUT} placeholder="如 qq:group:123" value={editSource()} onInput={e => onSourceChange(e.currentTarget.value)} aria-label="路由 source" /></label>
+          <label class={FORM_FIELD}>目标 Agent<input class={FILTER_INPUT} placeholder="如 peri" value={editAgentId()} onInput={e => setEditAgentId(e.currentTarget.value)} aria-label="路由 agentId" /></label>
+          <label class={FORM_FIELD}>绑定实例<select class={FILTER_INPUT} aria-label="路由 instance" value={editInstanceId()} onChange={e => setEditInstanceId(e.currentTarget.value)}>
+            <option value="">选择实例</option>
+            <For each={props.instances}>{instance => <option value={instance.id}>{instance.label || instance.id}（{instance.platform}）{instance.enabled ? '' : '· 未启用'}</option>}</For>
+          </select></label>
+          <label class={FORM_FIELD}>配置档案<select class={FILTER_INPUT} aria-label="路由 profile" value={editProfileId()} onChange={e => setEditProfileId(e.currentTarget.value)}>
+            <option value="">选择配置档案</option>
+            <For each={profiles()}>{profile => <option value={profile.id}>{profile.name || profile.id}</option>}</For>
+          </select></label>
+          <label class={FORM_FIELD}>会话标识<input class={FILTER_INPUT} placeholder="如 项目讨论" value={editSessionKey()} onInput={e => setEditSessionKey(e.currentTarget.value)} aria-label="路由 session" /></label>
+          <label class={FORM_FIELD}>重置策略<select class={FILTER_INPUT} aria-label="路由 reset" value={editReset()} onChange={e => setEditReset(e.currentTarget.value as GatewayRouteReset)}>
+            <For each={GATEWAY_ROUTE_RESETS}>{reset => <option value={reset}>{reset}</option>}</For>
+          </select></label>
+          <label class={FORM_FIELD}>空闲时间（分钟，可选）<input class={FILTER_INPUT} placeholder="使用默认时间" type="number" min="0" value={editIdleMinutes()} onInput={e => setEditIdleMinutes(e.currentTarget.value)} aria-label="路由 idleMinutes" /></label>
+          <label class={FORM_FIELD}>允许的来源（可选）<input class={FILTER_INPUT} placeholder="多个来源用逗号分隔" value={editAllowFrom()} onInput={e => setEditAllowFrom(e.currentTarget.value)} aria-label="路由 allowFrom" /></label>
+        </div>
+        <div class={EDIT_ROW}><button type="button" class={TEMPLATE_BTN_PRIMARY} disabled={writeStatus().kind === 'saving'} onClick={() => void saveRoute()}>{writeStatus().kind === 'saving' ? '保存中…' : '保存'}</button></div>
+      </fieldset>
       <Show when={formError()}><div class={TREE_ERROR} role="alert">{formError()}</div></Show>
       <Show when={writeStatus().kind === 'blocked'}><p class={HINT} role="status">后端命令不可用：update_agents_config（请检查应用版本）</p></Show>
       <Show when={writeStatus().kind === 'lock-poisoned'}><p class="file-section-hint gateway-error-reference" role="status">网关配置回读不一致，详情见右下角错误中心</p></Show>

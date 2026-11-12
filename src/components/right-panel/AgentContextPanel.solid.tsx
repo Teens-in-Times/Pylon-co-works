@@ -5,6 +5,9 @@ import MessageSearchBar from './MessageSearchBar.solid.tsx'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore'
+import { useWorkspaceEntityStore } from '../../domains/workspace/workspaceEntityStore.ts'
+import { getCommandRegistry } from '../../plugin-runtime/runtimeServices.ts'
+import { reportRuntimeError } from '../../app/runtimeError.ts'
 import { toAgentContextKey } from '../../domains/agent/agentContext'
 import { sessionUiStore } from '../../domains/workbench/sessionUiStore.ts'
 import { createSessionUiSignal } from '../../renderers/solid-workbench/adapters/sessionUiSignal.solid.tsx'
@@ -17,6 +20,10 @@ import {
   subscribeActiveWorkbenchHostPort,
 } from '../../application/agent-workbench/activeWorkbenchHostPort.ts'
 import type { AgentContextPanelProps } from './rightPanelTypes.ts'
+import AgentFileResources from './AgentFileResources.solid.tsx'
+import AgentArtifactResources from './AgentArtifactResources.solid.tsx'
+import AgentBrowserResources from './AgentBrowserResources.solid.tsx'
+import { collectWorkspaceResources } from './workspaceResources.ts'
 
 /** 按会话作用域的 UI 状态：#520 S2-P1-1 双注册表归一后，legacy 值直接住统一
  * sessionUiStore 单例（订阅完整），signal 为本地读视图（sessionUiSignal 适配器）。 */
@@ -79,7 +86,7 @@ function createHostDocument(hostPort: () => WorkbenchHostPort | undefined): Acce
  * 搜索模式：Renderer Suite 存在时消费当前 Sheet 发布的 Workbench Host Port，
  * 从 canonical document 计算命中并写 namespaced SessionUiPort；legacy 值统一住
  * workbench/sessionUiStore（chat/sessionUiState 已随 #520 S2-P1-1 归一退役）。
- * 关联模式：touchedFiles 正向（会话→文件）。
+ * 工作资源：当前会话文件、canonical 成果与共享内置浏览器。
  */
 export default function AgentContextPanel(props: AgentContextPanelProps) {
   const sessionId = () => props.ctx.activeSession
@@ -90,7 +97,8 @@ export default function AgentContextPanel(props: AgentContextPanelProps) {
   const [legacySearchIndex, setLegacySearchIndex] = createSessionUiState(sessionId, 'search-index', 0)
   const searchQuery = createHostSessionUiValue(hostPort, sessionId, 'search-query', legacySearchQuery)
   const searchIndex = createHostSessionUiValue(hostPort, sessionId, 'search-index', legacySearchIndex)
-  const [mode, setMode] = createSignal<'search' | 'relations'>('search')
+  const [mode, setMode] = createSessionUiState<'files' | 'artifacts' | 'browser' | 'search'>(sessionId, 'workspace-resource-mode', 'files')
+  const [visibleMatchCount, setVisibleMatchCount] = createSignal(50)
 
   // Host 出现时把 legacy 会话状态桥接进 Host Port namespace。仅「同一会话上出现
   // （首个/更换的）Host」才桥；会话切换必须从新 owner namespace 起步。
@@ -130,6 +138,9 @@ export default function AgentContextPanel(props: AgentContextPanelProps) {
   const setSearchQuery = (value: string) => {
     setLegacySearchQuery(value)
     hostPort()?.sessionUi.set('search-query', value)
+    setLegacySearchIndex(0)
+    hostPort()?.sessionUi.set('search-index', 0)
+    setVisibleMatchCount(50)
   }
   const setSearchIndex = (valueOrUpdater: number | ((previous: number) => number)) => {
     const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(searchIndex()) : valueOrUpdater
@@ -140,11 +151,41 @@ export default function AgentContextPanel(props: AgentContextPanelProps) {
     if (matches().length === 0) return
     setSearchIndex(index => (index + direction + matches().length) % matches().length)
   }
+  createEffect(() => {
+    const count = matches().length
+    const index = searchIndex()
+    if (index < 0 || index >= Math.max(1, count)) setSearchIndex(0)
+    else if (count > 0) setVisibleMatchCount(visible => Math.max(visible, index + 1))
+  })
   // I01-W3：touchedFiles 按 AgentContextKey（agentId+source）隔离读取。selector 不读
   // 组件局部响应式状态（solidStoreBridge ⚠️）：sessions 订阅在 store 侧，find 留在 memo。
   const touchedFilesRecord = createZustandSignal(useWorkspaceStore, s => s.touchedFiles)
   // CR-002：经订阅读 sessions（getState 不经订阅不响应变更）
   const identitySessions = createZustandSignal(useIdentityStore, s => s.sessions)
+  const workspaces = createZustandSignal(useWorkspaceEntityStore, state => state.workspaces)
+  const currentSession = createMemo(() => identitySessions().find(session => session.id === sessionId()))
+  const rootPath = createMemo(() => workspaces().find(workspace => workspace.id === currentSession()?.workspaceId)?.rootPath || currentSession()?.workdir)
+  const resources = createMemo(() => collectWorkspaceResources(hostDocument()))
+  const searchOpen = createHostSessionUiValue(hostPort, sessionId, 'search-open', () => false)
+  createEffect(() => {
+    searchQuery()
+    searchIndex()
+    if (searchOpen()) setMode('search')
+  })
+  const openBrowser = async (url?: string) => {
+    const returnSessionId = sessionId()
+    const returnSheetId = props.sheet.id
+    const returnTitle = currentSession()?.name || props.sheet.title
+    const browserSheetId = props.ctx.openSheet({ kind: 'browser', title: '浏览器' })
+    if (!browserSheetId) return
+    useWorkspaceStore.getState().patchSheetMetadata(browserSheetId, {
+      resourceReturnSheetId: returnSheetId,
+      resourceReturnSessionId: returnSessionId ?? '',
+      resourceReturnTitle: returnTitle,
+    })
+    try { await getCommandRegistry().execute('browser.ensure', url ? { url } : {}) }
+    catch (error) { reportRuntimeError('打开内置浏览器', error) }
+  }
   const touchedFiles = createMemo(() => {
     const id = sessionId()
     const touchedSession = id ? identitySessions().find(item => item.id === id) : undefined
@@ -158,9 +199,14 @@ export default function AgentContextPanel(props: AgentContextPanelProps) {
   return (
     <div class="context-panel-contribution agent-context-panel">
       <div class="context-panel-subnav">
-        <button type="button" aria-pressed={mode() === 'search'} class={`context-panel-mode ${mode() === 'search' ? 'active' : ''}`} onClick={() => setMode('search')}><LucideIcon name="Search" size={14} />搜索</button>
-        <button type="button" aria-pressed={mode() === 'relations'} class={`context-panel-mode ${mode() === 'relations' ? 'active' : ''}`} onClick={() => setMode('relations')}><LucideIcon name="Files" size={14} />关联</button>
+        <button type="button" aria-pressed={mode() === 'files'} class={`context-panel-mode ${mode() === 'files' ? 'active' : ''}`} onClick={() => setMode('files')}>文件</button>
+        <button type="button" aria-pressed={mode() === 'artifacts'} class={`context-panel-mode ${mode() === 'artifacts' ? 'active' : ''}`} onClick={() => setMode('artifacts')}>成果<Show when={resources().length > 0}><span class="text-[10px] text-text-dim">{resources().length}</span></Show></button>
+        <button type="button" aria-pressed={mode() === 'browser'} class={`context-panel-mode ${mode() === 'browser' ? 'active' : ''}`} onClick={() => setMode('browser')}>网页</button>
+        <button type="button" aria-label="搜索当前会话" title="搜索当前会话" aria-pressed={mode() === 'search'} class={`context-panel-mode ${mode() === 'search' ? 'active' : ''}`} onClick={() => setMode('search')}><LucideIcon name="Search" size={14} /></button>
       </div>
+      <Show when={mode() === 'files'}><AgentFileResources session={currentSession()} rootPath={rootPath()} touchedFiles={touchedFiles()} /></Show>
+      <Show when={mode() === 'artifacts'}><AgentArtifactResources sessionId={sessionId()} rootPath={rootPath()} resources={resources()} onOpenBrowser={url => void openBrowser(url)} /></Show>
+      <Show when={mode() === 'browser'}><AgentBrowserResources onOpen={url => void openBrowser(url)} /></Show>
       <Show when={mode() === 'search'}>
         <MessageSearchBar
           query={searchQuery()}
@@ -169,7 +215,7 @@ export default function AgentContextPanel(props: AgentContextPanelProps) {
           onQueryChange={setSearchQuery}
           onPrevious={() => moveSearch(-1)}
           onNext={() => moveSearch(1)}
-          onClose={() => { setSearchQuery(''); setSearchIndex(0) }}
+          onClose={() => { setSearchQuery(''); setSearchIndex(0); hostPort()?.sessionUi.set('search-open', false); setMode('files') }}
         />
       </Show>
       <Show when={mode() === 'search' && (!searchQuery().trim() || matches().length === 0)}>
@@ -179,22 +225,24 @@ export default function AgentContextPanel(props: AgentContextPanelProps) {
           <p class="m-0 text-sm leading-relaxed text-text-dim">{searchQuery().trim() ? '尝试缩短关键词，或换一种表述。' : '输入关键词定位消息，使用 Enter / Shift+Enter 切换结果。'}</p>
         </div>
       </Show>
-      <Show when={mode() === 'relations'}>
-        <div class="agent-relations">
-          <div class="file-section-title">关联文件</div>
-          <Show when={touchedFiles().length === 0} fallback={
-            <ul class="search-result-list">
-              <For each={touchedFiles()}>{file => (
-                <li>
-                  <LucideIcon name="FileCode2" size={14} class="shrink-0 text-text-dim" />
-                  <span class="search-result-path min-w-0 break-all font-[family-name:var(--mono)]">{file.path}</span>
-                </li>
-              )}</For>
-            </ul>
-          }>
-            <div class="agent-context-empty flex flex-col items-start gap-3 p-4"><LucideIcon name="Files" size={24} strokeWidth={1.5} /><p class="m-0 text-sm leading-relaxed text-text-dim">agent 尚未改动文件</p></div>
+      <Show when={mode() === 'search' && searchQuery().trim() && matches().length > 0}>
+        <nav class="agent-message-matches" aria-label="匹配的消息">
+          <For each={matches().slice(0, visibleMatchCount())}>{(message, index) => (
+            <button
+              type="button"
+              class="agent-message-match"
+              aria-current={index() === searchIndex() ? 'true' : undefined}
+              aria-label={`定位第 ${index() + 1} 条匹配消息`}
+              onClick={() => setSearchIndex(index())}
+            >
+              <span class="agent-message-match-meta"><span>{message.role === 'user' ? '你' : message.role === 'assistant' ? '助手' : message.role}</span><span>#{index() + 1}</span></span>
+              <span class="agent-message-match-excerpt">{message.content?.trim().slice(0, 180) || '附件或结构化内容匹配'}</span>
+            </button>
+          )}</For>
+          <Show when={matches().length > visibleMatchCount()}>
+            <button type="button" class="agent-message-matches-more" onClick={() => setVisibleMatchCount(count => count + 50)}>显示更多结果（剩余 {matches().length - visibleMatchCount()} 条）</button>
           </Show>
-        </div>
+        </nav>
       </Show>
     </div>
   )

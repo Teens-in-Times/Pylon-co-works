@@ -301,8 +301,8 @@ flowchart TB
 3. 编译期嵌入的兜底样例（`src-tauri/src/agent_config/embedded_agents.yaml`）。
 
 第 3 档是**零 Agent 的注释样例**，因此「既无环境变量、exe 旁也无 agents.yaml」时应用以
-**零 Agent** 启动：干净空态 + 设置 → Agent 的引导（「发现的运行时」验证 → 导入，或
-「新建 Agent」手填 exe 后用「测试连接」验证，见 #326）。
+**零 Agent** 启动：干净空态 + 设置 → Agent 的引导（选择本机运行时后「验证并导入」，或
+「手动添加」填写启动入口并「验证并创建」；保存后显式打开对话，见 #728）。
 **零 Agent 是合法的读取状态**（`agents: {}`）；但 `agents` 键本身必需，缺键按配置错误报出，
 拼错的键名不会被静默当成空表。写入路径相反：配置**变更**不得把 agents 表清空
 （`validate_candidate` 拒绝删到零 Agent——删到空表是操作失误而非意图）。仓库根的 `agents.example.yaml` 是**开发模板与测试夹具**，
@@ -442,6 +442,28 @@ D1–D17 已全部确认，以 [`Docs/Archive/Pylon-Kernel-施工台账.md`](../
 7. 建立 Kernel bootstrap supervisor 和 Safe Mode。
 8. 建立 Kernel bootstrap、manifest/cleanup 硬契约与 Product contribution ports；按 D16 不建设第三方权限沙箱。
 
+### 前端呈现与生命周期
+
+工作区保活槽位各自拥有 `sheetContext` memo；异步视图回调只读取已存在的快照，不在 JSX props getter 中创建脱离 owner 的计算。设置页是普通 Sheet 正文，几何与侧栏宽度由 SheetLayout 管理，不叠加旧 fixed/offset 浮窗布局。
+
+左右栏的持久化宽度与展开偏好独立于有效布局。`resolveRailLayout` 根据 CSS 视口为正文保留空间，先收窄再折叠栏位；用户展开自动收起的栏位时临时优先显示该栏，放大窗口恢复原有偏好。标题栏、Sheet 上下文和拖拽预算共用这一结果。
+
+打开 Agent Sheet 统一经过 `activateAgentSheet`：选中的配置 ID 不代表进程已经启动，只有当前 Agent 的 runtime 状态为 connected 才直接打开；否则经既有切换事务启动。同一 Agent 的并发激活共享一次请求，失败保留原页面及可恢复错误。首页最近会话请求等待真实 Agent 目录就绪，切换或卸载后忽略过期响应。
+
+消息投影保留显式消息边界：已完成片段后的 `message.started` 创建新片段，同一流内轮换 ID 和迟到增量的既有门控不变。快照桥使用会话 provider 呈现助手名称，仍保留其非权威 provenance；用户名称与传输 provider 分开处理。消息原文不因展示而增加分隔符或改写代码围栏。
+
+Agent Sheet 的工作资源栏包含文件、成果、网页和搜索视图，选择随会话保存。无工作目录时显示正常引导；绑定后可预览文件并打开完整 FileSheet。FileSheet 保留编辑、Git 与保存冲突处理。成果从 assistant 内容及工具输出收集，按版本去重，沿用受控媒体来源解析。网页视图显示浏览器状态和正文快照，原生 WebView 的唯一宿主仍是 Browser Sheet，并提供返回发起对话的入口。
+
+浏览器的 `pylon:browser-status` 与 `pylon:browser-page` 由窗口级 `browserEventFeed` 各持有一个原生监听。Browser Sheet 和网页资源面板只注册本地消费者；切换 Sheet、Agent 或暂时没有消费者时不注销原生监听，消费者退出后立即停止投递。事件入口不缓存 Agent/会话快照，各视图仍拥有自己的状态和请求代际；单个消费者异常不会中断其他消费者。
+
+Browser Sheet 的原生可见性只响应活动态、模态覆盖层和运行阶段变化；区域同步响应活动态、阶段、侧栏折叠及真实尺寸变化。状态事件仍完整更新界面，但同阶段的新快照不会重发可见性命令、重新建立尺寸观察器或自动刷新工具快照，避免命令广播状态后再次触发自身。
+
+现代聊天采用单个编辑器工作面与就近的发送/停止动作；终端模式保留紧凑等宽排版、命令行输入及自定义中控颜色。两种模式共享资源栏、键盘选择器、复制反馈和富内容。快照桥显式保留 semanticParts/contentBlocks，文档 Markdown 与普通文本按 MIME 区分呈现。
+
+跨会话搜索失败进入可重试错误态；点击结果把关键词交给完整会话的搜索消费者以切换匹配项，不把局部投影 messageId 当作稳定定位锚。存档页等待真实 Agent 配置就绪后读取，支持先筛选后分页、刷新及过期响应隔离。
+
+工作页之间返回聊天必须先恢复目标 Agent 运行时与会话归属。浏览器保存发起的 Sheet/Session 标识，文件关联按 AgentContextKey 匹配；两者均使用归属事务。Sheet 会话记忆仅写入对应 Agent/Profile 的选择，迟到的切换通知恢复有效记忆，不清空刚恢复的会话。正文、左右栏共享同一归属上下文；旧的跨 Agent 错误记忆被过滤为可重新选择的空态。
+
 ## 16. 测试入口
 
 ### 常用命令
@@ -450,7 +472,8 @@ D1–D17 已全部确认，以 [`Docs/Archive/Pylon-Kernel-施工台账.md`](../
 bun run test:unit
 bun run test:frontend
 bun run build
-bun run check:solid
+bun run check:types
+bun run check:architecture
 # #106 workspace 化后：单锁单 target，全 crate 单元测试一条命令（含子 crate）
 cargo test --manifest-path src-tauri/Cargo.toml --workspace --lib
 # 集成/夹具形态测试（先构建测试专用假 agent bin——#382 起它是独立 member crate，
@@ -458,6 +481,8 @@ cargo test --manifest-path src-tauri/Cargo.toml --workspace --lib
 cargo build --manifest-path src-tauri/Cargo.toml -p pylon-fake-agent --features test-agent
 cargo test --manifest-path src-tauri/Cargo.toml --workspace --tests --features test-agent
 ```
+
+前端已经统一由 Solid 编译，`check:types` 覆盖全部 TS/TSX；迁移期间的 `check:solid`、独立 tsconfig 与 smoke 页面已退役。长期插件、分层、样式检查保留为 `check:architecture`，并入 `check:frontend`。布局证据由 `node scripts/check-workspace-layout.mjs --label=<场景>` 从隔离 WebView2 实例采集，不能以 CSS 源码字符串断言代替。
 
 ### 按改动区域选择测试
 
@@ -471,7 +496,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --workspace --tests --features t
 | Plugin Runtime | `src/plugin-runtime/__tests__` + package/plugin process tests |
 | Plugin 架构边界 | Kernel bootstrap + contract/scope/runtime/package + product port/sink 13 文件矩阵；静态 contribution boundary |
 | Kernel mount/recovery | `src/kernel/__tests__` + application runtime tests |
-| Renderer/Workbench | Solid Workbench tests + `check:solid` |
+| Renderer/Workbench | Solid Workbench tests + `check:architecture` |
 | Renderer Suite 宿主（已落地） | `src/host/renderer-suite/*`、`src/plugin-runtime/renderers/*`、`src/renderers/solid-workbench/builtinSolidRendererSuite.ts` + AgentRendererSuiteWorkbench tests |
 
 跨层错误必须补跨层回归测试；单 module 测试通过不能证明调用方使用了相同 key、相同 ordering 或相同错误语义。

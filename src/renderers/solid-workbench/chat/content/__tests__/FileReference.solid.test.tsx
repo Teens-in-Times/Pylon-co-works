@@ -6,7 +6,7 @@ import { BuiltinSolidContentSlot } from '../../BuiltinSolidContentSlot.solid.tsx
 import type { ContentPart } from '../../../../../domains/workbench/content/contentPartSchema.ts'
 
 /**
- * C02 RED：Solid 文件卡契约。
+ * Solid 文件卡行为：结构化正文、外观边界与动作能力。
  *
  * 卡面要求：路径/范围/metadata 可见；动作经 capability gate——不可用 disabled + 原因；
  * 资源卡不渲染 blob；路径原样呈现。
@@ -148,6 +148,27 @@ describe('C02 SolidFileReferenceCard', () => {
     expect(preview.textContent).toBe('first\nsecond')
     expect(preview.style.maxHeight).toBe('120px')
     expect(result.container.textContent).not.toContain('third')
+  })
+
+  it.each(['document', 'resource'] as const)('renders declared Markdown in %s previews through the shared renderer', async kind => {
+    const result = card({
+      kind,
+      uri: 'mcp://guide',
+      title: '工作台阅读说明',
+      mimeType: 'text/markdown; charset=utf-8',
+      text: '# 阅读指南\n\n支持 **结构化正文**，而不是原始标记。',
+    })
+
+    expect(await result.findByRole('heading', { name: '阅读指南', level: 1 })).toBeTruthy()
+    expect(result.container.querySelector('strong')?.textContent).toBe('结构化正文')
+    expect(result.container.querySelector('.term-file-preview')?.textContent).not.toContain('# 阅读指南')
+  })
+
+  it('preserves literal Markdown-looking text when the resource declares plain text', () => {
+    const result = card({ kind: 'resource', uri: 'mcp://plain', mimeType: 'text/plain', text: '# Literal\n**Keep markers**' })
+
+    expect(result.queryByRole('heading')).toBeNull()
+    expect(result.container.querySelector('.term-file-preview')?.textContent).toBe('# Literal\n**Keep markers**')
   })
 
   it('keeps file-selection preview text visible within the configured preview boundary', () => {

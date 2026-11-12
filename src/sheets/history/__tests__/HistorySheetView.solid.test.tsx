@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
 import HistorySheetView from '../HistorySheetView.solid.tsx'
+import { useIdentityStore } from '../../../domains/identity/identityStore'
+beforeEach(() => useIdentityStore.setState({ activeAgent: 'peri', agents: [{ id: 'peri', name: 'Peri', available: true }] }))
 import type { SheetContext, SheetRecord } from '../../../workspace-sheets/sheetTypes'
 
 // #279 第 1 梯队：HistorySheetView Solid 实体的原生渲染路径（不经 React 桥）——

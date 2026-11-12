@@ -121,7 +121,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       # ISSUE-20 W1 统一入口的静态半边：lint + IPC 契约（#106 P3b）+ tsc/build +
-      # bundle/solid-smoke/docs/deps。
+      # bundle/architecture/docs/deps。
       # #193：vitest 拆到 frontend-test 分片矩阵（测试占前端 job 一半墙钟）；
       # check:frontend 本地语义保留（含测试），check:frontend:static 是其测试前缀。
       - name: 静态前端门禁（check:frontend:static）
@@ -133,10 +133,6 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: bun run test:coverage
 
-      # #179：check:solid 上 CI——此前该门禁只在本地跑，main 曾带 A17 R2 违规
-      # （sidebarModulePrefs.ts import plugin-runtime）合入而远端无感。
-      - name: Solid 边界门禁（check:solid）
-        run: bun run check:solid
 
   # #193：vitest 分片矩阵——606 文件 / 4439 用例对半分片并行，前端测试段
   # 墙钟减半。transform 缓存让两个分片共享转译结果。

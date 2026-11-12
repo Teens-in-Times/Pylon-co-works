@@ -82,7 +82,19 @@ describe('SolidCodeBlock (C00)', () => {
     const { fireEvent } = await import('@solidjs/testing-library')
     fireEvent.click(result.getByRole('button', { name: /复制/ }))
     expect(copiedText).toBe('hello')
-    expect(result.getByRole('button', { name: '已复制' })).toBeTruthy()
+    expect(await result.findByRole('button', { name: '已复制' })).toBeTruthy()
+  })
+
+  it('awaits the clipboard adapter and exposes rejection without false success', async () => {
+    let reject!: (reason: Error) => void
+    const result = render(() => <SolidCodeBlock code="hello" onCopy={() => new Promise<void>((_, fail) => { reject = fail })} />)
+    const { fireEvent } = await import('@solidjs/testing-library')
+    fireEvent.click(result.getByRole('button', { name: '复制代码' }))
+    expect(result.getByRole('button', { name: '复制代码' })).toBeDisabled()
+    expect(result.queryByRole('button', { name: '已复制' })).toBeNull()
+    reject(new Error('denied'))
+    expect(await result.findByRole('status')).toHaveTextContent('复制失败')
+    expect(result.getByRole('button', { name: '复制代码' })).toBeEnabled()
   })
 
   it('applies resolved code appearance without changing the document payload', () => {

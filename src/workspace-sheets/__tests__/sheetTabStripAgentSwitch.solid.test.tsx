@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SheetTabStrip from '../SheetTabStrip.solid.tsx'
 import { useIdentityStore } from '../../domains/identity/identityStore'
+import { useRuntimeStore } from '../../domains/runtime/runtimeStore'
 import { resetStores } from '../../test/resetStores'
 import type { SheetRecord } from '../sheetTypes'
 
@@ -97,13 +98,25 @@ describe('Agent Sheet 聚焦切换事务（SheetTabStrip.solid）', () => {
     await waitFor(() => expect(screen.getByRole('tab', { name: /Hermes/ })).not.toBeDisabled())
   })
 
-  it('active Agent Sheet 直接 focus，不重复 switch', () => {
+  it('已连接的 active Agent Sheet 直接 focus，不重复 switch', () => {
+    useRuntimeStore.getState().setAgentStatus('peri', { agent: 'peri', status: 'connected' })
     const { onFocus } = renderStrip()
 
     fireEvent.click(screen.getByRole('tab', { name: /Peri/ }))
 
     expect(onFocus).toHaveBeenCalledWith('peri-sheet')
     expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('选中的 Agent 没有运行时状态时，先启动再 focus', async () => {
+    const pending = deferred<unknown>()
+    invoke.mockImplementation(command => command === 'switch_agent' ? pending.promise : Promise.resolve({ agent: 'peri', status: 'connected' }))
+    const { onFocus } = renderStrip()
+    fireEvent.click(screen.getByRole('tab', { name: /Peri/ }))
+    expect(invoke).toHaveBeenCalledWith('switch_agent', { name: 'peri' })
+    expect(onFocus).not.toHaveBeenCalled()
+    pending.resolve(null)
+    await waitFor(() => expect(onFocus).toHaveBeenCalledWith('peri-sheet'))
   })
 
   it('键盘移动到非 active Agent 同样先 switch 后 focus', async () => {

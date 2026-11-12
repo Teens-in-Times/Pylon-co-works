@@ -14,6 +14,7 @@
  *   safe-mode「启动 <pluginId>」回调参数）。
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
+import { lazy, type Component } from 'solid-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ApplicationMount from '../ApplicationMount.solid.tsx'
 import KernelRecoveryLayer from '../KernelRecoveryLayer.solid.tsx'
@@ -27,6 +28,19 @@ function DemoApplication() {
 afterEach(cleanup)
 
 describe('ApplicationMount', () => {
+  it('加载延迟应用时显示状态，就绪后显示工作界面', async () => {
+    let complete!: (module: { default: Component }) => void
+    const loading = new Promise<{ default: Component }>(resolve => { complete = resolve })
+    const runtime = createApplicationRuntime()
+    runtime.registerBuiltin({ id: 'test.lazy-app', component: lazy(() => loading) })
+    runtime.mount('test.lazy-app')
+    render(() => <ApplicationMount runtime={runtime} recovery={<KernelRecoveryLayer />} />)
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载工作界面')
+    complete({ default: DemoApplication })
+    await screen.findByTestId('demo-application')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
   it('挂载 active Application，卸载后显示 Kernel Recovery UI', () => {
     const runtime = createApplicationRuntime()
     runtime.registerBuiltin({ id: 'builtin.pylon-app', component: DemoApplication })
@@ -77,6 +91,7 @@ describe('ApplicationMount', () => {
       onStartNormal={vi.fn()}
     />)
 
+    fireEvent.click(screen.getByText('逐项恢复扩展'))
     fireEvent.click(screen.getByRole('button', { name: '启动 builtin.pylon-shell' }))
 
     expect(onRetry).toHaveBeenCalledWith('builtin.pylon-shell')

@@ -6,12 +6,8 @@
  *    显式派生登记（noCssVar 且无 cssVar 声明）——防止将来加回声明再破 skinSchema 同源检查。
  * 2. 三处显式派生（主快照 / 皮肤契约 fixture / 模板局部）对同一主题输入同值。
  * 3. 皮肤契约变量目录含 --cc-input-font-family。
- * 4. InputBar.css 的真实消费点（剥注释后按规则块断言，不做全文件子串匹配）：
- *    主输入一般 / CLI / terminal-modern 特化三处 font-family 首选 --cc-input-font-family，
- *    无裸旧消息字体链盖回；预测 ghost 与队列编辑框同变量。
+ * 输入框字体重测和独立/跟随行为由 InputBar.solid.test.tsx 验证；实际字体样式由 WebView2 验收。
  */
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { CC_MEMBER_FIELDS, THEME_CSS_VAR_MAP, THEME_FIELD_DEFS, THEME_PRESET_KEYS, THEME_SETTING_KEYS, ZONE_FIELDS } from '../themeFieldDefs.ts'
 import { selectThemeCssSnapshot } from '../themeCssSnapshot.ts'
@@ -21,22 +17,6 @@ import { themeToCssVars } from '../../../components/settings/templateThemeVars.t
 import type { ThemeFieldKey } from '../themeFieldDefs.ts'
 
 const LAYOUT = { sidebarCollapsed: false, sidebarWidth: 250, sidebarEnabled: true }
-
-const cssPath = fileURLToPath(new URL('../../../../src/plugins/product/packages/builtin.pylon-renderers/styles/components/chat/InputBar.css', import.meta.url))
-
-/** 剥掉块注释后按右花括号切规则块（本仓产品 CSS 为高密度书写，块级匹配已足够精确）。 */
-function ruleBlocks(css: string): string[] {
-  return css
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('}')
-    .map(block => block.trim())
-    .filter(Boolean)
-}
-
-function ruleBody(block: string): string {
-  const brace = block.indexOf('{')
-  return brace >= 0 ? block.slice(brace + 1) : ''
-}
 
 describe('CC-21 inputFont 字段结构（声明与白名单）', () => {
   it('inputFont 归 cc 区「输入框本体」，默认 follow-message，content fontPicker', () => {
@@ -87,33 +67,9 @@ describe('CC-21 三处显式派生同值（快照 / 皮肤契约 / 模板局部�
   })
 })
 
-describe('CC-21 皮肤契约与 InputBar.css 消费', () => {
+describe('CC-21 皮肤契约变量目录', () => {
   it('皮肤契约变量目录含 --cc-input-font-family', () => {
     expect(WORKBENCH_CSS_VARIABLES).toContain('--cc-input-font-family')
   })
 
-  it('主输入一般 / CLI / terminal-modern 三处 font-family 首选输入字体变量，无裸旧链盖回', () => {
-    const blocks = ruleBlocks(readFileSync(cssPath, 'utf8'))
-    const consume = (selector: string) => blocks.some(block =>
-      block.includes(selector) && ruleBody(block).includes('font-family:var(--cc-input-font-family,'))
-    // 三处主输入消费：一般规则、CLI 特化、terminal-modern 特化（!important 也走同变量）。
-    expect(consume('.input-textarea'), '主输入一般规则').toBe(true)
-    expect(consume('.input-bar.cli-mode .input-textarea'), 'CLI 特化').toBe(true)
-    expect(consume('[data-presentation-profile="builtin.presentation.terminal-modern"] .input-textarea'), 'terminal-modern 特化').toBe(true)
-    // 无高优先级旧链盖回：剥注释后不允许任何裸 `font-family:var(--msg-font` 声明
-    // （--msg-font 只允许作为 --cc-input-font-family 的兜底参数出现）。
-    const bareLegacy = blocks.filter(block => ruleBody(block).includes('font-family:var(--msg-font'))
-    expect(bareLegacy, '存在裸旧消息字体链 font-family 声明').toEqual([])
-  })
-
-  it('预测 ghost 与队列编辑框消费同一输入字体链', () => {
-    const blocks = ruleBlocks(readFileSync(cssPath, 'utf8'))
-    const ghost = blocks.find(block => block.includes('.input-ghost-suggestion'))
-    expect(ghost).toBeDefined()
-    // ghost 经 font:inherit 继承 textarea 字体，行距必须与主输入同链（接续不因行距错位）。
-    expect(ruleBody(ghost!)).toContain('line-height:var(--cc-input-line-height,var(--msg-line-height')
-    const queueEditor = blocks.find(block => block.includes('.queued-message-editor'))
-    expect(queueEditor).toBeDefined()
-    expect(ruleBody(queueEditor!)).toContain('font-family:var(--cc-input-font-family,')
-  })
 })

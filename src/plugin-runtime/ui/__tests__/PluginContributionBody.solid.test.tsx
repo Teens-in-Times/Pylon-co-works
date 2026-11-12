@@ -34,7 +34,8 @@ describe('PluginContributionBody — first-party 分发', () => {
     await waitFor(() => expect(screen.getByTestId('fp')).toHaveTextContent('改版'))
   })
 
-  it('first-party 组件缺 props 工厂（宿主装配错误）→ 渲染空而不是硬挂组件', () => {
+  it('first-party 组件缺 props 工厂时显示可恢复错误而不是静默空白', () => {
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     render(() => (
       <PluginContributionBody
         contributionId="body.noprops"
@@ -42,6 +43,8 @@ describe('PluginContributionBody — first-party 分发', () => {
       />
     ))
     expect(screen.queryByText('不该出现')).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('此插件面板暂时不可用')
+    expect(diagnostic).toHaveBeenCalledWith('渲染插件贡献 body.noprops失败', expect.any(Error))
   })
 
   it('崩溃 → 存量占位契约（role=alert + 文案）；贡献对象换新 → 边界整体重置', async () => {
@@ -81,7 +84,8 @@ describe('PluginContributionBody — first-party 分发', () => {
 })
 
 describe('PluginContributionBody — isolated-surface 分发', () => {
-  it('surfaceId 缺失渲染空；已注册表面挂载并把 bridge 事件分诊给宿主', async () => {
+  it('surfaceId 缺失显示错误；已注册表面挂载并把 bridge 事件分诊给宿主', async () => {
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const received: Array<{ event: string; detail: unknown }> = []
     const probeMount: PluginUiSurface['mount'] = (container, bridge) => {
       const node = document.createElement('div')
@@ -115,8 +119,10 @@ describe('PluginContributionBody — isolated-surface 分发', () => {
       </>
     ))
 
-    // surfaceId 缺失 → 不挂任何表面容器（不是抛错）。
+    // Invalid assembly is visible, but does not prevent a healthy sibling from mounting.
     expect(document.querySelector('[data-plugin-ui-surface=""]')).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent('此插件面板暂时不可用')
+    expect(diagnostic).toHaveBeenCalledWith('渲染插件贡献 body.isolated.missing失败', expect.any(Error))
 
     const surface = await waitFor(() => {
       const node = document.querySelector<HTMLElement>('[data-plugin-ui-surface="test.body.surface.surface"]')

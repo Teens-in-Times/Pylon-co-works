@@ -39,6 +39,9 @@ export interface WorkspaceTitlebarProps {
   /** active Sheet 是否真的会渲染左栏；无左栏时左格不占轨道、折叠按钮不出现。 */
   sidebarEnabled: boolean
   rightPanelEnabled?: boolean
+  rightPanelCollapsed?: boolean
+  sidebarCanExpand?: boolean
+  rightPanelCanExpand?: boolean
   onToggleSidebar: () => void
   onFocusSheet: (id: string) => void
   onCloseSheet: (id: string) => void
@@ -91,7 +94,8 @@ export default function WorkspaceTitlebar(p: { latest: () => WorkspaceTitlebarPr
   // 「有最近关闭的 Sheet」只服务于**页签右键菜单**里的重开项：标题栏上那个重开按钮已删除
   // （能力没删——命令 `workspace.sheet.reopen` 与页签右键都还在）。
   const canReopenSheet = createZustandSignal(useWorkspaceStore, state => state.workspaceSheets.recentlyClosed.length > 0)
-  const rightRailCollapsed = createZustandSignal(useRightRailStore, state => state.collapsed)
+  const preferredRightRailCollapsed = createZustandSignal(useRightRailStore, state => state.collapsed)
+  const rightRailCollapsed = () => value().rightPanelCollapsed ?? preferredRightRailCollapsed()
 
   const contextPanelRegistry = getContextPanelRegistry()
   const interfaceModeRegistry = getInterfaceModeRegistry()
@@ -204,7 +208,10 @@ export default function WorkspaceTitlebar(p: { latest: () => WorkspaceTitlebarPr
   // #154：左格只在左列真的可见时占轨道——折叠后轨道宽度由
   // --sheet-sidebar-track-width 归零，整格不参与布局，于是既没有空列也没有悬空分割线。
   const sidebarExpanded = createMemo(() => sidebarEnabled() && !sidebarCollapsed())
-  const sidebarToggleLabel = createMemo(() => sidebarCollapsed() ? '展开左栏' : '收起左栏')
+  const sidebarToggleBlocked = () => sidebarCollapsed() && value().sidebarCanExpand === false
+  const rightToggleBlocked = () => rightRailCollapsed() && value().rightPanelCanExpand === false
+  const sidebarToggleLabel = createMemo(() => sidebarToggleBlocked() ? '放大窗口以展开左栏' : sidebarCollapsed() ? '展开左栏' : '收起左栏')
+  const rightToggleLabel = () => rightToggleBlocked() ? '放大窗口以展开右侧栏' : rightRailCollapsed() ? '展开右侧栏' : '收起右侧栏'
 
   return (
     <header class={`workspace-titlebar ${sidebarExpanded() ? 'sidebar-expanded' : 'sidebar-collapsed'} ${sidebarEnabled() ? 'sidebar-enabled' : 'sidebar-disabled'}`} data-tauri-drag-region>
@@ -217,7 +224,7 @@ export default function WorkspaceTitlebar(p: { latest: () => WorkspaceTitlebarPr
           type="button"
           class="workspace-titlebar-icon workspace-sidebar-toggle"
           onClick={() => latest().onToggleSidebar()}
-          disabled={!sidebarEnabled()}
+          disabled={!sidebarEnabled() || sidebarToggleBlocked()}
           title={sidebarEnabled() ? sidebarToggleLabel() : '当前 Sheet 无侧栏'}
           aria-label={sidebarEnabled() ? sidebarToggleLabel() : '当前 Sheet 无侧栏'}
           aria-expanded={sidebarEnabled() ? sidebarExpanded() : undefined}
@@ -264,9 +271,9 @@ export default function WorkspaceTitlebar(p: { latest: () => WorkspaceTitlebarPr
             type="button"
             class="workspace-titlebar-icon workspace-right-rail-toggle"
             onClick={() => latest().onToggleRightPanel()}
-            disabled={!rightPanelAvailable()}
-            title={rightPanelAvailable() ? (rightRailCollapsed() ? '展开右侧栏' : '收起右侧栏') : '当前没有可用右侧栏'}
-            aria-label={rightPanelAvailable() ? (rightRailCollapsed() ? '展开右侧栏' : '收起右侧栏') : '当前没有可用右侧栏'}
+            disabled={!rightPanelAvailable() || rightToggleBlocked()}
+            title={rightPanelAvailable() ? rightToggleLabel() : '当前没有可用右侧栏'}
+            aria-label={rightPanelAvailable() ? rightToggleLabel() : '当前没有可用右侧栏'}
             aria-expanded={rightPanelAvailable() ? !rightRailCollapsed() : undefined}
             data-right-rail-toggle="true"
           >

@@ -5,6 +5,7 @@ import { IS_TAURI } from '../../infrastructure/tauri/env'
 import { appClients } from '../../app/appClients.ts'
 import type { AdapterInstance } from '../../infrastructure/tauri/gatewayClient'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
+import { useWorkspaceStore } from '../../domains/workspace/workspaceStore.ts'
 
 // FE-AUD-008：typed client 收口 gateway 域 command literal
 const gatewayClient = appClients.gateway()
@@ -27,8 +28,6 @@ function errorMessage(cause: unknown): string {
 
 /**
  * GatewayRiskPanel — Settings「Agent 与连接 › Gateway」风险 consumer（ISSUE-13 W5）。
- *
- * #515：Solid 实体（原 GatewayRiskPanel.tsx 为 React 薄桥）。
  *
  * 只消费 ISSUE-12 的真实 capability（gatewayClient catalog/instances + credentialStatus），
  * 准确提示备份/凭据边界，**不伪装备份加密**：
@@ -71,7 +70,7 @@ export default function GatewayRiskPanel() {
       .finally(() => { if (!disposed) setLoading(false) })
   }
 
-  // 原 useEffect([]) 挂载即拉取；Solid 组件体只跑一次，直接在此发起。
+  // Read the native snapshot once; retries use the same guarded loader.
   if (IS_TAURI) reload()
 
   const configuredCount = createMemo(() => instances()?.filter(i => i.credentialStatus === 'configured').length ?? 0)
@@ -81,7 +80,9 @@ export default function GatewayRiskPanel() {
   return (
     <div class="set-group">
       <h3 class="set-group-inner-title">Gateway 连接与备份</h3>
-      <Show when={IS_TAURI} fallback={<div class="set-hint">Gateway 管理需要 Tauri 后端。</div>}>
+      <p class="text-[13px] leading-relaxed text-text-dim">在平台连接工作区管理实例、凭据与消息路由。这里展示连接状态和备份范围。</p>
+      <button type="button" class="ps-btn sm primary" onClick={() => useWorkspaceStore.getState().openSheet({ kind: 'gateway', title: '平台连接' })}>管理平台连接</button>
+      <Show when={IS_TAURI} fallback={<div class="set-hint mt-3">浏览器可预览平台配置；实际消息连接需要在桌面应用中启动。</div>}>
         <Show when={!error()} fallback={
           <>
             <div class="set-hint" role="status">{error()}（详情见右下角错误中心）</div>

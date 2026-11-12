@@ -8,33 +8,10 @@ import { getWorkspaceRegistrySnapshot, subscribeWorkspaceRegistry } from '../plu
 import { createRegistrySignal } from '../infrastructure/state/solidSheetSupport.solid.tsx'
 
 /**
- * SheetSidebarSlot — 左栏内容槽（#154 统一侧栏模型）。
- *
- * 布局层按 activeSheet.kind 查渲染注册表的 `sidebar` 声明渲染左栏内容；
- * entry 无 sidebar → 自然收起（能力差异不判断，F2-A）。showSidebar 主题开关
- * 消费点在 W1-03 移入本壳。
- *
- * **几何归属（#154）**：左列宽度、竖直分割线、折叠与拖拽全部由布局层拥有，
- * 不在此处也不在任何 Sheet 里：
- * - 宽度：唯一真值 `--sheet-sidebar-track-width`（展开=用户宽 / 折叠或本 Sheet
- *   无左栏=0），由 `SheetLayout` 写入 `.layout` 的 `sidebar-visible` 状态类。
- * - 分割线：`.layout` 上的一条装饰线（见 Sidebar.css），全应用只有这一条。
- * - 每个 Sheet 的左栏外壳都挂同一个几何类 `.sidebar`，各 Sheet 不得自带宽度/边框。
- *
- * 迁移前 8 个 Sheet 各自画 `<aside>` 并自带宽度/边框，于是标题栏分割线与左列
- * 分割线是两条互不相干的线——浏览器 Sheet 硬编码 156px 时实测错开 84px，
- * Gateway 折叠后标题栏还留下一条 42px 的悬空分割线。
- *
- * `sidebarMode` 的三个字符串值仍是契约（`'workspace' | 'sheet' | 'none'`），
- * 本文件只按注册表取内容，不改变它们的含义。
- *
- * #515：Solid 实体；registry sidebar 与组件面同为 Solid `Component`。
- * **#520 修复（切 kind 左栏滞留）**：非键控 Show 只认真值翻转——把「组件+state」
- * 包成对象当 `when`，agent→settings 切换时两侧皆有侧栏（truthy→truthy），子级
- * 不重跑，首次捕获的 Sidebar 组件滞留（实测左栏停在 agent 侧栏）。修法 = 组件
- * **身份**单独作 memo 并作为 keyed Show 的 `when`（组件引用按 kind 稳定 ⇒ 只在
- * kind/注册表变化时重挂，对齐 React「同类型更新、异类型重挂」）；state 走响应式
- * prop 原位更新。deserialize 抛错 → 整体收起（React 版 try/catch 同款语义）。
+ * 根据活动 Sheet 的注册表贡献选择左栏；缺少贡献、主题关闭或反序列化失败时不挂载。
+ * 以 Sidebar 组件身份作为 keyed Show 的键：贡献替换时重挂，ctx/state 更新时复用实例。
+ * 布局层拥有轨道宽度、拖拽与 data-sidebar 折叠状态；各贡献的 .sidebar 外壳由工作区
+ * 样式统一呈现边界。本槽只负责贡献生命周期，不另设几何或折叠真值。
  */
 export default function SheetSidebarSlot(props: { sheet: SheetRecord; ctx: SheetContext }) {
   const showSidebar = createZustandSignal(useThemeStore, s => s.showSidebar !== false)
