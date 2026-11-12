@@ -124,6 +124,40 @@ describe('plugin manager panel (framework-free DOM)', () => {
     document.body.replaceChildren()
   })
 
+  it('prevents duplicate operations and exposes their pending and completion status', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    let complete!: () => void
+    const setEnabled = vi.fn(() => new Promise<{ ok: boolean }>(resolve => { complete = () => resolve({ ok: true }) }))
+    const handle = mountPluginManagerPanel(container, { management: toApi(mockManagementDeps({ setEnabled })) })
+    await vi.waitFor(() => expect(handle.root.querySelector('[data-plugin-id="user.demo"] button')).not.toBeNull())
+    const toggle = handle.root.querySelector<HTMLButtonElement>('[data-plugin-id="user.demo"] button')!
+    toggle.click()
+    toggle.click()
+    expect(setEnabled).toHaveBeenCalledTimes(1)
+    expect(toggle.disabled).toBe(true)
+    expect(handle.root.getAttribute('aria-busy')).toBe('true')
+    expect(handle.root.querySelector('[role="status"]')?.textContent).toContain('中…')
+    complete()
+    await vi.waitFor(() => expect(handle.root.getAttribute('aria-busy')).toBe('false'))
+    expect(handle.root.querySelector('[role="status"]')?.textContent).toContain('成功')
+    handle.dispose()
+  })
+
+  it('shows initial load failures immediately and lets refresh recover', async () => {
+    const deps = mockManagementDeps()
+    const installed = await deps.listInstalled()
+    deps.listInstalled = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(installed)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const handle = mountPluginManagerPanel(container, { management: toApi(deps) })
+    await vi.waitFor(() => expect(handle.root.querySelector('[role="status"]')?.textContent).toContain('offline'))
+    const refresh = Array.from(handle.root.querySelectorAll('button')).find(button => button.textContent === '刷新')!
+    refresh.click()
+    await vi.waitFor(() => expect(handle.root.querySelector('[data-plugin-id="user.demo"]')).not.toBeNull())
+    handle.dispose()
+  })
+
   it('renders the consent guide instead of manager UI when management is absent', () => {
     const container = document.createElement('div')
     document.body.append(container)

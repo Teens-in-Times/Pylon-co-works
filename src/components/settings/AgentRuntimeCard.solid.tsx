@@ -23,6 +23,10 @@ function activationLabel(state: AgentEntry['configActivationState']): string {
 
 interface AgentRuntimeCardProps {
   agent: AgentEntry
+  onOpenAgent: () => void
+  activating: boolean
+  expanded: boolean
+  onToggleExpanded: () => void
   activeAgent: string
   status: ReturnType<typeof selectAgentStatus>
   isEditing: boolean
@@ -47,21 +51,19 @@ interface AgentRuntimeCardProps {
   onDeleteAgent: () => void
 }
 
-/**
- * AgentRuntimeCard — 单张 Agent 运行时卡（A-V4 自 AgentRuntimePanel 拆出）：
- * 身份行/状态行/探测失败归因（#325）/运行期错误/编辑表单（草稿 + 启动计划）/
- * 动作排（保存/先测试连接/取消验证/取消/编辑/设默认/测试连接/重启/删除）。
- * 状态与事务仍在面板（编辑流跨卡单飞），本组件纯呈现 + 回调；根节点 div.agent-runtime-card。
- *
- * #515 W1：Solid 实体。
- */
+/** A configured Agent starts as a compact row. Management is explicit and
+ * its expansion is owned by the panel so registry refreshes preserve context. */
 export default function AgentRuntimeCard(props: AgentRuntimeCardProps) {
   return (
     <div class="agent-runtime-card">
-      <div class="set-hint" style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center' }}>
-        <strong>{props.agent.name}</strong>
-        <span>{props.agent.id === props.activeAgent ? '当前' : ''}{props.agent.default ? ' · 默认' : ''}</span>
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="min-w-0"><strong class="text-[14px] font-semibold">{props.agent.name}</strong><span class="ml-3 text-[12px] text-text-dim">{statusLabel(props.status.status)}{props.agent.id === props.activeAgent ? ' · 当前' : ''}{props.agent.default ? ' · 默认' : ''}</span><p class="m-0 mt-1 text-[12px] text-text-dim">{props.agent.provider || props.agent.id}</p></div>
+        <div class="flex items-center gap-2">
+          <button class="ps-btn sm" type="button" disabled={props.activating || props.savingId !== null} onClick={props.onOpenAgent}>{props.activating ? '连接中…' : '打开对话'}</button>
+          <button class="ps-btn sm" type="button" aria-expanded={props.expanded || props.isEditing} onClick={props.onToggleExpanded}>{props.expanded || props.isEditing ? '收起管理' : '管理'}</button>
+        </div>
       </div>
+      <Show when={props.expanded || props.isEditing}>
       <div class="set-hint">id：{props.agent.id} · provider：{props.agent.provider ?? '—'} · transport：{props.agent.transport ?? 'subprocess'}</div>
       <div class="set-hint">状态：{statusLabel(props.status.status)} · 配置：{activationLabel(props.agent.configActivationState)} · exe：{props.isEditing ? '' : (props.agent.exe ?? '—')}</div>
       {/* #325：探测失败的原因必须落到**这张卡**上——此前只有「未激活」，
@@ -88,17 +90,17 @@ export default function AgentRuntimeCard(props: AgentRuntimeCardProps) {
       </Show>
 
       <Show when={props.isEditing}>
-        <div class="agent-runtime-edit">
-          <input class="set-input" value={props.draft.name} onInput={event => props.onPatchDraft(d => ({ ...d, name: event.currentTarget.value }))} placeholder="name" aria-label="Agent name" />
-          <input class="set-input" value={props.draft.exe} onInput={event => props.onPatchDraft(d => ({ ...d, exe: event.currentTarget.value }))} placeholder="exe 绝对路径或命令名" aria-label="Agent exe" />
+        <fieldset class="agent-runtime-edit border-0 p-0 min-w-0" disabled={props.savingId !== null}>
+          <label class="agent-form-field">显示名称<input class="set-input" value={props.draft.name} onInput={event => props.onPatchDraft(d => ({ ...d, name: event.currentTarget.value }))} placeholder="显示名称" aria-label="Agent name" /></label>
+          <label class="agent-form-field">启动入口<input class="set-input" value={props.draft.exe} onInput={event => props.onPatchDraft(d => ({ ...d, exe: event.currentTarget.value }))} placeholder="可执行文件路径或命令名" aria-label="Agent exe" /></label>
           <div class="set-hint" role="note">{pathHintForProvider(props.draft.provider || props.agent.provider)}</div>
           <div class="set-preset-row">
             <button class="ps-btn sm" type="button" onClick={() => pickAgentExecutable().then(path => { if (path) props.onPatchDraft(d => ({ ...d, exe: path })) })}>选择可执行文件</button>
-            <input class="set-input" value={props.draft.provider} onInput={event => props.onPatchDraft(d => ({ ...d, provider: event.currentTarget.value }))} placeholder="provider（可空）" aria-label="Agent provider" />
+            <label class="agent-form-field">提供方<input class="set-input" value={props.draft.provider} onInput={event => props.onPatchDraft(d => ({ ...d, provider: event.currentTarget.value }))} placeholder="可留空" aria-label="Agent provider" /></label>
           </div>
           <ArgumentListEditor args={props.draft.args} label={props.agent.id} onChange={args => props.onPatchDraft(d => ({ ...d, args, argsKnown: true }))} />
           <InvocationPreview executable={props.draft.exe} args={props.draft.args} effectiveArgs={[...props.draft.args, ...props.draft.effectiveSuffix]} />
-        </div>
+        </fieldset>
       </Show>
 
       <Show when={props.testResultText}>
@@ -120,7 +122,7 @@ export default function AgentRuntimeCard(props: AgentRuntimeCardProps) {
           <button class="ps-btn sm" type="button" disabled={props.savingId !== null || props.draftMachinePhase === 'testing'} onClick={props.onCancelEdit}>取消</button>
         </Show>
         <button class="ps-btn sm" type="button" disabled={props.savingId !== null || props.agent.default === true} onClick={props.onSetDefault}>设为默认</button>
-        <button class="ps-btn sm" type="button" disabled={props.testingId !== null} onClick={props.onTestConnection}>{props.testingId === props.agent.id ? '测试中…' : '测试连接'}</button>
+        <button class="ps-btn sm" type="button" disabled={props.testingId !== null || props.savingId !== null} onClick={props.onTestConnection}>{props.testingId === props.agent.id ? '测试中…' : '测试连接'}</button>
         <Show when={props.agent.configActivationState === 'pendingRestart'}>
           <button class="ps-btn sm primary" type="button" disabled={props.savingId !== null} onClick={props.onRestartRuntime}>
             {props.savingId === props.agent.id ? '正在重启…' : '立即重启应用此配置'}
@@ -142,6 +144,7 @@ export default function AgentRuntimeCard(props: AgentRuntimeCardProps) {
           <span class="set-hint" role="note">当前正在使用的 Agent 不能删除，请先切换到其它 Agent</span>
         </Show>
       </div>
+      </Show>
     </div>
   )
 }

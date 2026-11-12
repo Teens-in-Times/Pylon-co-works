@@ -5,7 +5,6 @@ export const FIRST_PARTY_STYLE_OWNERS = [
   'builtin.pylon-renderers',
   'builtin.pylon-plugin-manager',
   'builtin.pylon-gateway',
-  'solid-smoke',
 ] as const
 
 export type FirstPartyStyleOwner = typeof FIRST_PARTY_STYLE_OWNERS[number]
@@ -19,7 +18,6 @@ export const FIRST_PARTY_STYLE_LIFECYCLES = [
   // 解耦评估批 1（P93）：跨 sheet 共享词汇基线（file-main-*/search-result-*/
   // file-section-* 等，消费方矩阵见解耦评估报告），作为底座豁免保留。
   'shared',
-  'smoke-only',
 ] as const
 
 export type FirstPartyStyleLifecycle = typeof FIRST_PARTY_STYLE_LIFECYCLES[number]
@@ -62,14 +60,14 @@ export const FIRST_PARTY_STYLE_OWNERSHIP: readonly FirstPartyStyleOwnershipEntry
     'src/index.css',
     'kernel',
     'kernel-static',
-    ['src/main.solid.tsx', 'src/renderers/solid-workbench/smoke/mountSolidRichQa.solid.tsx'],
-    'React Root、基础 token、跨 Application scheme、Recovery 与 Rich QA 基线',
+    ['src/main.solid.tsx'],
+    'Solid 入口、基础 token、跨 Application scheme 与 Recovery 基线',
   ),
   entry(
     'src/styles/tailwind.css',
     'kernel',
     'kernel-static',
-    ['src/main.solid.tsx', 'src/renderers/solid-workbench/smoke/mountSolidRichQa.solid.tsx'],
+    ['src/main.solid.tsx'],
     'Tailwind v4 utilities 基线：@theme inline 只读消费 index.css token；无 preflight（TW 施工书 20260914）',
   ),
   // #491 绞杀恢复批：SkinPreviewBar.css 已整文件绞杀进 utilities 层，不再登记。
@@ -99,10 +97,6 @@ export const FIRST_PARTY_STYLE_OWNERSHIP: readonly FirstPartyStyleOwnershipEntry
   // utilities 层：owner 保留在名单里，但名下暂无 CSS 文件。
 
 
-  entry('src/renderers/solid-workbench/smoke/solidWorkbenchSmoke.css', 'solid-smoke', 'smoke-only', [
-    'src/renderers/solid-workbench/smoke/browserSmoke.solid.tsx',
-    'src/renderers/solid-workbench/smoke/mountSolidWorkbenchSmoke.solid.tsx',
-  ]),
 ])
 
 export function listFirstPartyStylesByOwner(owner: FirstPartyStyleOwner): readonly FirstPartyStyleOwnershipEntry[] {

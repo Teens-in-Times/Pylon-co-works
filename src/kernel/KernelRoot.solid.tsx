@@ -20,13 +20,7 @@ export interface KernelRootProps {
   runtime?: ApplicationRuntime
 }
 
-/**
- * Kernel 根（#515：React → Solid 实体，main.tsx 以 solid `render` 挂载）。
- *
- * 应用级错误边界原为 React class ErrorBoundary（components/ErrorBoundary.tsx）——
- * React 边界接不住 Solid 子树的错误，随根翻转改为 solid ErrorBoundary，
- * fallback DOM（内联样式/文案/重试按钮）逐字节保持。
- */
+/** Kernel bootstrap and crash recovery remain available when the product shell fails. */
 export function KernelRoot(props: KernelRootProps = {}) {
   let reportedCrash: unknown
   const bootstrap = () => props.bootstrap ?? kernelBootstrap
@@ -65,25 +59,24 @@ export function KernelRoot(props: KernelRootProps = {}) {
   return (
     <ErrorBoundary
       fallback={(error, reset) => {
-        // 原 React componentDidCatch：每个错误实例只记一次（fallback 可能随响应式更新重跑）
+        // One diagnostic per crash, including reactive fallback reevaluations.
         if (reportedCrash !== error) {
           reportedCrash = error
-          console.error('Prism Desktop crashed:', error)
+          console.error('Pylon crashed:', error)
         }
         return (
-        <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'center',
-          height: '100%', 'flex-direction': 'column', gap: '16px', color: 'var(--text-dim)', 'font-family': 'var(--font)' }}>
-          <div style={{ 'font-size': '48px', 'font-weight': '200' }}>!</div>
-          <div style={{ 'font-size': '16px', 'font-weight': '600', color: 'var(--text)' }}>Prism Desktop 遇到了一个错误</div>
-          <div style={{ 'font-size': '13px', 'max-width': '400px', 'text-align': 'center', 'font-family': 'var(--mono)' }}>
-            {error.message}
-          </div>
-          <button onClick={() => reset()}
-            style={{ padding: '8px 20px', border: '1px solid var(--border)', 'border-radius': '6px',
-              background: 'var(--bg-panel)', color: 'var(--text)', cursor: 'pointer' }}>
-            重试
-          </button>
-        </div>
+          <main class="flex h-full min-h-0 items-center justify-center overflow-auto bg-surface-canvas px-6 py-8 text-content-text max-[600px]:items-start">
+            <section class="my-auto grid w-full max-w-[560px] gap-5 border-l-2 border-danger pl-6" role="alert">
+              <span class="text-xs font-semibold tracking-widest text-content-muted">PYLON</span>
+              <h1 class="m-0 text-2xl font-semibold">工作界面暂时无法显示</h1>
+              <p class="m-0 text-sm leading-relaxed text-content-muted">可以尝试重新加载界面。若问题再次出现，请保留错误详情以便排查。</p>
+              <details class="min-w-0 text-sm text-content-muted">
+                <summary class="w-fit cursor-pointer">查看错误详情</summary>
+                <pre class="max-h-[35vh] overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{error instanceof Error ? error.message : String(error)}</pre>
+              </details>
+              <button type="button" onClick={reset} class="w-fit cursor-pointer rounded-sm border border-stroke-default bg-surface-raised px-4 py-2 text-sm text-content-text hover:bg-hover-bg focus-visible:outline-2 focus-visible:outline-focus-ring">重新加载界面</button>
+            </section>
+          </main>
         )
       }}
     >

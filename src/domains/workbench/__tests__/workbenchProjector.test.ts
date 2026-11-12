@@ -218,6 +218,30 @@ describe('WorkbenchProjector', () => {
     expect(document.messages[0].parts).toEqual([{ kind: 'text', text: '这是 complete answer' }])
   })
 
+  it.each([
+    [{ messageId: 'first' }, { messageId: 'second' }],
+    [{ messageId: 'same' }, { messageId: 'same' }],
+    [{}, {}],
+  ])('opens an explicitly started message after completion without concatenating complete texts (%j, %j)', (firstIdentity, secondIdentity) => {
+    const firstText = '```ts\nconst state = "completed"\n```'
+    const secondText = 'The following paragraph belongs to another message.\nIt keeps its newline.'
+    const events = [
+      envelope(1, { type: 'message.delta', role: 'assistant', parts: [{ kind: 'markdown', text: firstText }] }, firstIdentity),
+      envelope(2, { type: 'message.completed', role: 'assistant', parts: [] }, firstIdentity),
+      envelope(3, { type: 'message.started', role: 'assistant', parts: [] }, secondIdentity),
+      envelope(4, { type: 'message.delta', role: 'assistant', parts: [{ kind: 'markdown', text: secondText }] }, secondIdentity),
+      envelope(5, { type: 'message.completed', role: 'assistant', parts: [] }, secondIdentity),
+    ]
+    for (const document of [reduce(events), projectWorkbench(events).document]) {
+      expect(document.messages.map(message => message.content)).toEqual([firstText, secondText])
+      expect(document.messages.map(message => message.parts)).toEqual([
+        [{ kind: 'markdown', text: firstText }], [{ kind: 'markdown', text: secondText }],
+      ])
+      expect(document.messages.every(message => !message.running)).toBe(true)
+      expect(new Set(document.messages.map(message => message.segmentId)).size).toBe(2)
+    }
+  })
+
   it('keeps assistant streams separated across a tool boundary even when identity is reused', () => {
     const document = reduce([
       envelope(1, { type: 'message.delta', role: 'assistant', parts: [{ kind: 'text', text: 'before tool' }] }, { messageId: 'turn-message' }),

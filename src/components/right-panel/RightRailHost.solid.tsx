@@ -21,7 +21,8 @@ const VIRTUAL_SHEET: SheetRecord = {
 /** Application-level right rail host. Sheet context is input only; the rail
  * itself stays mounted while navigating between Sheets. */
 export default function RightRailHost(props: RightRailHostProps) {
-  const collapsed = createZustandSignal(useRightRailStore, state => state.collapsed)
+  const preferredCollapsed = createZustandSignal(useRightRailStore, state => state.collapsed)
+  const collapsed = () => props.railLayout?.rightCollapsed ?? preferredCollapsed()
   const width = createZustandSignal(useRightRailStore, state => state.width)
   const activePanelId = createZustandSignal(useRightRailStore, state => state.activePanelId)
   const backgroundImage = createZustandSignal(useThemeStore, state => state.rightBgImage)
@@ -45,8 +46,8 @@ export default function RightRailHost(props: RightRailHostProps) {
 
   // maxWidth 依赖 window.innerWidth：保持「读取时求值」，不缓存进 memo——
   // 窗口 resize 后的下一次渲染/拖拽拿到的都是新值。
-  const maxWidth = () => Math.min(RIGHT_RAIL_MAX_WIDTH, Math.max(RIGHT_RAIL_MIN_WIDTH, window.innerWidth - 360))
-  const renderedWidth = () => dragWidth() ?? width()
+  const maxWidth = () => props.railLayout?.rightMaxWidth ?? Math.min(RIGHT_RAIL_MAX_WIDTH, Math.max(RIGHT_RAIL_MIN_WIDTH, window.innerWidth - 360))
+  const renderedWidth = () => dragWidth() ?? props.railLayout?.rightWidth ?? width()
 
   createEffect(() => {
     const image = backgroundImage()
@@ -94,8 +95,8 @@ export default function RightRailHost(props: RightRailHostProps) {
           onPointerDown={event => {
             if (collapsed() || event.button !== 0 || dragRef) return
             event.preventDefault()
-            dragRef = { pointerId: event.pointerId, startX: event.clientX, startWidth: Math.min(width(), maxWidth()) }
-            setDragWidth(Math.min(width(), maxWidth()))
+            dragRef = { pointerId: event.pointerId, startX: event.clientX, startWidth: Math.min(renderedWidth(), maxWidth()) }
+            setDragWidth(Math.min(renderedWidth(), maxWidth()))
             event.currentTarget.setPointerCapture?.(event.pointerId)
           }}
           onPointerMove={event => {
@@ -115,13 +116,13 @@ export default function RightRailHost(props: RightRailHostProps) {
           onKeyDown={event => {
             if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
               event.preventDefault()
-              useRightRailStore.getState().setWidth(clampRightRailWidth(width() + (event.key === 'ArrowLeft' ? 8 : -8)))
+              useRightRailStore.getState().setWidth(Math.min(maxWidth(), clampRightRailWidth(renderedWidth() + (event.key === 'ArrowLeft' ? 8 : -8))))
             } else if (event.key === 'Home') useRightRailStore.getState().setWidth(RIGHT_RAIL_MIN_WIDTH)
             else if (event.key === 'End') useRightRailStore.getState().setWidth(maxWidth())
           }}
           aria-label="调整右侧栏宽度"
         />
-        <ContextPanelHost sheet={props.sheet ?? VIRTUAL_SHEET} ctx={props.ctx} activePanelId={effectivePanelId()} />
+        <ContextPanelHost sheet={props.sheet ?? VIRTUAL_SHEET} ctx={props.ctx} activePanelId={effectivePanelId()} shellContext={shellContext()} />
       </div>
     </Show>
   )

@@ -1,7 +1,4 @@
 import type { Message } from '../domains/chat/messageTypes.ts'
-import type { ContentPart } from '../domains/workbench/content/contentPartSchema.ts'
-
-type VisualQaMessage = Message & { semanticParts?: readonly ContentPart[] }
 
 const LONG_TOOL_OUTPUT = Array.from({ length: 36 }, (_, index) =>
   `src/components/chat/ChatView.tsx:${index + 1}: matched display path`,
@@ -19,7 +16,7 @@ const TEST_OUTPUT = [
 ].join('\n')
 
 /** 浏览器预览使用的完整消息样本，覆盖当前 renderer 的主要分支。 */
-export const MOCK_MESSAGES: VisualQaMessage[] = [
+export const MOCK_MESSAGES: Message[] = [
   {
     id: 'mock-user-markdown',
     role: 'user',
@@ -260,6 +257,12 @@ export const MOCK_MESSAGES: VisualQaMessage[] = [
         { kind: 'markdown', text: '找到 **2** 项结果' },
         { kind: 'location', path: '/workspace/src/app.ts', line: 7 },
       ] },
+      { kind: 'artifact', artifactId: 'rendering-report', title: '渲染验收报告', uri: 'artifact://rendering-report', mimeType: 'text/markdown',
+        parts: [{ kind: 'markdown', text: '# 渲染验收报告\n\n这份示例产物随消息快照保存，正文与成果栏读取同一份类型化内容。' }] },
+      { kind: 'document', title: '工作台阅读说明', uri: 'file:///workspace/workbench-guide.md', mimeType: 'text/markdown',
+        text: '# 工作台阅读说明\n\n工具与推理保留独立折叠，现代与终端模式共享内容。' },
+      { kind: 'resource', title: '渲染参考资源', uri: 'https://example.com/rendering', mimeType: 'text/plain',
+        text: '结构化资源保留 URI 和正文，不降级为纯字符串。' },
     ],
     time: '10:26',
   },

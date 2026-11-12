@@ -191,17 +191,14 @@ describe('searchAllMessagesTauri（#445 命中行两阶段）', () => {
     })
   })
 
-  it('searchHits 拒绝 → 空结果不抛（错误上报走 reportRuntimeError）', async () => {
+  it('搜索失败传递给页面的错误与重试状态', async () => {
     repoRef.current.searchHits.mockRejectedValue(new Error('evt_search failed'))
 
-    const { results, truncated } = await searchAllMessagesTauri('needle')
-
-    expect(results).toEqual([])
-    expect(truncated).toBe(false)
+    await expect(searchAllMessagesTauri('needle')).rejects.toThrow('evt_search failed')
     expect(repoRef.current.listCompact).not.toHaveBeenCalled()
   })
 
-  it('单行拉取失败 → 只跳该行，不炸整 owner', async () => {
+  it('命中行读取失败不伪装成完整结果', async () => {
     repoRef.current.searchHits.mockResolvedValue([hit(3), hit(7)])
     repoRef.current.listCompact.mockImplementation(
       async (_ownerKey: string, afterSequence: number | null) => {
@@ -210,10 +207,7 @@ describe('searchAllMessagesTauri（#445 命中行两阶段）', () => {
       },
     )
 
-    const { results } = await searchAllMessagesTauri('needle')
-
+    await expect(searchAllMessagesTauri('needle')).rejects.toThrow('evt_load_compact failed')
     expect(repoRef.current.listCompact).toHaveBeenCalledTimes(2)
-    expect(results).toHaveLength(1)
-    expect(results[0].snippet).toBe('needle on row seven')
   })
 })

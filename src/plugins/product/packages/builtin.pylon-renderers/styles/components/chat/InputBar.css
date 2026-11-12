@@ -2,8 +2,8 @@
 /* 错误浮层：绝对定位，不占布局流（否则出现/消失会把 CLI 输入栏上下推移） */
 .input-error {
   position:absolute; bottom:100%; left:0; right:0; margin-bottom:6px;
-  color:var(--danger,#FF6B80); font-size:13px; padding:6px 10px;
-  background:rgba(255,107,128,0.1); border:1px solid rgba(255,107,128,0.3);
+  color:var(--danger); font-size:13px; padding:6px 10px;
+  background:var(--state-danger-surface); border:1px solid var(--danger-edge);
   border-radius: 0; backdrop-filter:blur(8px); z-index:11; overflow-wrap:anywhere;
 }
 /* OWNER-03：Binding 状态浮层——与错误浮层同布局位（不占流），信息语义中性色；
@@ -16,11 +16,9 @@
   display:flex; flex-wrap:wrap; align-items:center; gap:var(--ui-space-2); overflow-wrap:anywhere;
 }
 .input-binding-status--error {
-  color:var(--danger,#FF6B80); background:rgba(255,107,128,0.1); border:1px solid rgba(255,107,128,0.3);
+  color:var(--danger); background:var(--state-danger-surface); border:1px solid var(--danger-edge);
 }
-/* ★ #266 CC-29：会话重连按钮那两条规则已删 —— 类名在生产代码里零命中；
-   重连入口不属输入栏（位置另议，见待办「会话绑定状态提示接线与重连入口」）。
-   上面那两段绑定状态浮层**保留**：它背后有状态机，只是整段尚未接线。 */
+/* Binding feedback is supplied by the workbench host. */
 .command-palette { position:absolute; bottom:100%; left:0; right:0; background:var(--command-bg,#fff); color:var(--text); border:1px solid var(--border); border-radius: 0; margin-bottom:8px; overflow-x:hidden; overflow-y:auto; max-height:min(52vh,480px); backdrop-filter:blur(12px); box-shadow:0 4px 16px rgba(0,0,0,0.18); z-index:10; }
 .cmd-item {
   display:flex; min-width:0; width:100%; justify-content:space-between; align-items:center;
@@ -51,8 +49,8 @@
 
 .input-row { display:flex; width:100%; height:100%; min-width:0; align-items:stretch; gap:var(--ui-space-2); }
 
-/* ★ #266 刀12：输入栏里那族**从不生成**的按钮类已删（发送按钮走 `cc-send-button`
-   注册轨，见 `WorkbenchWidgets.solid.tsx`；类名字面量见开发记录，此处不留）。 */
+/* Modern composition renders its primary action beside the editor. The registered
+   send widget remains available to classic/tactical layouts and layout editing. */
 
 .input-textarea {
   flex:1; min-width:0; background:color-mix(in srgb,var(--cc-input-surface,var(--input-bg,var(--bg-input))) var(--cc-input-surface-opacity,100%),transparent); border:var(--cc-input-border-width,1px) solid color-mix(in srgb,var(--cc-input-border) var(--cc-input-border-opacity,100%),transparent);
@@ -86,99 +84,9 @@
   padding-left:var(--cc-input-text-inset-x,5%);
   padding-right:var(--cc-input-text-right-inset,var(--cc-input-text-inset-x,5%));
 }
-/* 输入焦点由插入光标表达；不要因为输入而改变整栏边框或投射焦点光环。
-   焦点光环由 .input-bar 级的 hover/focus-within 光环机制（--cc-input-focus-ring-shadow）承担。 */
-.input-textarea:focus { border-color:color-mix(in srgb,var(--cc-input-border) var(--cc-input-border-opacity,100%),transparent); }
 .input-textarea::placeholder { color:var(--cc-input-placeholder,var(--text-placeholder)); }
 
-/* ★ #266 CC-29：命令面板标题（kicker）与「新一代 composer」三段的规则已删
-   —— 它们是已退场的「输入栏外观」两档残骸，类名在生产代码里零命中。
-   下面这组 `.input-bar:not(.cli-mode)` 规则仍在服役（非经典版式的输入栏本体）。 */
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .input-bar:not(.cli-mode) {
-  box-sizing:border-box;
-  padding:7px 8px 8px;
-  border:var(--cc-input-border-width,1px) solid color-mix(in srgb,var(--cc-input-border) var(--cc-input-border-opacity,100%),transparent);
-  border-radius:var(--cc-input-radius,12px);
-  background:color-mix(in srgb,var(--cc-input-surface,var(--input-bg,var(--bg-input))) var(--cc-input-surface-opacity,100%),transparent);
-  box-shadow:none;
-  transition:border-color 160ms ease, box-shadow 180ms ease, transform 180ms ease;
-}
-/* 输入栏顶部白色高光（A6-1-FIX 1.2，用户公式）：
-   向内延伸的纯白边框，宽度 = 输入栏高度设置值(--cc-input-height) × 5%；
-   径向透明度（环宽方向：外缘 0.5 → 内缘 1）—— 【未实现，2026-09-11 用户裁决挂起】；
-   Y 系数（顶=1a，底=0）：Y≥0.7a → 1，0.5a~0.7a 线性过渡，Y≤0.5a → 0
-   （换成从顶部量的 t：t≤30% 满亮，30%~50% 线性降至 0，t≥50% 全无）；
-   最终透明度 = 径向透明度 × Y 系数 × --cc-input-highlight-opacity（整体强度）。
-   实现：::before 纯白层 × mask exclude（全盒 减 内容盒 = 向内环）；
-   Y 系数由 background 的线性渐变承担（2026-09-11 修正为按公式的 30%/50% 折点），
-   整体强度由 opacity 承担。注意尾段必须写 rgba(255,255,255,0) 而非 transparent——
-   后者是透明黑 rgba(0,0,0,0)，与白色插值会让中段发灰。
-   环的外缘必须与输入栏外缘重合（含边框那一圈）：::before 的定位盒是
-   .input-bar 的 padding-box，故 inset 取负一个边框宽度、向外扩到 border-box，
-   圆角随之用外缘半径（不再减去边框宽度），环方能完整包住边框。
-   ★ 2026-09-11 更正：此前只把圆角改成内缘半径、却没动 inset，环整体内缩 1px，
-   最外圈空出一条缝，边框一亮就像「高光被带动」——圆角与定位必须配套改。 */
-@supports (mask-composite: intersect) {
-  .app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .input-bar:not(.cli-mode)::before {
-    content:'';
-    position:absolute; inset:calc(-1 * var(--cc-input-border-width,1px)); box-sizing:border-box; pointer-events:none; z-index:2;
-    border-radius:var(--cc-input-radius,12px);
-    background:linear-gradient(to bottom,#fff 0%,#fff 30%,rgba(255,255,255,0) 50%,rgba(255,255,255,0) 100%);
-    opacity:var(--cc-input-highlight-opacity,0);
-    padding:calc(var(--cc-input-height,40px) * 0.05);
-    mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite:exclude;
-  }
-}
-/* hover/聚焦光环（A6-1-FIX 1.3）：经典版式的可视盒是 .input-row，光环挂在行上；
-   fallback 链为 光环 → 常态投影，光环关闭时 hover 不变色，常态阴影开关不影响光环。 */
-/* Composer 也保持静态外框；键盘焦点仍在 textarea 内，可见的是 caret。 */
-/* ★ #266 CC-29：composer 的 meta / kind / glyph / shortcut 四段规则均已删（类名在生产代码里零命中）。 */
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .input-bar:not(.cli-mode) .input-row {
-  align-items:center;
-  gap:5px;
-  padding:0;
-  border:0;
-  border-radius:0;
-  background:transparent;
-  box-shadow:none;
-}
-/* 新一代 composer 的可视盒是 .input-bar 本体（行已扁平化）：光环挂栏级，
-   置于扁平化规则之后以同权重后到胜出；fallback 链同上（光环 → 常态投影）。 */
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .input-bar:not(.cli-mode):hover,
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .input-bar:not(.cli-mode):focus-within {
-  box-shadow:none;
-}
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .input-bar:not(.cli-mode) .input-textarea {
-  height:100%;
-  min-height:0;
-  max-height:220px;
-  padding:10px 9px 8px;
-  border:0;
-  border-radius:0;
-  background:transparent;
-  font-size:var(--cc-input-font-size,14px);
-  line-height:var(--cc-input-line-height,1);
-  box-shadow:none;
-}
 .input-bar[data-expanded="true"] .input-textarea { max-height:none; }
-.app[data-presentation-profile="builtin.presentation.terminal-modern"] .input-bar:not(.cli-mode) {
-  border-radius:9px;
-  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,var(--bg-input)),var(--bg-input) 42%);
-  box-shadow:inset 3px 0 0 color-mix(in srgb,var(--accent) 70%,transparent),0 8px 22px rgba(0,0,0,.08);
-}
-.app[data-presentation-profile="builtin.presentation.terminal-modern"] .input-textarea { font-family:var(--cc-input-font-family,var(--msg-font,var(--chat-font,var(--mono)))) !important; }
-.app[data-presentation-profile="builtin.presentation.paper-low-contrast"] .input-bar:not(.cli-mode) {
-  border-radius:5px;
-  background:color-mix(in srgb,var(--input-bg,var(--bg-input)) 94%,#b88b50 6%);
-  box-shadow:0 5px 16px rgba(92,68,39,.06),inset 0 1px 0 rgba(255,255,255,.25);
-}
-.app[data-presentation-profile="builtin.presentation.console-glass"] .input-bar:not(.cli-mode) {
-  border-radius:18px;
-  background:linear-gradient(135deg,rgba(255,255,255,.12),rgba(255,255,255,.035)),color-mix(in srgb,var(--input-bg,var(--bg-input)) 76%,transparent);
-  box-shadow:0 16px 42px rgba(15,23,42,.14),inset 0 1px 0 rgba(255,255,255,.28);
-  backdrop-filter:blur(22px) saturate(1.18);
-}
 
 .input-bar.cli-mode { border:none; background:transparent; padding-top:0; overflow:visible; }
 .input-bar.cli-mode .input-row {
@@ -188,8 +96,7 @@
   border-bottom:var(--cli-line-width,1px) solid var(--cli-line-color,#D77757);
   box-sizing:border-box;
 }
-/* CLI 输入保持稳定的边界；焦点由 textarea 的插入光标表达，
-   不再让整个输入行出现额外的 outline / 光环。 */
+/* The surrounding row/composer owns focus feedback; the textarea stays flat. */
 .input-bar.cli-mode .input-textarea {
   background:transparent; border:none; resize:none; height:auto; min-height:auto;
   color:var(--cc-input-text,var(--cli-text-color,var(--text))); font-family:var(--cc-input-font-family,var(--msg-font,var(--chat-font,var(--mono))));
@@ -201,27 +108,35 @@
 /* ★ #266 刀10：原按「多行输入行为」切的三族类已删除 ——
    多行输入只剩「随内容增高、3 倍静态高封顶、超出后内部滚动」一种形态，
    高度由 `InputBar.solid.tsx` 的 `resizeInput()` 写内联样式（底边不动、上边延伸）。 */
-.input-bar.cli-mode .input-textarea:focus { outline:none; border:none; }
+.input-bar.cli-mode .input-textarea,
+.input-bar.cli-mode .input-textarea:focus,
+.input-bar.cli-mode .input-textarea:focus-visible {
+  border:none;
+  border-radius:0;
+  outline:none;
+  box-shadow:none;
+}
+.input-bar.cli-mode .input-row:has(.input-textarea:focus-visible) { border-color:var(--accent); }
 .input-bar.cli-mode .cli-prefix {
   color:var(--cli-prompt-color,var(--cli-text-color,#999)); font-family:var(--mono); font-size:var(--cc-input-font-size,17px);
   font-weight:400; padding:0 8px 0 4px; line-height:1.4;
 }
 
 /* #699：输入区附件。终端版式保持安静——chip 只用最细描边，按钮默认无底色，
-   悬停才浮出；现代版式在 ChatView.modern.css 里另给圆角与强调色。 */
+   悬停才浮出；现代版式在 ChatView.modern.css 里提供对应密度。 */
 .input-attachments { display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding:2px 0 4px; }
 .input-attachment {
   display:inline-flex; align-items:center; gap:6px; max-width:min(100%,320px);
   padding:1px 2px 1px 8px;
   color:var(--text-dim); background:var(--bg-panel);
-  border:1px solid var(--border); border-radius:6px;
+  border:1px solid var(--border); border-radius:3px;
   font-size:12px; line-height:1.7;
 }
 .input-attachment-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
 .input-attachment-remove {
   display:inline-flex; align-items:center; justify-content:center;
   width:16px; height:16px; padding:0;
-  color:var(--text-dim); background:transparent; border:none; border-radius:4px;
+  color:var(--text-dim); background:transparent; border:none; border-radius:2px;
   font-size:14px; line-height:1; cursor:pointer;
 }
 .input-attachment-remove:hover { color:var(--text); background:var(--bg-hover); }
@@ -229,7 +144,7 @@
   display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; align-self:center;
   width:26px; height:26px; margin-inline-start:2px; padding:0;
   color:var(--text-dim); background:transparent;
-  border:1px solid transparent; border-radius:6px; cursor:pointer;
+  border:1px solid transparent; border-radius:3px; cursor:pointer;
 }
 .input-attach-btn:hover:not(:disabled) { color:var(--text); background:var(--bg-hover); border-color:var(--border); }
 .input-attach-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
@@ -253,3 +168,9 @@
   text-align:left;
 }
 /* Tactical composer and its creation options keep usable width with both rails open. */
+
+/* The same controls remain legible on narrow workbenches and keyboard navigation. */
+.input-attachment-remove { flex-shrink:0; min-width:24px; min-height:24px; }
+.input-attachment-remove:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.queued-message-text { min-width:0; overflow-wrap:anywhere; }
+.queued-message-actions { flex-wrap:wrap; }

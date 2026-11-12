@@ -12,6 +12,37 @@ afterEach(() => {
 })
 
 describe('ErrorCenter', () => {
+  test('恢复动作进行中禁止重复执行，结束后恢复按钮', async () => {
+    let finish!: () => void
+    const pending = new Promise<void>(resolve => { finish = resolve })
+    const run = vi.fn(() => pending)
+    addError({ action: '连接 Agent', message: '连接中断', key: 'agent:retry', recoveryAction: { label: '重新连接', run } })
+    render(() => <ErrorCenter />)
+    fireEvent.click(screen.getByRole('button', { name: '查看运行错误' }))
+    const button = screen.getByRole('button', { name: '重新连接' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(run).toHaveBeenCalledOnce()
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('aria-busy', 'true')
+    expect(button).toHaveTextContent('正在处理…')
+    finish()
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(button).toHaveTextContent('重新连接')
+  })
+
+  test('Escape 关闭通知面板并把焦点送回入口', () => {
+    addError({ action: '保存配置', message: '请重试' })
+    render(() => <ErrorCenter />)
+    const badge = screen.getByRole('button', { name: '查看运行错误' })
+    fireEvent.click(badge)
+    screen.getByRole('button', { name: '关闭错误面板' }).focus()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: '运行错误通知' })).toBeNull()
+    expect(badge).toHaveFocus()
+    expect(getErrors()).toHaveLength(1)
+  })
+
   test('无错误时不渲染', () => {
     const { container } = render(() => <ErrorCenter />)
     expect(container.innerHTML).toBe('')

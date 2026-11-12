@@ -410,7 +410,10 @@ export default function FileSheetView(props: FileSheetViewProps) {
     <Show
       when={activeTab() && viewRenderer()}
       fallback={
-        <div class="file-tab-empty"><div class="file-empty-card"><strong>{activeTab() ? '没有可用的文件视图 renderer' : '打开一个文件开始阅读'}</strong></div></div>
+        <div class="file-tab-empty"><div class="file-empty-card">
+          <strong>{activeTab() ? '没有可用的文件视图 renderer' : '打开一个文件开始阅读'}</strong>
+          <Show when={!activeTab()}><p>从左侧文件树选择文件，查看代码、文档与 Git 差异。</p></Show>
+        </div></div>
       }
     >
       <FileViewRenderBoundarySolid

@@ -26,8 +26,15 @@ import WorkspaceTitlebar from '../WorkspaceTitlebar.solid.tsx'
 import type { WorkspaceTitlebarProps } from '../WorkspaceTitlebar.solid.tsx'
 import { resetStores } from '../../test/resetStores'
 import type { SheetRecord } from '../sheetTypes'
+import { getContextPanelRegistry } from '../../plugin-runtime/runtimeServices.ts'
+import { createPluginIdentity } from '../../plugin-runtime/pluginIdentity.ts'
+import type { AsyncDisposable } from '../../plugin-runtime/registry/types.ts'
 
-afterEach(cleanup)
+const registrations: AsyncDisposable[] = []
+afterEach(async () => {
+  cleanup()
+  await Promise.all(registrations.splice(0).map(registration => registration.dispose()))
+})
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 
@@ -173,5 +180,27 @@ describe('I09-A-FE-01 / #154 titlebar 折叠按钮 capability', () => {
     expect(button).toHaveAttribute('title', '当前没有可用右侧栏')
     fireEvent.click(button)
     expect(onToggleRightPanel).not.toHaveBeenCalled()
+  })
+
+  it('reflects effective rail visibility and explains when the viewport cannot open a rail', () => {
+    registrations.push(getContextPanelRegistry().register(createPluginIdentity('test.responsive-titlebar', 'run'), {
+      id: 'global', scope: 'global', label: '工具', order: 100, renderKind: 'first-party-solid', component: () => null,
+    }))
+    const [narrow, setNarrow] = createSignal(true)
+    render(() => <WorkspaceTitlebar latest={() => makeTitlebarProps({
+      sidebarEnabled: true, sidebarCollapsed: narrow(), sidebarCanExpand: !narrow(),
+      rightPanelEnabled: true, rightPanelCollapsed: narrow(), rightPanelCanExpand: !narrow(),
+    })} />)
+    const left = screen.getByRole('button', { name: '放大窗口以展开左栏' })
+    const right = screen.getByRole('button', { name: '放大窗口以展开右侧栏' })
+    expect(left).toBeDisabled()
+    expect(right).toBeDisabled()
+    expect(left).toHaveAttribute('aria-expanded', 'false')
+    expect(right).toHaveAttribute('aria-expanded', 'false')
+    setNarrow(false)
+    expect(left).not.toBeDisabled()
+    expect(right).not.toBeDisabled()
+    expect(left).toHaveAttribute('aria-expanded', 'true')
+    expect(right).toHaveAttribute('aria-expanded', 'true')
   })
 })

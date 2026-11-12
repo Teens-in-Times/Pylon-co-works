@@ -1,5 +1,6 @@
 import { toolIdFromMessage } from '../tool/id.ts'
 import type { ContentBlock, OptionalChatEventIdentity } from '../../infrastructure/acp/chatContracts.ts'
+import type { ContentPart } from '../workbench/content/contentPartSchema.ts'
 
 export function assertNever(value: never, context = '未处理的消息状态'): never {
   throw new Error(`${context}: ${String(value)}`)
@@ -35,6 +36,8 @@ export interface Message {
   toolKind?: string
   /** P1-04：结构化内容块（含 tool_diff_content；raw 保留，消费方式后变） */
   contentBlocks?: ContentBlock[]
+  /** Typed display parts carried by a Workbench projection or browser snapshot. */
+  semanticParts?: readonly ContentPart[]
   /** EVT-04：工具 wire 原始 input/output（字段不丢——toolInput/toolOutput 为投影字符串，
    * raw 原样保留供 ToolProjection；live/replay/restart 三路径深等验收 §5.11） */
   rawInput?: unknown

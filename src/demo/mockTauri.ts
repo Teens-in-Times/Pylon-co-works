@@ -21,9 +21,12 @@ import {
 import { buildVisualQaPluginPackages, buildVisualQaWorkspaces } from './visualQaData.ts'
 import type { InstalledPluginPackage } from '../infrastructure/plugins/pluginPackageClient.ts'
 import type { Workspace } from '../domains/workspace/workspaceEntities.ts'
+import type { GatewayInstanceInput, GatewayInstanceUpdate } from '../infrastructure/tauri/gatewayClient.ts'
+import { createGatewayMock } from './gatewayMock.ts'
 
 // 浏览器 mock 有状态网关 routes：gateway 保存后 read-back 一致（浏览器可验 FE-AUD-004 安全写回）
 let mockGatewayRoutes = buildGatewayStatus().routes
+const mockGateway = createGatewayMock()
 // CWD-03：Workspace 实体 mock（浏览器演示：内存态 create/list/update/delete）
 let mockWorkspaces: Workspace[] = buildVisualQaWorkspaces()
 let mockWorkspaceSeq = mockWorkspaces.length + 1
@@ -416,6 +419,15 @@ export async function mockInvokeCommand(cmd: string, args: Record<string, unknow
     }
     case 'gateway_status': return { ...buildGatewayStatus(), routes: mockGatewayRoutes }
     case 'gateway_sessions': return buildPlatformSessions()
+    case 'gateway_catalog': return mockGateway.catalog()
+    case 'gateway_instances': return mockGateway.instances()
+    case 'gateway_instance_create': return mockGateway.create(args.input as GatewayInstanceInput)
+    case 'gateway_instance_update': return mockGateway.update(String(args.id), args.input as GatewayInstanceUpdate)
+    case 'gateway_instance_remove': return mockGateway.remove(String(args.id))
+    case 'gateway_instance_start': return mockGateway.start(String(args.id))
+    case 'gateway_instance_stop': return mockGateway.stop(String(args.id))
+    case 'gateway_instance_restart': return mockGateway.restart(String(args.id))
+    case 'gateway_instance_set_credentials': return mockGateway.setCredentials(String(args.id), String(args.secret ?? ''))
     case 'update_agents_config': {
       const expected = `demo-config-${mockAgentConfigRevision}`
       if (args.expectedRevision !== expected) {

@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import { appClients } from '../app/appClients.ts'
 import { IS_TAURI } from '../infrastructure/tauri/env'
 import { useIdentityStore, type AgentEntry, type Session } from '../domains/identity/identityStore'
@@ -17,6 +17,8 @@ import { isAgentInvocationConfigured } from '../contracts/agentEntry.ts'
 import { INTERFACE_MODE_CAPABILITY_OVERVIEW_DECK } from '../plugin-runtime/interface-mode/interfaceModeTypes.ts'
 import { createActiveInterfaceModeContribution } from '../infrastructure/state/solidSheetSupport.solid.tsx'
 import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
+import TacticalCommandDeck from './TacticalCommandDeck.solid.tsx'
+import AgentConfigEditor from '../components/settings/AgentConfigEditor.solid.tsx'
 
 function relativeTime(timestamp: number): string {
   const elapsed = Math.max(0, Date.now() - timestamp)
@@ -29,9 +31,6 @@ function relativeTime(timestamp: number): string {
   return `${days} 天前`
 }
 
-// ---- #515 批7：TacticalCommandDeck 与 AgentConfigEditor 已 Solid 实体化，岛退役直连。 ----
-import TacticalCommandDeck from './TacticalCommandDeck.solid.tsx'
-import AgentConfigEditor from '../components/settings/AgentConfigEditor.solid.tsx'
 type TacticalPanel = 'home' | 'agents' | 'recent' | 'workspaces'
 
 interface TacticalCommandDeckProps {
@@ -48,13 +47,6 @@ interface TacticalCommandDeckProps {
   onDiagnostics(): void
 }
 
-
-
-
-
-// ---- #520 S3-P2-1：本地 OVERVIEW_ICONS 表与 OverviewIcon 自绘已退役，图标统一经
-// 共享 LucideIcon（ArrowUpRight/Folder/Settings2/Sparkles 等均已登记其中）。 ----
-
 interface OverviewSheetViewProps {
   sheet: SheetRecord
   ctx: SheetContext
@@ -68,9 +60,6 @@ interface OverviewSheetViewProps {
  * overview 并报错）/ 配置 Agent（W1-07 接线）/ 继续会话（list_persisted_sessions →
  * 最近 5 个 → 找/建 identity row → selectSession + open agent sheet；load 由 agentWorkbenchLifecycle
  * 挂载后的 controller lifecycle 承担——listener 就绪后才 load）。
- * #515：实体自 React 版逐行为同构迁移——store 消费经 createZustandSignal，能力位经
- * createActiveInterfaceModeContribution；战术指挥台与高级配置编辑器已 Solid 实体化
- * （批7 岛退役直连，见 TacticalCommandDeck.solid 等）。
  */
 export default function OverviewSheetView(props: OverviewSheetViewProps) {
   // A-V9：指挥台 UI 按 contribution 能力位挂载，不再特判模式 id——
@@ -91,9 +80,15 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
   const [recent, setRecent] = createSignal<PersistedSessionSummary[]>([])
   const [showConfigEditor, setShowConfigEditor] = createSignal(false)
 
-  // W1-06：加载最近会话（client 已 normalize，取最近 5 个展示）
-  onMount(() => {
-    if (!IS_TAURI) return
+  // The store starts with a placeholder active id. Only a real catalog member
+  // can own the backend's agent-scoped archive request.
+  const recentAgentId = createZustandSignal(useIdentityStore, state =>
+    state.agents.some(agent => agent.id === state.activeAgent) ? state.activeAgent : '',
+  )
+  createEffect(() => {
+    const agentId = recentAgentId()
+    setRecent([])
+    if (!IS_TAURI || !agentId) return
     let disposed = false
     const client = appClients.session()
     client.listPersistedSessions().then(all => {
@@ -123,8 +118,6 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
       applyAgentStatus: (id, status) => useRuntimeStore.getState().setAgentStatus(id, status),
       reportError: (action, err) => {
         setError(err instanceof Error ? err.message : String(err))
-        // Compatibility token retained for the overview structure guard:
-        // reportRuntimeError(action, err)
         reportRuntimeError(action, err, agent.id, {
           key: `overview:agent:${agent.id}:${action}`,
           scope: { kind: 'agent', id: agent.id },
@@ -239,7 +232,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
       {/* #154：左列几何（宽度/竖直分割线/折叠可见性）归布局层的 .sidebar；本类只管内容样式。 */}
       <aside class="sidebar overview-sidebar" aria-label="Overview 分区">
         <div class="overview-sidebar-head">
-          <span>OVERVIEW</span>
+          <span>工作台</span>
           <strong>工作台导航</strong>
         </div>
         <nav>
@@ -267,12 +260,11 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
           <section class="overview-hero" id="overview-home" aria-labelledby="overview-title">
             <div class="overview-hero-brand">
               <div class="overview-mark-stage">
-                <PylonMark size={58} className="overview-brand-mark" title="Pylon" />
+                <PylonMark size={34} className="overview-brand-mark" title="Pylon" />
               </div>
               <div class="overview-hero-copy">
-                <div class="overview-kicker"><LucideIcon name="Sparkles" size={12} /> PYLON WORKSPACE</div>
-                <h1 class="overview-title" id="overview-title">欢迎回到工作台</h1>
-                <p class="overview-lede">从最近的上下文继续，或选择一位 Agent 开始新的工作。你的 Workspace、Sheet 与运行状态都在这里汇合。</p>
+                <h1 class="overview-title" id="overview-title">{agents().length ? '欢迎回到工作台' : '开始你的工作'}</h1>
+                <p class="overview-lede">{agents().length ? '继续最近的会话，或选择 Agent 开始新的任务。' : '连接你的 Agent，把对话、文件与工作进度放在同一个工作台。'}</p>
                 <div class="overview-hero-actions">
                   <Show when={localRecent()[0]} fallback={
                     <Show when={activeAgentEntry() && activeAgentConfigured()} fallback={
@@ -291,30 +283,27 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                       </button>
                     )}
                   </Show>
-                  <button type="button" class="overview-secondary-action" onClick={openAgentSettings}>
+                  <Show when={agents().length > 0}><button type="button" class="overview-secondary-action" onClick={openAgentSettings}>
                     <LucideIcon name="Settings2" size={14} /> Agent 设置
-                  </button>
+                  </button></Show>
                 </div>
               </div>
             </div>
-            <div class="overview-pulse" aria-label={`${connectedCount()} 个 Agent 已连接，${workspaces().length} 个工作区`}>
-              <LucideIcon name="Activity" size={16} />
-              <div><strong>{connectedCount()}/{agents().length || 0}</strong><span>Agent 在线</span></div>
-              <i aria-hidden="true" />
-              <div><strong>{workspaces().length}</strong><span>工作区</span></div>
-              <i aria-hidden="true" />
-              <div><strong>{sessions().length}</strong><span>会话</span></div>
-            </div>
+            <Show when={agents().length > 0}>
+              <p class="overview-pulse" aria-label={`${connectedCount()} 个 Agent 已连接，${workspaces().length} 个工作区`}>
+                <span>{connectedCount()} 个 Agent 在线</span><span>{workspaces().length} 个工作区</span><span>{sessions().length} 个会话</span>
+              </p>
+            </Show>
           </section>
-          <section class="overview-section overview-agent-section" id="overview-agents">
-            <div class="overview-section-heading">
-              <div>
-                <span class="overview-section-eyebrow">AGENT FLEET</span>
-                <h2>选择 Agent</h2>
-              </div>
-              <span class="overview-section-meta">{agents().length} 个运行时</span>
-            </div>
-            <Show when={agents().length === 0} fallback={
+          <Show when={agents().length > 0} fallback={
+            <ol class="overview-start-steps" id="overview-agents" aria-label="开始工作步骤">
+              <li><span>01</span><div><strong>连接 Agent</strong><p>选择已安装的 Agent，完成连接配置。</p></div></li>
+              <li><span>02</span><div><strong>选择工作目录</strong><p>让 Agent 在项目上下文中工作。</p></div></li>
+              <li><span>03</span><div><strong>开始对话</strong><p>会话和工作区会自动保留在这里。</p></div></li>
+            </ol>
+          }>
+            <section class="overview-section overview-agent-section" id="overview-agents">
+              <div class="overview-section-heading"><h2>选择 Agent</h2><span class="overview-section-meta">{agents().length} 个可选</span></div>
               <div class="overview-agent-grid">
                 <For each={agents()}>{agent => {
                   const status = () => agentStatuses()[agent.id]?.status ?? (agent.id === activeAgent() ? 'unknown' : 'inactive')
@@ -340,20 +329,14 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                   )
                 }}</For>
               </div>
-            }>
-              <div class="overview-empty-agents">
-                <LucideIcon name="Bot" size={24} />
-                <div><strong>还没有 Agent</strong><p>配置一个 ACP Agent 后即可开始工作。</p></div>
-                <button type="button" class="overview-secondary-action" onClick={openAgentSettings}>新建 Agent</button>
-              </div>
-            </Show>
-          </section>
+
+            </section>
+          </Show>
 
           <div class="overview-content-grid">
             <section class="overview-section overview-recent-section" id="overview-recent">
               <div class="overview-section-heading">
                 <div>
-                  <span class="overview-section-eyebrow">RECENT CONTEXT</span>
                   <h2>最近会话</h2>
                 </div>
                 <LucideIcon name="MessageSquare" size={17} />
@@ -382,14 +365,13 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                   )}</For>
                 </div>
               }>
-                <div class="overview-list-empty"><LucideIcon name="MessageSquare" size={20} /><span>还没有可继续的会话</span></div>
+                <div class="overview-list-empty"><LucideIcon name="MessageSquare" size={20} /><div><strong>还没有可继续的会话</strong><p>开始一次对话后，就能从这里接着工作。</p></div></div>
               </Show>
             </section>
 
             <section class="overview-section overview-workspace-section" id="overview-workspaces">
               <div class="overview-section-heading">
                 <div>
-                  <span class="overview-section-eyebrow">WORKSPACES</span>
                   <h2>工作区</h2>
                 </div>
                 <LucideIcon name="Folder" size={17} />
@@ -421,14 +403,14 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                   }}</For>
                 </div>
               }>
-                <div class="overview-list-empty"><LucideIcon name="Folder" size={20} /><span>{commandDeck() ? '请先进入 Agent 工作台，在左栏创建第一个工作区。' : '从左栏创建第一个工作区'}</span></div>
+                <div class="overview-list-empty"><LucideIcon name="Folder" size={20} /><div><strong>还没有工作区</strong><p>{commandDeck() ? '进入 Agent 工作台后，选择你的项目目录。' : '打开 Agent 后，在左栏添加项目目录。'}</p></div></div>
               </Show>
             </section>
           </div>
 
-          <section class="overview-config-strip" id="overview-advanced">
+          <Show when={agents().length > 0}><section class="overview-config-strip" id="overview-advanced">
             <div>
-              <span class="overview-section-eyebrow">ADVANCED</span>
+              <span class="overview-section-eyebrow">高级</span>
               <strong>当前 Agent：{activeAgentEntry()?.name ?? activeAgent()}</strong>
               <span>需要直接检查底层配置时再展开 YAML 编辑器。</span>
             </div>
@@ -436,6 +418,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
               <LucideIcon name="Settings2" size={14} /> {showConfigEditor() ? '收起编辑器' : '编辑高级配置'}
             </button>
           </section>
+          </Show>
           <Show when={showConfigEditor()}>
             <div class="overview-config-editor"><AgentConfigEditor agentId={activeAgent()} /></div>
           </Show>

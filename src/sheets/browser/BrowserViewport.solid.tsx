@@ -35,11 +35,11 @@ export function BrowserViewport(props: BrowserViewportProps) {
         </Show>
       </Show>
       <div class={`browser-empty-state absolute inset-0 flex items-center justify-center flex-col gap-2 w-auto p-[var(--ui-space-7)] border-0 rounded-none text-text-dim bg-bg-panel text-center ${props.snapshot.phase === 'ready' ? 'invisible pointer-events-none' : ''}`} role="status">
-        <div class="browser-empty-mark grid w-[46px] h-[46px] place-items-center mb-2 border border-[color-mix(in_srgb,var(--accent)_42%,var(--border))] rounded-full text-accent bg-[color-mix(in_srgb,var(--accent)_8%,var(--bg-panel))] font-bold text-[22px] font-[family-name:var(--mono)]" aria-hidden="true">◌</div>
-        <strong class="text-text text-[15px]">{props.browserPreview ? '输入网址开始浏览' : '浏览器会话尚未启动'}</strong>
-        <span class="max-w-[520px] text-[12px] leading-[1.5]">{props.browserPreview ? '开发预览加载真实网页；桌面端会切换为嵌入式 WebView2。' : '启动后，完整 WebView 将占据主工作区。'}</span>
-        <span class="browser-empty-note mt-2 text-text-placeholder font-[family-name:var(--mono)] text-[10px] leading-[1.5]">{props.browserPreview ? 'preview runtime · 不伪装成桌面 WebView' : 'WebView2 子进程由 Browser Sheet 生命周期管理'}</span>
-        <div class="browser-actions flex gap-[var(--ui-space-2)] mt-[var(--ui-space-4)]"><button type="button" class="template-apply" onClick={() => props.onStart()} disabled={props.snapshot.phase === 'starting'}>新建标签</button></div>
+        <div class="browser-empty-mark grid w-[46px] h-[46px] place-items-center mb-2 border border-[color-mix(in_srgb,var(--accent)_42%,var(--border))] rounded-[2px] text-accent bg-[color-mix(in_srgb,var(--accent)_8%,var(--bg-panel))] font-bold text-[22px] font-[family-name:var(--mono)]" aria-hidden="true">◌</div>
+        <strong class="text-text text-[15px]">{props.snapshot.phase === 'starting' ? '正在打开浏览器' : props.snapshot.phase === 'error' ? '暂时无法打开页面' : '打开网页，继续工作'}</strong>
+        <span class="max-w-[520px] text-[12px] leading-[1.5]">{props.snapshot.phase === 'error' ? '检查网址和网络连接，然后重新打开标签。' : '在地址栏输入网址，或新建标签开始浏览。'}</span>
+
+        <div class="browser-actions flex gap-[var(--ui-space-2)] mt-[var(--ui-space-4)]"><button type="button" class="template-apply" onClick={() => props.onStart()} disabled={props.snapshot.phase === 'starting'}>{props.snapshot.phase === 'starting' ? '正在打开…' : props.snapshot.phase === 'error' ? '重试打开' : '新建标签'}</button></div>
       </div>
     </div>
   )

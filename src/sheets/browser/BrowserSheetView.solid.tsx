@@ -18,6 +18,10 @@ import { classifyBrowserStartError } from '../../infrastructure/tauri/browserCon
 import { hasTauriRuntime, isBrowserMockRuntime, IS_TAURI, type TauriWindow } from '../../infrastructure/tauri/env.ts'
 import { useModalOverlayStore } from '../../app/modalOverlayStore'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
+import { useWorkspaceStore } from '../../domains/workspace/workspaceStore.ts'
+import { useIdentityStore } from '../../domains/identity/identityStore.ts'
+import { activateAgentSheet, isAgentSheetRuntimeReady } from '../../workspace-sheets/activateAgentSheet.ts'
+import { openOwnedSessionTransaction } from '../../application/transactions/openOwnedSessionTransaction.ts'
 import { reportRuntimeError } from '../../app/runtimeError'
 import { LucideIcon } from '../../components/LucideIcon.solid.tsx'
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes'
@@ -30,25 +34,10 @@ import { useBrowserAgentPanel } from './useBrowserAgentPanel.solid.ts'
 import { wireBrowserSheetEffects } from './browserSheetEffects.solid.ts'
 
 /**
- * BrowserSheetView — browser 壳（W4-03）。
- *
- * 纯状态机 idle/starting/ready/error + WebView bounds/导航控制；子 WebView 由后端创建并嵌入 viewport。
- * Sheet 卸载时调用 browser_close，确保 WebView2 子进程随 sheet 生命周期回收。
- *
- * #228 批次 D：工具面板 / 左列 / 标签条 / 预览容器拆分至 BrowserToolPanel /
- * BrowserSidebar / BrowserTabStrip / BrowserViewport（纯搬移，行为与默认导出不变）；
- * 地址栏工具条与缩放行留在本文件（BrowserSheet.css.test 门禁锁定其载体，#515 起载体
- * 为本 .solid.tsx 实体）。
- *
- * #515：Solid 实体，与 React 版逐行同构。IPC 调用与生命周期（挂载/清理对称）逐条保真：
- * useReducer → 信号 + 纯 reducer；effect deps 语义逐条对照（见各 createEffect 注释）；
- * 原生可见性判定消费 modalOverlayStore（createZustandSignal，不改 store）。
- * BrowserViewport / BrowserSidebar / BrowserTabStrip / BrowserToolPanel 四个子组件均为
- * Solid 实体（props 信号直读、响应式更新）——批7 起 React 岛与 DeferredIslandHost 已退役。
- *
- * #520 S3-P0-3：issue#82 Agent 面板拆至 useBrowserAgentPanel.solid.ts，effect 编排拆至
- * browserSheetEffects.solid.ts；本宿主保留状态机信号、数据投影与布局。Tauri 事件订阅
- * 改经 runtimeEventClient（S1-P1 传输层收口）；图标经共享 LucideIcon（S3-P2-1 表归一）。
+ * Owns browser state and navigation. Native bounds/visibility/subscriptions are
+ * managed by browserSheetEffects; inactive keep-alive Sheets hide their child
+ * WebView, and unmount closes it. Returning to chat restores the source owner
+ * and session before focusing its Sheet.
  */
 
 const DEFAULT_ZOOM_PERCENT = 90
@@ -57,6 +46,56 @@ const MAX_ZOOM_PERCENT = 200
 const ZOOM_STEP = 10
 
 export default function BrowserSheetView(props: { sheet: SheetRecord; ctx: SheetContext }) {
+  const workspaceSheets = createZustandSignal(useWorkspaceStore, store => store.workspaceSheets.sheets)
+  const returnSheet = () => workspaceSheets().find(sheet => sheet.id === props.sheet.metadata?.resourceReturnSheetId)
+  const [returning, setReturning] = createSignal(false)
+  const [returnError, setReturnError] = createSignal('')
+  const returnToChat = async () => {
+    const target = returnSheet()
+    if (!target || returning()) return
+    if (target.kind !== 'agent' || !target.agentId) {
+      props.ctx.focusSheet(target.id)
+      return
+    }
+    const agentId = target.agentId
+    const explicitSessionId = props.sheet.metadata?.resourceReturnSessionId
+    const rememberedId = useWorkspaceStore.getState().sheetAgentStates[agentId]?.activeSessionId
+    const identity = useIdentityStore.getState()
+    const session = identity.sessions.find(item => item.id === (explicitSessionId || rememberedId))
+    if (explicitSessionId && (!session || session.agentId !== agentId)) {
+      setReturnError('发起对话已删除或归属已变化，请从会话列表重新打开。')
+      return
+    }
+    const agentName = identity.agents.find(agent => agent.id === agentId)?.name ?? target.title
+    setReturning(true)
+    setReturnError('')
+    const focus = () => {
+      if (useWorkspaceStore.getState().workspaceSheets.sheets.some(sheet => sheet.id === target.id)) props.ctx.focusSheet(target.id)
+    }
+    try {
+      if (session?.agentId === agentId) {
+        const result = await openOwnedSessionTransaction({ targetId: session.id }, {
+          getSessions: () => useIdentityStore.getState().sessions,
+          activeAgent: isAgentSheetRuntimeReady(agentId) ? agentId : null,
+          addSession: (name, owner) => useIdentityStore.getState().addSession(name, owner),
+          updateSession: (id, partial) => useIdentityStore.getState().updateSession(id, partial),
+          switchAgent: async owner => await activateAgentSheet(owner, agentName, () => {})
+            ? { ok: true, value: owner } : { ok: false, kind: 'transport', message: 'Agent 尚未就绪，请重试。' },
+          selectSession: id => {
+            const identity = useIdentityStore.getState()
+            const selected = identity.sessions.find(item => item.id === id)
+            if (selected && selected.profileId !== identity.activeProfileId) identity.setActiveProfile(selected.profileId)
+            props.ctx.selectSession(id)
+          },
+          openAgentSheet: focus,
+        })
+        if (!result.ok) setReturnError(result.message)
+      } else if (await activateAgentSheet(agentId, agentName, () => {})) {
+        props.ctx.selectSession(null)
+        focus()
+      } else setReturnError('Agent 尚未就绪，请重试。')
+    } finally { setReturning(false) }
+  }
   // 纯 reducer 状态机：原 useReducer → 信号 + 同一纯函数。
   const [state, setState] = createSignal(createBrowserState())
   const dispatch = (action: BrowserAction) => setState(previous => browserReducer(previous, action))
@@ -332,6 +371,14 @@ export default function BrowserSheetView(props: { sheet: SheetRecord; ctx: Sheet
         phase={snapshot().phase}
       />
       <main class="browser-main flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden">
+        <Show when={returnSheet()}>{sheet => (
+          <div class="flex min-h-8 shrink-0 items-center border-b border-border bg-bg-panel px-2">
+            <button type="button" class="flex min-w-0 items-center gap-2 border-0 bg-transparent py-1 text-xs text-text-dim hover:text-accent disabled:opacity-50" disabled={returning()} aria-busy={returning()} aria-label={`返回对话：${props.sheet.metadata?.resourceReturnTitle || sheet().title}`} onClick={() => void returnToChat()} title={props.sheet.metadata?.resourceReturnTitle || sheet().title}>
+              <LucideIcon name="ArrowLeft" size={13} /><span>返回对话</span><span class="min-w-0 truncate text-[11px]">{props.sheet.metadata?.resourceReturnTitle || sheet().title}</span>
+            </button>
+          </div>
+        )}</Show>
+        <Show when={returnError()}><div class="file-tree-error" role="alert">{returnError()}</div></Show>
         {/* 保留语义节点供旧主题/可访问性选择器兼容；视觉上 Browser Sheet 不再重复显示
             BROWSER + Browser 两层标题，浏览器 chrome 直接成为主区入口。 */}
         <div class="browser-header browser-header-legacy hidden">

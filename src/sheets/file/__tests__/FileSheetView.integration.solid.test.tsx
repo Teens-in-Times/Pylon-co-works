@@ -143,7 +143,7 @@ describe('FileSheetView 版本化 tab 集成（D-02/D-04）', () => {
     fireEvent.click(screen.getByLabelText('会话：切换工作区会话'))
     fireEvent.click(await screen.findByText('Pylon Workspace'))
 
-    await screen.findByText('EXPLORER')
+    await screen.findByRole('button', { name: '刷新文件树' })
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('list_workspace_entries', {
       target: {
         sessionId: 'session-workspace',
@@ -158,7 +158,7 @@ describe('FileSheetView 版本化 tab 集成（D-02/D-04）', () => {
     invoke.mockClear()
     view.unmount()
     renderHarness()
-    await screen.findByText('EXPLORER')
+    await screen.findByRole('button', { name: '刷新文件树' })
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('list_workspace_entries', expect.objectContaining({
       target: expect.objectContaining({ workspaceId: 'workspace-1' }),
     })))

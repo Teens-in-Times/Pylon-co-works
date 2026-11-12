@@ -17,7 +17,7 @@
 - 零 Agent 的 `agents.yaml` 配置模板（#372 起随包：打包时由 `resources/release/agents.template.yaml` 改名收取）和便携模式启动说明；
 - `portable.flag` 与空的 `data/` 目录（#482 起便携是唯一存储模式：`data/` 即唯一数据真源）；
 - 插件开发分发包 `resources/sdk/`（`dist-plugin-sdk/normal` 全量：单文件 ESM runtime + testing harness + `types/` 类型声明 + manifest schema + package.json，2026-09-01 起随包）；
-- 离线文档站 `resources/docs-site/`（#371 起随包：VitePress 离线变体静态产物，应用内 Docs Sheet（`pylon-docs://`）的数据源，与 `docs/说明书/**` markdown 并存）；
+- 离线文档站 `resources/docs-site/`（#371 起随包：VitePress 离线变体静态产物，应用内 Docs Sheet（`pylon-docs://`）的数据源，与 `docs/说明书/**` markdown 并存）。运行时以 Tauri bundle 资源根拼接完整的 `resources/docs-site` 相对路径，开发态使用 target 中相同的目录结构；打开前检查首页可读且非空，资源缺失时显示加载失败并允许修复后重试；
 - WebView2 兜底安装引导脚本（运行时按 Windows 自带处理，不再内置安装器——2026-09-19 决定）；
 - 包外的 SHA-256 文件和 manifest。
 

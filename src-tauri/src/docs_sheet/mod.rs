@@ -125,6 +125,13 @@ impl DocsSheetManager {
             (Some(window), Some(_)) => window.clone(),
             _ => return Err("docs sheet host 未注册（setup 未注入主窗口）".to_string()),
         };
+        if let Err(message) = resource::docs_site_root(window.app_handle())
+            .and_then(|root| resource::ensure_docs_site_available(&root))
+        {
+            inner.phase = DocsPhase::Error;
+            inner.error = Some(message.clone());
+            return Err(message);
+        }
         let bounds = inner.bounds.expect("刚写入，必然存在");
         // CC-14：子 WebView 与主窗共用包内 WebView2 UDF（数据跟包语义）。
         // 必须在 phase 置 Starting 之前取——取失败提前返回，不留悬挂 Starting 态。

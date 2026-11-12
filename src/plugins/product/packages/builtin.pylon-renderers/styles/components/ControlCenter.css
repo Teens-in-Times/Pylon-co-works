@@ -60,11 +60,11 @@
   border-radius:var(--cc-input-radius,12px);
   transition:box-shadow 180ms ease;
 }
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .control-center:has(.input-bar:not(.cli-mode)) .cc-input-shadow-clip::before {
+.app[data-interface-mode="modern-gui"] .control-center:has(.input-bar) .cc-input-shadow-clip::before {
   box-shadow:var(--cc-input-shadow,0 10px 30px rgba(15,23,42,.22));
 }
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .control-center:has(.input-bar:not(.cli-mode):hover) .cc-input-shadow-clip::before,
-.app:not([data-presentation-profile="builtin.presentation.terminal-classic"]) .control-center:has(.input-bar:not(.cli-mode):focus-within) .cc-input-shadow-clip::before {
+.app[data-interface-mode="modern-gui"] .control-center:has(.input-bar:hover) .cc-input-shadow-clip::before,
+.app[data-interface-mode="modern-gui"] .control-center:has(.input-bar:focus-within) .cc-input-shadow-clip::before {
   box-shadow:var(--cc-input-focus-ring-shadow,var(--cc-input-shadow,0 10px 30px rgba(15,23,42,.22)));
 }
 .cc-body {

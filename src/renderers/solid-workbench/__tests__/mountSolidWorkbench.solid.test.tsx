@@ -24,6 +24,8 @@ import type { WorkbenchSessionCreationStore } from '../../../domains/workbench/w
 import { createAgentWorkbenchCommandFacade } from '../../../application/agent-workbench/agentWorkbenchCommands.ts'
 import type { Session } from '../../../domains/identity/identityStore.ts'
 import { FLUSH_BUDGET } from '../../../test/solidTestHelpers.ts'
+import { MOCK_MESSAGES } from '../../../demo/chatMockData.ts'
+import { messageSnapshotToWorkbenchEnvelopes } from '../../../application/agent-workbench/messageSnapshotProjection.ts'
 
 const hosts: HTMLElement[] = []
 const servicesList: ReturnType<typeof createPreviewWorkbenchServices>[] = []
@@ -82,6 +84,49 @@ function mountPreview(capabilities?: WorkbenchCapabilitySnapshot, options: { red
   })
   return { host, services, lifecycle }
 }
+
+it('labels the human speaker independently of the provider carrying the user echo', () => {
+  const { host, services, lifecycle } = mountPreview()
+  const base = services.runtime.getSnapshot().document!
+  services.runtime.applyDocument({
+    ...base,
+    messages: (['user', 'assistant'] as const).map((role, index) => ({
+      id: `speaker-${index}`, segmentId: `speaker-${index}`, role, content: `${role} text`, parts: [], identity: {},
+      source: { provider: 'peri', sourceId: `provider-${index}` }, sequence: index + 1,
+      running: false, time: '2026-11-12T10:00:00.000Z',
+    })),
+  })
+  expect(host.querySelector('.term-user-name')).toHaveTextContent('你')
+  expect(host.querySelector('.term-assistant-name')).toHaveTextContent('peri')
+  lifecycle.destroy()
+})
+
+it.each(['modern-gui', 'terminal-like'])('renders snapshot structured parts through the production workbench in %s', async mode => {
+  const { host, services, lifecycle } = mountPreview()
+  host.classList.add('app')
+  host.dataset.interfaceMode = mode
+  const source = MOCK_MESSAGES.find(message => message.id === 'mock-assistant-structured')!
+  const document = projectWorkbench(messageSnapshotToWorkbenchEnvelopes('preview-session', [source])).document
+  services.runtime.applyDocument(document)
+  await waitFor(() => expect(host.querySelector('[data-content-kind="content.list"]')).toHaveTextContent('富内容边界'))
+  expect(host.querySelector('[data-content-kind="content.progress"]')).toHaveTextContent('索引 renderer kinds')
+  expect(host.querySelector('[data-content-kind="content.artifact"]')).toHaveTextContent('渲染验收报告')
+  expect(host).toHaveTextContent('工作台阅读说明')
+  expect(host).toHaveTextContent('渲染参考资源')
+  expect(host.querySelectorAll('.plain-message-list__row')).toHaveLength(1)
+  lifecycle.destroy()
+})
+
+it('renders a media-only snapshot instead of treating its empty text field as an empty message', async () => {
+  const { host, services, lifecycle } = mountPreview()
+  services.runtime.applyDocument(projectWorkbench(messageSnapshotToWorkbenchEnvelopes('preview-session', [{
+    id: 'image-only', role: 'assistant', sender: 'assistant', content: '', time: '',
+    semanticParts: [{ kind: 'image', source: 'https://example.com/image.png', mimeType: 'image/png', alt: '快照图片' }],
+  }])).document)
+  await waitFor(() => expect(host.querySelector('[data-media-kind="image"]')).toHaveAttribute('aria-label', '图片：快照图片'))
+  expect(host.querySelectorAll('.plain-message-list__row')).toHaveLength(1)
+  lifecycle.destroy()
+})
 
 it('#566 keeps messages, activities and session cards in one stable reading column', () => {
   const { host, services, lifecycle } = mountPreview()

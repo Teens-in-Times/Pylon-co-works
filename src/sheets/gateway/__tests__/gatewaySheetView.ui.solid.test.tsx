@@ -97,6 +97,37 @@ describe('P79 Gateway 页交互优化', () => {
     expect(section!.querySelectorAll('input, select, textarea, button, [contenteditable="true"]')).toHaveLength(0)
   })
 
+  it('creation stays single-flight and retains the form after a failed request', async () => {
+    installHandlers([])
+    let rejectCreate!: (reason: Error) => void
+    fakeInvoke.register('gateway_instance_create', () => new Promise((_, reject) => { rejectCreate = reject }))
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderSheet()
+    await flushEffects()
+    const platform = screen.getByLabelText('平台')
+    const id = screen.getByLabelText('实例 id') as HTMLInputElement
+    const label = screen.getByLabelText('实例标签') as HTMLInputElement
+    expect(id.closest('label')?.textContent).toContain('实例标识')
+    expect(screen.getByLabelText('路由 source').closest('label')?.textContent).toContain('消息来源')
+    fireEvent.change(platform, { target: { value: 'qq' } })
+    fireEvent.input(id, { target: { value: 'qq-new' } })
+    fireEvent.input(label, { target: { value: '新助手' } })
+    const create = screen.getByRole('button', { name: '创建' }) as HTMLButtonElement
+    fireEvent.click(create)
+    fireEvent.click(create)
+    await flushEffects()
+    expect(create.disabled).toBe(true)
+    expect(fakeInvoke.calls.filter(call => call.cmd === 'gateway_instance_create')).toHaveLength(1)
+    rejectCreate(new Error('实例标识已存在'))
+    await flushEffects()
+    expect(id.value).toBe('qq-new')
+    expect(label.value).toBe('新助手')
+    expect(screen.getByText('实例标识已存在')).toBeDefined()
+    expect(create.disabled).toBe(false)
+    expect(errorLog).toHaveBeenCalledWith('创建网关实例失败', expect.any(Error))
+    errorLog.mockRestore()
+  })
+
   it('凭据表单按 catalog 渲染双字段，提交按字段顺序 join ":"', async () => {
     installHandlers([
       { id: 'qq-acc', platform: 'qq', label: 'QQ', enabled: true, autoStart: false, status: 'stopped', lastError: null, credentialStatus: 'missing', credentialRef: null },

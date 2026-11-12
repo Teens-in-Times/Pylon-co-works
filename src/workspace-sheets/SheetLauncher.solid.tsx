@@ -1,11 +1,10 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from 'solid-js'
+import { createDialogFocus } from '../components/ui/dialogFocus'
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show, untrack } from 'solid-js'
 import { resolveLaunchIconName } from './launchIcons.solid.tsx'
 import { LucideIcon } from '../components/LucideIcon.solid.tsx'
-import { useIdentityStore } from '../domains/identity/identityStore'
 import { getWorkspaceRegistrySnapshot, subscribeWorkspaceRegistry } from '../plugin-runtime/workspaces/workspaceRegistry'
 import { activateAgentSheet } from './activateAgentSheet'
-import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
 import type { SheetRecord, SheetKind } from './sheetTypes'
 import type { WorkspaceLaunchOption } from '../plugin-runtime/workspaces/workspaceTypes'
 
@@ -65,8 +64,6 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
   const [selectedKey, setSelectedKey] = createSignal<string | null>(null)
   const switchingAgentRef = { current: false }
   const [switchingAgentId, setSwitchingAgentId] = createSignal<string | null>(null)
-  const activeAgent = createZustandSignal(useIdentityStore, state => state.activeAgent)
-  let inputElement: HTMLInputElement | undefined
 
   // Registry 快照 → 工具项（与 React 版 useSyncExternalStore 同语义：订阅写信号，
   // 快照引用等值去重。审查 P2-1 修正：memo 无响应式依赖只会求值一次，订阅回调读
@@ -86,7 +83,7 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
 
   const focusSheet = async (sheet: SheetRecord) => {
     const targetAgentId = sheet.kind === 'agent' ? sheet.agentId : undefined
-    if (!targetAgentId || targetAgentId === activeAgent()) {
+    if (!targetAgentId) {
       latest().onFocusSheet(sheet.id)
       latest().onOpenChange(false)
       return
@@ -95,25 +92,20 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
     switchingAgentRef.current = true
     setSwitchingAgentId(targetAgentId)
     const agentName = value().agents.find(agent => agent.id === targetAgentId)?.name || sheet.title || targetAgentId
-    await activateAgentSheet(targetAgentId, agentName, () => latest().onFocusSheet(sheet.id))
+    const activated = await activateAgentSheet(targetAgentId, agentName, () => latest().onFocusSheet(sheet.id))
     switchingAgentRef.current = false
     setSwitchingAgentId(null)
-    if (useIdentityStore.getState().activeAgent === targetAgentId) latest().onOpenChange(false)
+    if (activated) latest().onOpenChange(false)
   }
 
   const openAgentSheet = async (agent: AgentOption) => {
-    if (agent.id === activeAgent()) {
-      latest().onOpenSheet('agent', agent.name, agent.id)
-      latest().onOpenChange(false)
-      return
-    }
     if (switchingAgentRef.current) return
     switchingAgentRef.current = true
     setSwitchingAgentId(agent.id)
-    await activateAgentSheet(agent.id, agent.name, () => latest().onOpenSheet('agent', agent.name, agent.id))
+    const activated = await activateAgentSheet(agent.id, agent.name, () => latest().onOpenSheet('agent', agent.name, agent.id))
     switchingAgentRef.current = false
     setSwitchingAgentId(null)
-    if (useIdentityStore.getState().activeAgent === agent.id) latest().onOpenChange(false)
+    if (activated) latest().onOpenChange(false)
   }
 
   const tools = createMemo(() => workspaceSnapshot().launchOptions)
@@ -171,7 +163,7 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
     ...(profilesVisible() ? [{ key: 'manage:profiles', disabled: false, onSelect: () => closeThen(latest().onOpenProfiles) }] : []),
   ])
 
-  // 打开时聚焦输入框并清空上次查询（cmdk Dialog 卸载即重置的语义）。
+  // 打开时清空查询；键盘焦点由共享 dialogFocus 管理。
   // 依赖面必须只含 open（memo 引用等值去重）：体内读了 flatItems()（经 memo 链依赖
   // query），若被追踪则「输入 → 效果重跑 → setQuery('') 自我清零」——其余一律 untrack。
   const launcherOpen = createMemo(() => value().open === true)
@@ -180,12 +172,6 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
     untrack(() => {
       setQuery('')
       setSelectedKey(flatItems()[0]?.key ?? null)
-      inputElement?.focus()
-      const onEscape = (event: KeyboardEvent) => {
-        if (event.key === 'Escape') latest().onOpenChange(false)
-      }
-      document.addEventListener('keydown', onEscape)
-      onCleanup(() => document.removeEventListener('keydown', onEscape))
     })
   })
 
@@ -194,7 +180,11 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
     setSelectedKey(flatItems()[0]?.key ?? null)
   })
 
+  let dialogRef: HTMLDivElement | undefined
+  createDialogFocus(() => dialogRef, launcherOpen, () => latest().onOpenChange(false))
+
   const onInputKeyDown = (event: KeyboardEvent) => {
+    if (event.isComposing) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const items = flatItems()
@@ -211,26 +201,33 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
     }
   }
 
+  const listboxId = `sheet-launcher-${createUniqueId()}`
+  const optionId = (key: string) => `${listboxId}-${encodeURIComponent(key)}`
   const selectedAttr = (key: string) => selectedKey() === key ? 'true' : undefined
   const disabledAttr = (disabled: boolean) => disabled ? 'true' : undefined
 
   return (
     <Show when={value().open}>
       <div class="sheet-launcher-overlay" onClick={event => { if (event.target === event.currentTarget) latest().onOpenChange(false) }}>
-        <div class="sheet-launcher-dialog" role="dialog" aria-label="打开 Sheet">
+        <div ref={node => { dialogRef = node }} class="sheet-launcher-dialog" role="dialog" aria-modal="true" aria-label="打开 Sheet">
           <div class="sheet-launcher-input-row">
-            <span aria-hidden="true">›</span>
+            <LaunchIcon icon="search" />
             <input
-              ref={element => { inputElement = element }}
               cmdk-input=""
-              placeholder="搜索 Sheet、Agent 或管理入口..."
+              role="combobox"
+              aria-label="搜索 Sheet、Agent 或管理入口"
+              aria-autocomplete="list"
+              aria-expanded="true"
+              aria-controls={listboxId}
+              aria-activedescendant={selectedKey() ? optionId(selectedKey()!) : undefined}
+              placeholder="搜索工作页、Agent 或设置…"
               value={query()}
               onInput={event => setQuery(event.currentTarget.value)}
               onKeyDown={onInputKeyDown}
             />
             <kbd>Esc</kbd>
           </div>
-          <div class="sheet-launcher-list" cmdk-list="">
+          <div id={listboxId} class="sheet-launcher-list" cmdk-list="" role="listbox" aria-label="可打开的工作页面">
             <Show when={flatItems().length === 0}>
               <div class="sheet-launcher-empty" cmdk-empty="">没有匹配项</div>
             </Show>
@@ -246,13 +243,13 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
                       role="option"
                       aria-disabled={disabledAttr(switchingAgentId() !== null)}
                       data-disabled={disabledAttr(switchingAgentId() !== null)}
-                      data-selected={selectedAttr(`recent:${sheet.id}`)}
+                      id={optionId(`recent:${sheet.id}`)} aria-selected={selectedKey() === `recent:${sheet.id}`} data-selected={selectedAttr(`recent:${sheet.id}`)}
                       onClick={() => { if (switchingAgentId() === null) void focusSheet(sheet) }}
                     >
                       <LaunchIcon icon={sheet.kind === 'agent' ? 'agent' : launchByKind().get(sheet.kind)?.icon} />
                       <span class="sheet-launcher-copy">
-                        <span class="sheet-launcher-card-title"><strong>{sheet.title}</strong><em>{sheet.kind}</em></span>
-                        <small>切换到已打开的 Sheet</small>
+                        <span class="sheet-launcher-card-title"><strong>{sheet.title}</strong></span>
+                        <small>返回已打开的工作页</small>
                       </span>
                     </div>
                   )}</For>
@@ -280,13 +277,13 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
                         role="option"
                         aria-disabled={disabledAttr(switchingAgentId() !== null)}
                         data-disabled={disabledAttr(switchingAgentId() !== null)}
-                        data-selected={selectedAttr(`agent:${agent.id}`)}
+                        id={optionId(`agent:${agent.id}`)} aria-selected={selectedKey() === `agent:${agent.id}`} data-selected={selectedAttr(`agent:${agent.id}`)}
                         onClick={() => { if (switchingAgentId() === null) void openAgentSheet(agent) }}
                       >
                         <LaunchIcon icon="agent" />
                         <span class="sheet-launcher-copy">
-                          <span class="sheet-launcher-card-title"><strong>{agent.name}</strong><em>agent</em></span>
-                          <small>{agent.id}</small>
+                          <span class="sheet-launcher-card-title"><strong>{agent.name}</strong></span>
+                          <small>{switchingAgentId() === agent.id ? '正在连接…' : '连接并开始对话'}</small>
                         </span>
                       </div>
                     )}</For>
@@ -306,12 +303,12 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
                       role="option"
                       aria-disabled={disabledAttr(!tool.launchable)}
                       data-disabled={disabledAttr(!tool.launchable)}
-                      data-selected={selectedAttr(`tool:${tool.kind}`)}
+                      id={optionId(`tool:${tool.kind}`)} aria-selected={selectedKey() === `tool:${tool.kind}`} data-selected={selectedAttr(`tool:${tool.kind}`)}
                       onClick={() => { if (tool.launchable) closeThen(() => latest().onOpenSheet(tool.kind, tool.title)) }}
                     >
                       <LaunchIcon icon={tool.icon} />
                       <span class="sheet-launcher-copy">
-                        <span class="sheet-launcher-card-title"><strong>{tool.title}</strong><em>{tool.kind}</em></span>
+                        <span class="sheet-launcher-card-title"><strong>{tool.title}</strong></span>
                         <small>{tool.description}</small>
                       </span>
                       <Show when={!tool.launchable}><span class="sheet-launcher-badge">暂不可用</span></Show>
@@ -326,15 +323,15 @@ export default function SheetLauncher(p: { latest: () => SheetLauncherProps }) {
                 <div class="sheet-launcher-group-heading" cmdk-group-heading="">应用设置</div>
                 <div class="sheet-launcher-group-items" cmdk-group-items="">
                   <Show when={settingsVisible()}>
-                    <div class="sheet-launcher-item" cmdk-item="" role="option" data-selected={selectedAttr('manage:settings')} onClick={() => closeThen(latest().onOpenSettings)}>
+                    <div class="sheet-launcher-item" cmdk-item="" role="option" id={optionId('manage:settings')} aria-selected={selectedKey() === 'manage:settings'} data-selected={selectedAttr('manage:settings')} onClick={() => closeThen(latest().onOpenSettings)}>
                       <LaunchIcon icon="settings" />
-                      <span class="sheet-launcher-copy"><span class="sheet-launcher-card-title"><strong>Settings</strong><em>manage</em></span><small>主题、Agent 与应用设置</small></span>
+                      <span class="sheet-launcher-copy"><span class="sheet-launcher-card-title"><strong>设置</strong></span><small>主题、Agent 与应用设置</small></span>
                     </div>
                   </Show>
                   <Show when={profilesVisible()}>
-                    <div class="sheet-launcher-item" cmdk-item="" role="option" data-selected={selectedAttr('manage:profiles')} onClick={() => closeThen(latest().onOpenProfiles)}>
+                    <div class="sheet-launcher-item" cmdk-item="" role="option" id={optionId('manage:profiles')} aria-selected={selectedKey() === 'manage:profiles'} data-selected={selectedAttr('manage:profiles')} onClick={() => closeThen(latest().onOpenProfiles)}>
                       <LaunchIcon icon="sliders" />
-                      <span class="sheet-launcher-copy"><span class="sheet-launcher-card-title"><strong>Profiles</strong><em>manage</em></span><small>编辑当前 Profile</small></span>
+                      <span class="sheet-launcher-copy"><span class="sheet-launcher-card-title"><strong>当前身份</strong></span><small>编辑当前 Profile 的名称与偏好</small></span>
                     </div>
                   </Show>
                 </div>

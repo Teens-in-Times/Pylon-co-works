@@ -29,31 +29,14 @@ export const DEFAULT_REASONING_OPTIONS: readonly WorkbenchOptionEntry[] = Object
 ])
 
 const MODE_LABELS: Readonly<Record<string, string>> = {
-  default: '默认',
-  auto: '全自动',
-  accept_edit: '接受编辑',
-  accept_edits: '接受编辑',
-  dont_ask: '不再询问',
-  edit: '编辑模式',
-  bypass: '绕过确认',
-  plan: '计划模式',
-  ask: '询问确认',
+  default: '默认权限', auto: '自动执行', accept_edit: '接受编辑', accept_edits: '接受编辑',
+  dont_ask: '无需询问', edit: '编辑模式', bypass: '跳过确认', plan: '只做计划', ask: '逐项确认',
 }
 
 const REASONING_LABELS: Readonly<Record<string, string>> = {
-  off: '关闭',
-  none: '关闭',
-  disabled: '关闭',
-  minimal: 'minimal',
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-  xhigh: 'xhigh',
-  max: 'max',
-  ultra: 'ultra',
-  fast: '快速',
-  balanced: '平衡',
-  deep: '深入',
+  off: '关闭思考', none: '关闭思考', disabled: '关闭思考', minimal: '简短思考', low: '轻量思考',
+  medium: '标准思考', high: '深入思考', xhigh: '深度思考', max: '最大强度', ultra: '极高强度',
+  fast: '快速响应', balanced: '均衡思考', deep: '深度思考',
 }
 
 const MODEL_KEYS = new Set(['model', 'modelid', 'model_id', 'llm', 'llmmodel', 'modelname'])
@@ -244,9 +227,8 @@ function preferAdvertised(
  * A set that holds nothing but the current value is not an advertised choice
  * list. `optionIds` unshifts the current value into the snapshot list so the UI
  * can always render it, so a provider that advertises no choices looks like one
- * that advertised exactly the current one. Calling that authoritative dropped
- * the fallback catalogue while the menu still hides the current value — which is
- * how the permission menu ended up empty right after a switch.
+ * that advertised exactly the current one. A reasoning preference may still use
+ * the fallback catalogue when a provider gives only its current value.
  */
 function advertisedChoices(
   advertised: readonly WorkbenchOptionEntry[],

@@ -14,11 +14,10 @@ import { reportRuntimeError } from '../../app/runtimeError.ts'
 export type ContributionErrorPolicy = (error: unknown) => 'fallback' | 'rethrow'
 
 /**
- * PluginContributionBoundary — 插件贡献渲染边界（#515 贡献面翻转：Solid 实体，原 React
- * class 组件 PluginContributionBoundary.tsx 同语义移植后删除）。
+ * PluginContributionBoundary — 插件贡献渲染边界与本地重试入口。
  *
  * 边界的本地占位是用户可见上下文；崩溃照旧进 Runtime diagnostics（key 去重，不另发
- * 全局 tray error）。占位 DOM（class/role/文案）是存量契约，宿主测试按它断言。
+ * 全局 tray error）。本地重试重建当前贡献，不重新激活插件或影响其他贡献。
  *
  * #520 S4-P2-11 policy 化：此前本边界与 `sheets/file/FileViewRenderBoundary.solid.tsx`
  * 各持一套错误语义（本边界恒 fallback + diagnostics 上报；后者 onError 裁决
@@ -37,7 +36,7 @@ export function PluginContributionBoundary(props: {
   /** fallback 占位；缺省为存量契约占位 DOM。 */
   fallback?: (error: unknown) => JSX.Element
   /**
-   * 变化即重置错误态、重渲染子树（React componentDidUpdate 同语义）。FileView 渲染面
+   * 变化即重置错误态、重渲染子树。FileView 渲染面
    * 传 rendererId：宿主已换 renderer → 清错误态重挂；缺省不重置。
    */
   resetKey?: unknown
@@ -62,7 +61,10 @@ export function PluginContributionBoundary(props: {
       props.onFallback?.()
       return props.fallback
         ? props.fallback(error)
-        : <div class="context-panel-placeholder" role="alert">此插件面板暂时不可用</div>
+        : <div class="context-panel-placeholder flex flex-col items-start gap-2" role="alert">
+            <span>此插件面板暂时不可用</span>
+            <button type="button" class="px-2 py-1 text-accent underline underline-offset-4 focus-visible:outline-2" onClick={reset}>重试加载</button>
+          </div>
     }}>
       {props.children}
     </ErrorBoundary>

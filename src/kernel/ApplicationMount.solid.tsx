@@ -8,7 +8,7 @@ interface ApplicationMountProps {
   recovery: JSX.Element
 }
 
-/** #515：React → Solid 实体（KernelRoot.solid 直连）。订阅语义与 React useSyncExternalStore 对齐。 */
+/** Projects the active application with a visible loading and recovery state. */
 export default function ApplicationMount(props: ApplicationMountProps): JSX.Element {
   const [snapshot, setSnapshot] = createSignal(props.runtime.getSnapshot())
   onCleanup(props.runtime.subscribe(() => setSnapshot(props.runtime.getSnapshot())))
@@ -19,9 +19,7 @@ export default function ApplicationMount(props: ApplicationMountProps): JSX.Elem
     >
       {contribution => {
         const Application = contribution().component
-        // solid lazy 资源在无 SuspenseContext 时读到 undefined → Dynamic 渲空；与其他
-        // 宿主（Boundary+Suspense）一致，补加载期 fallback（App.solid 装配期自持恢复层）。
-        return <Suspense fallback={null}><Application /></Suspense>
+        return <Suspense fallback={<div role="status" class="flex h-full items-center justify-center px-6 py-8 text-sm text-content-muted">正在加载工作界面…</div>}><Application /></Suspense>
       }}
     </Show>
   )

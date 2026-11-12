@@ -22,7 +22,7 @@ function describeTarget(target: SkinTarget): string {
 }
 
 /**
- * SkinPreviewBar — 最小可用 preview 人工作业面（阶段 5 S5-D，#515 Solid 实体）。
+ * SkinPreviewBar — 预览确认工具栏；高级补丁输入折叠，不占用默认工作区。
  *
  * 仅在存在 active preview 时渲染；动作只调用 Skin Runtime，不直改 Store/DOM。
  * 默认挂载在 Kernel/Application 边界内（KernelRoot），不随 App 卸载而丢失。
@@ -64,17 +64,18 @@ export default function SkinPreviewBar(props: SkinPreviewBarProps) {
     if (!current || !currentDraft) return
     // D-007：永久应用默认需要用户确认，不静默 commit。
     if (window.confirm(`确定永久应用皮肤「${currentDraft.name}」到${describeTarget(current.target)}吗？`)) {
-      runtime().commit(current.previewId)
+      try { runtime().commit(current.previewId) }
+      catch (error) { setPatchError(error instanceof Error ? error.message : String(error)) }
     }
   }
 
   const buttonClasses =
-    'cursor-pointer rounded-md border border-stroke-subtle bg-transparent px-2.5 py-1 text-sm'
+    'min-h-8 cursor-pointer rounded-sm border border-stroke-subtle bg-surface-raised px-3 py-1 text-sm hover:bg-hover-bg focus-visible:outline-2 focus-visible:outline-focus-ring'
 
   return (
     <Show when={preview() && draft()}>
       <div
-        class="skin-preview-bar fixed bottom-4 left-1/2 z-[1000] flex max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-2 rounded-[10px] border border-accent bg-surface-overlay px-3 py-2 text-sm leading-[1.4] shadow-[var(--shadow-soft)]"
+        class="skin-preview-bar fixed bottom-4 left-1/2 z-[1000] flex max-w-[calc(100vw-32px)] -translate-x-1/2 flex-wrap items-center gap-x-3 gap-y-2 rounded-sm border border-accent bg-surface-overlay px-3 py-2 text-sm leading-[1.4] shadow-[var(--shadow-soft)]"
         data-pylon-component="skin-preview-bar"
         data-skin-preview-id={preview()!.previewId}
         data-skin-target={skinTargetKey(preview()!.target)}
@@ -82,25 +83,30 @@ export default function SkinPreviewBar(props: SkinPreviewBarProps) {
         aria-label="Skin 预览"
       >
         <span class="font-bold">Skin 预览</span>
-        <span>{draft()!.name}</span>
+        <span class="max-w-52 truncate">{draft()!.name}</span>
         <span>{describeTarget(preview()!.target)}</span>
         <span
           class="data-[valid=invalid]:text-danger data-[valid=valid]:text-success"
           data-valid={draft()!.status}
         >
-          {draft()!.status}
+          {{ editing: '调整中', valid: '可应用', invalid: '需要修正', committed: '已应用' }[draft()!.status]}
         </span>
-        <span>rev {draft()!.revision}</span>
+        <details class="min-w-0 text-content-muted">
+          <summary class="cursor-pointer">高级调整</summary>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <span class="text-xs">rev {draft()!.revision}</span>
         <input
-          class="w-[220px] rounded-md border border-stroke-subtle px-1.5 py-1 font-mono text-xs"
+          class="min-h-8 w-[220px] max-w-full rounded-sm border border-stroke-subtle px-1.5 py-1 font-mono text-xs"
           value={patchText()}
           onInput={event => setPatchText(event.currentTarget.value)}
           placeholder='{"tokens":{"accent":"#ff0000"}}'
           aria-label="Skin patch JSON"
         />
         <button type="button" class={buttonClasses} onClick={applyPatch}>继续调整</button>
+          </div>
+        </details>
         <button type="button" class={buttonClasses} onClick={() => { const current = preview(); if (current) runtime().rollback(current.previewId) }}>撤销预览</button>
-        <button type="button" class={`${buttonClasses} border-accent font-bold text-accent`} onClick={requestCommit}>确认应用</button>
+        <button type="button" class={`${buttonClasses} border-accent font-bold text-accent disabled:cursor-not-allowed disabled:opacity-50`} disabled={draft()!.status === 'invalid'} onClick={requestCommit}>确认应用</button>
         <Show when={patchError()}>
           <span class="max-w-[240px] text-danger" role="alert">{patchError()}</span>
         </Show>

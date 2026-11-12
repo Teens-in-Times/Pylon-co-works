@@ -95,6 +95,7 @@ export default function FileTree(props: FileTreeProps) {
   }
 
   const toggleFolder = async (entry: WorkspaceEntry) => {
+    if (loading().has(entry.path)) return
     if (expanded().has(entry.path)) {
       setExpanded(previous => {
         const next = new Set(previous)
@@ -103,7 +104,9 @@ export default function FileTree(props: FileTreeProps) {
       })
       return
     }
+    const sourceGeneration = requestContext.generation
     if (!entry.entries) await load(entry.path)
+    if (requestContext.generation !== sourceGeneration) return
     setExpanded(previous => new Set(previous).add(entry.path))
   }
 
@@ -154,19 +157,20 @@ export default function FileTree(props: FileTreeProps) {
   return (
     <div class="file-tree">
       <div class="file-panel-heading">
-        <span>EXPLORER</span>
+        <span>文件</span>
         <span class="file-panel-count">{tree().entries.length}</span>
         <button type="button" class="file-tree-refresh" aria-label="刷新文件树" title="刷新文件树" disabled={!props.target || !props.provider || loading().has('')} onClick={refresh}>
           <WorkbenchIcon name="RefreshCw" size={13} />
         </button>
       </div>
       <Show when={error()}>
-        <p class="file-section-hint file-tree-error-reference" role="status">文件树读取失败，详情见右下角错误中心</p>
+        <p class="file-section-hint file-tree-error-reference" role="alert">{error()}</p>
       </Show>
+      <Show when={loading().has('')}><p class="px-3 py-4 text-xs text-text-dim" role="status">正在读取文件…</p></Show>
       <Show when={!props.target || !props.provider}>
         <EmptyState class="file-tree-empty-state" title="尚未选择工作区" hint="先从会话分区选择一个工作区会话，再浏览文件。" />
       </Show>
-      <Show when={props.target && tree().entries.length === 0 && !error() && !loading().has('')}>
+      <Show when={props.target && props.provider && tree().entries.length === 0 && !error() && !loading().has('')}>
         <EmptyState class="file-tree-empty-state" title="工作区为空" hint="当前工作区没有可浏览的文件。" />
       </Show>
       <div class="file-tree-rows">{renderEntries(tree().entries, 0)}</div>

@@ -722,7 +722,7 @@ export function createAgentWorkbenchSessionRuntime(dependencies: Partial<AgentWo
             ? (() => {
               const byId = parseMessageSnapshot<Message>(localStorage.getItem(messageStorageKey(session.id)))
               const bySource = parseMessageSnapshot<Message>(localStorage.getItem(messageStorageKey(session.source)))
-              return messageSnapshotToWorkbenchEnvelopes(session.source, byId && byId.length > 0 ? byId : bySource ?? [])
+              return messageSnapshotToWorkbenchEnvelopes(session.source, byId && byId.length > 0 ? byId : bySource ?? [], session.agentId)
             })()
             : []
           replay.collectRowsInto(envelopes, browserSnapshot)
@@ -771,7 +771,7 @@ export function createAgentWorkbenchSessionRuntime(dependencies: Partial<AgentWo
               ? (() => {
                 const byId = parseMessageSnapshot<Message>(localStorage.getItem(messageStorageKey(session.id)))
                 const bySource = parseMessageSnapshot<Message>(localStorage.getItem(messageStorageKey(session.source)))
-                return messageSnapshotToWorkbenchEnvelopes(session.source, byId && byId.length > 0 ? byId : bySource ?? [])
+                return messageSnapshotToWorkbenchEnvelopes(session.source, byId && byId.length > 0 ? byId : bySource ?? [], session.agentId)
               })()
               : []
             replay.collectRowsInto(envelopes, browserSnapshot)

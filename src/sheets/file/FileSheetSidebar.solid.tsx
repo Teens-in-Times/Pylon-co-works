@@ -45,6 +45,7 @@ export default function FileSheetSidebar(props: FileSheetSidebarProps) {
             onClick={() => selectSection(activity.id)}
             title={`${activity.label}：${activity.description}`}
             aria-label={`${activity.label}：${activity.description}`}
+            aria-pressed={selected()?.id === activity.id}
           >
             <span class="file-activity-icon" aria-hidden="true">
               <WorkbenchIcon name={ICON_NAMES[activity.icon]} size={21} />

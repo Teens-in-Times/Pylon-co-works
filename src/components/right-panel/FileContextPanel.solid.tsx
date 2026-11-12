@@ -1,8 +1,12 @@
 /** @jsxImportSource solid-js */
-import { createMemo, For, Show } from 'solid-js'
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore'
-import { useIdentityStore } from '../../domains/identity/identityStore'
-import { sourcesForPath } from '../../domains/file/fileRelations'
+import { useIdentityStore, type Session } from '../../domains/identity/identityStore'
+import { normalizeFilePath, sourcesForPath } from '../../domains/file/fileRelations'
+import { toAgentContextKey } from '../../domains/agent/agentContext.ts'
+import { openOwnedSessionTransaction } from '../../application/transactions/openOwnedSessionTransaction.ts'
+import { activateAgentSheet, isAgentSheetRuntimeReady } from '../../workspace-sheets/activateAgentSheet.ts'
+import { reportRuntimeError } from '../../app/runtimeError.ts'
 import type { SheetContext } from '../../workspace-sheets/sheetTypes'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 
@@ -11,7 +15,7 @@ import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge
  *
  * 读取当前 FileSheet 的 activeFile（metadata），反查所有改动过它的会话
  * （path → sources，Windows 路径统一 normalize）；点击关联会话 → 返回
- * Agent Sheet 并选中该会话。不猜全局 activeSession。
+ * Agent Sheet：先完成 owner 切换，再选会话；失败留在文件页。不猜全局 activeSession。
  *
  * #515 贡献面翻转：Solid 实体。
  * props 形状 = ContextPanelContributionProps（contextPanelTypes 契约）。
@@ -27,30 +31,62 @@ export default function FileContextPanel(props: { ctx: SheetContext }) {
   const touchedFilesRecord = createZustandSignal(useWorkspaceStore, s => s.touchedFiles)
   const relatedSources = createMemo(() => activeFile() ? sourcesForPath(touchedFilesRecord(), activeFile()!) : [])
   const sessions = createZustandSignal(useIdentityStore, s => s.sessions)
-  const activeAgent = createZustandSignal(useIdentityStore, s => s.activeAgent)
+  const relatedEntries = createMemo(() => relatedSources().flatMap<{ source: string; session: Session | undefined }>(source => {
+    const matches = sessions().filter(session => session.source === source
+      && (touchedFilesRecord()[toAgentContextKey(session)] ?? []).some(file => normalizeFilePath(file.path) === normalizeFilePath(activeFile()!)))
+    return matches.length > 0
+      ? matches.map(session => ({ source, session }))
+      : [{ source, session: undefined }]
+  }))
+  const [opening, setOpening] = createSignal(false)
+  const [openError, setOpenError] = createSignal('')
+  const openRelatedSession = async (sessionId: string) => {
+    if (opening()) return
+    setOpening(true)
+    setOpenError('')
+    try {
+      const target = useIdentityStore.getState().sessions.find(session => session.id === sessionId)
+      const opened = await openOwnedSessionTransaction({ targetId: sessionId }, {
+        getSessions: () => useIdentityStore.getState().sessions,
+        activeAgent: target && isAgentSheetRuntimeReady(target.agentId) ? target.agentId : null,
+        addSession: (name, agentId) => useIdentityStore.getState().addSession(name, agentId),
+        updateSession: (id, partial) => useIdentityStore.getState().updateSession(id, partial),
+        switchAgent: async owner => await activateAgentSheet(owner, useIdentityStore.getState().agents.find(agent => agent.id === owner)?.name ?? owner, () => {})
+          ? { ok: true, value: owner } : { ok: false, kind: 'transport', message: 'Agent 尚未就绪，请重试。' },
+        selectSession: id => {
+          const identity = useIdentityStore.getState()
+          const selected = identity.sessions.find(session => session.id === id)
+          if (selected && selected.profileId !== identity.activeProfileId) identity.setActiveProfile(selected.profileId)
+          props.ctx.selectSession(id)
+        },
+        openAgentSheet: ({ title, agentId }) => props.ctx.openSheet({ kind: 'agent', title, agentId }),
+      })
+      if (!opened.ok) {
+        setOpenError(opened.message)
+        reportRuntimeError('打开文件关联会话', opened.message, undefined, { key: `file-related-session:${sessionId}`, source: 'file.context' })
+      }
+    } finally { setOpening(false) }
+  }
 
   return (
     <div class="context-panel-contribution">
       <div class="file-section-title">关联会话（{activeFile() ?? '无文件'}）</div>
+      <Show when={openError()}><p class="file-section-hint" role="alert">{openError()}</p></Show>
       <Show when={activeFile()} fallback={<p class="file-section-hint">打开一个文件后显示改动过它的会话</p>}>
         <Show when={relatedSources().length > 0} fallback={<p class="file-section-hint">暂无会话改动此文件</p>}>
           <ul class="search-result-list">
-            <For each={relatedSources()}>{source => {
-              const session = () => sessions().find(item => item.source === source)
+            <For each={relatedEntries()}>{entry => {
               return (
                 <li>
                   <button
                     type="button"
                     class="search-result-row"
-                    onClick={() => {
-                      props.ctx.selectSession(session()?.id ?? null)
-                      // owner 用会话自己的（不是当前 active Agent）——否则切过 Agent 后会把
-                      // 别人的会话挂到当前 Agent 的 sheet 上（#326 审查顺带发现）。
-                      props.ctx.openSheet({ kind: 'agent', title: session()?.name || source, agentId: session()?.agentId ?? activeAgent() })
-                    }}
+                    disabled={opening() || !entry.session}
+                    title={entry.session ? undefined : '此会话不在当前本地记录中，无法确认归属'}
+                    onClick={() => { if (entry.session) void openRelatedSession(entry.session.id) }}
                   >
-                    <span class="search-result-path">{source}</span>
-                    <span class="search-result-text">{session()?.name ?? '外部会话'}</span>
+                    <span class="search-result-path">{entry.source}</span>
+                    <span class="search-result-text">{entry.session?.name ?? '外部会话'}</span>
                   </button>
                 </li>
               )

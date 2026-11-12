@@ -48,6 +48,16 @@ function renderWidget(view: () => JSX.Element, themePatch: Partial<typeof DEFAUL
 }
 
 describe('Solid Workbench widgets', () => {
+  it('shows an understandable unavailable-model state without exposing an internal sentinel', () => {
+    const services = renderWidget(() => <SolidModelWidget />)
+    services.runtime.replaceDocument(createWorkbenchDocument('preview-session'))
+    services.runtime.update({ availableModels: [], activeModel: '' })
+    const trigger = screen.getByRole('button', { name: '未提供模型' })
+    expect(trigger).toBeDisabled()
+    expect(trigger).toHaveAttribute('title', '该 Agent 未提供模型选项')
+    expect(services.commands.calls).toHaveLength(0)
+  })
+
   it('switching model variants closes stale menus and preserves the dropdown interaction', async () => {
     const services = renderWidget(() => <SolidModelWidget />, { modelSwitchMode: 'menu' })
     fireEvent.click(screen.getByRole('button', { name: /deepseek-v4-flash/ }))
@@ -57,7 +67,7 @@ describe('Solid Workbench widgets', () => {
     services.appearance.setTheme({ ...structuredClone(DEFAULTS), modelSwitchMode: 'cycle' })
     fireEvent.click(screen.getByRole('button', { name: 'deepseek-v4-flash' }))
     await waitFor(() => expect(services.commands.calls).toHaveLength(1))
-    // calls 记录先于 setModel 续体收敛；pending 未落时触发钮显示 '......'，
+    // calls 记录先于 setModel 续体收敛；pending 未落时触发钮显示切换状态，
     // 先等它回到模型名（fake setModel 不改 activeModel，收敛后仍是 flash）。
     await waitFor(() => expect(screen.getByRole('button', { name: 'deepseek-v4-flash' })).toBeTruthy())
     services.appearance.setTheme({ ...structuredClone(DEFAULTS), modelSwitchMode: 'menu' })
@@ -69,7 +79,6 @@ describe('Solid Workbench widgets', () => {
     await waitFor(() => expect(trigger).toHaveFocus())
   })
 
-  // 思考强度已从模型菜单移除，待独立控件接手后恢复
   it('live reasoning sends the advertised config id and renders only confirmed values', async () => {
     const services = renderWidget(() => <SolidReasoningWidget />, { reasoningSwitchMode: 'menu' })
     const publish = (value: string) => {
@@ -81,21 +90,21 @@ describe('Solid Workbench widgets', () => {
     }
     publish('low')
     services.commands.setHandler('setConfigOption', async () => { publish('high'); return { ok: true } })
-    fireEvent.click(screen.getByRole('button', { name: 'low' }))
-    expect(screen.queryByRole('option', { name: 'ultra' })).toBeNull()
-    fireEvent.click(screen.getByRole('option', { name: 'high' }))
+    fireEvent.click(screen.getByRole('button', { name: '轻量思考' }))
+    expect(screen.queryByRole('option', { name: '极高强度' })).toBeNull()
+    fireEvent.click(screen.getByRole('option', { name: '深入思考' }))
     await waitFor(() => expect(services.commands.calls[0]?.args).toEqual([
       'preview-session', 'reasoning_effort', 'high', { expectedValue: 'low', expectedVersion: 7 },
     ]))
     // 同上：calls 记录 ≠ setConfigOption 续体已跑完；等 pending 落下、触发钮显示 'high'。
-    await waitFor(() => expect(screen.getByRole('button', { name: 'high' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: '深入思考' })).toBeTruthy())
     services.commands.setHandler('setConfigOption', async () => ({ ok: false, error: 'reasoning denied' }))
-    fireEvent.click(screen.getByRole('button', { name: 'high' }))
-    fireEvent.click(screen.getByRole('option', { name: 'low' }))
+    fireEvent.click(screen.getByRole('button', { name: '深入思考' }))
+    fireEvent.click(screen.getByRole('option', { name: '轻量思考' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('reasoning denied')
-    expect(screen.getByRole('button', { name: 'high' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '深入思考' })).toBeTruthy()
     services.runtime.replaceDocument(createWorkbenchDocument('preview-session'))
-    expect(screen.queryByRole('button', { name: 'high' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '深入思考' })).toBeNull()
   })
 
   // 写入用的键必须来自 catalog 的 kind 解析，不能写死：provider 给这一项起的 id 不
@@ -109,8 +118,8 @@ describe('Solid Workbench widgets', () => {
         currentValue: 'medium', options: [{ value: 'low' }, { value: 'medium' }, { value: 'high' }] }]),
     } })
     services.commands.setHandler('setConfigOption', async () => ({ ok: true }))
-    fireEvent.click(screen.getByRole('button', { name: 'medium' }))
-    fireEvent.click(screen.getByRole('option', { name: 'high' }))
+    fireEvent.click(screen.getByRole('button', { name: '标准思考' }))
+    fireEvent.click(screen.getByRole('option', { name: '深入思考' }))
     await waitFor(() => expect(services.commands.calls[0]?.args).toEqual([
       'preview-session', 'thinking_effort', 'high', { expectedValue: 'medium' },
     ]))
@@ -125,6 +134,25 @@ describe('Solid Workbench widgets', () => {
 
     await waitFor(() => expect(services.commands.calls[0]?.command).toBe('setModel'))
     expect(services.commands.calls[0]?.args).toEqual(['preview-session', 'deepseek-v4-pro'])
+  })
+
+  it.each(['modern-gui', 'terminal-like'])('%s 选择器键盘聚焦当前项、方向/首尾导航、Escape 回焦', async mode => {
+    renderWidget(() => <div class="app" data-interface-mode={mode}><SolidModelWidget /></div>)
+    const trigger = screen.getByRole('button', { name: 'deepseek-v4-flash' })
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    const current = screen.getByRole('option', { name: 'deepseek-v4-flash' })
+    const next = screen.getByRole('option', { name: 'deepseek-v4-pro' })
+    await waitFor(() => expect(current).toHaveFocus())
+    fireEvent.keyDown(current, { key: 'ArrowDown' })
+    expect(next).toHaveFocus()
+    fireEvent.keyDown(next, { key: 'Home' })
+    expect(current).toHaveFocus()
+    fireEvent.keyDown(current, { key: 'End' })
+    expect(next).toHaveFocus()
+    fireEvent.keyDown(next, { key: 'Escape' })
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(screen.queryByRole('listbox')).toBeNull()
   })
 
   it('空态即使 preset 是 minimal/badge 也强制提供模型与思考等级下拉', async () => {
@@ -154,16 +182,16 @@ describe('Solid Workbench widgets', () => {
       { sessionId: null, agentAdvertisedModels: [{ id: 'kimi-k2', label: 'Kimi K2' }, { id: 'glm-5', label: 'GLM · 5' }] },
     )
     services.runtime.update({ availableModels: [], activeModel: '' })
-    const trigger = await screen.findByRole('button', { name: /kimi-k2/ })
+    const trigger = await screen.findByRole('button', { name: 'Kimi K2' })
     fireEvent.click(trigger)
-    expect(screen.queryByRole('option', { name: 'Kimi K2' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'Kimi K2' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('option', { name: 'GLM · 5' })).toBeTruthy()
     expect(screen.queryByRole('option', { name: 'deepseek-v4-flash' })).toBeNull()
     expect(screen.queryByRole('option', { name: 'deepseek-v4-pro' })).toBeNull()
     services.destroy()
   })
 
-  it('空态无任何宣告数据时降级为空候选，仅保留草稿值且不崩（issue #53 A4）', async () => {
+  it('空态无任何宣告数据时仅保留当前草稿值，不伪造候选（issue #53 A4）', async () => {
     const services = renderWidget(
       () => <SolidModelWidget
         forceDropdown
@@ -175,29 +203,30 @@ describe('Solid Workbench widgets', () => {
     )
     services.runtime.update({ availableModels: [], activeModel: '' })
     fireEvent.click(await screen.findByRole('button', { name: /my-default-model/ }))
-    const menu = screen.getByRole('listbox', { name: '模型列表' })
-    expect([...menu.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual([])
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('option', { name: 'my-default-model' })).toHaveAttribute('aria-selected', 'true')
     services.destroy()
   })
 
-  // 空候选时留一个 8px 空盒 = 用户看到"点了弹出个空的"。占位必须可读且不可交互：
-  // 不是 option（否则会变成可选项）、也不可点。
-  it('模型没有可选项时渲染不可点的占位，而不是空盒子', async () => {
+  it('选择当前模型只收起菜单并还焦点，不发送重复切换', async () => {
+    const change = vi.fn()
     const services = renderWidget(
       () => <SolidModelWidget
         forceDropdown
         draftValue={() => 'my-default-model'}
-        onDraftChange={() => {}}
+        onDraftChange={change}
       />,
       { modelSwitchMode: 'menu' },
       { sessionId: null, agentAdvertisedModels: [] },
     )
     services.runtime.update({ availableModels: [], activeModel: '' })
-    fireEvent.click(await screen.findByRole('button', { name: /my-default-model/ }))
-    const menu = screen.getByRole('listbox', { name: '模型列表' })
-    expect(menu.textContent).toContain('当前 Agent 未上报可选模型')
-    expect(menu.querySelectorAll('[role="option"]')).toHaveLength(0)
-    expect(menu.querySelector('button')).toBeNull()
+    const trigger = await screen.findByRole('button', { name: /my-default-model/ })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('option', { name: 'my-default-model' }))
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(change).not.toHaveBeenCalled()
+    expect(services.commands.calls).toHaveLength(0)
     services.destroy()
   })
 
@@ -231,7 +260,7 @@ describe('Solid Workbench widgets', () => {
     fireEvent.pointerDown(document.body)
     await waitFor(() => expect(screen.queryByRole('listbox', { name: '模型列表' })).toBeNull())
 
-    const modeTrigger = screen.getByRole('button', { name: 'auto' })
+    const modeTrigger = screen.getByRole('button', { name: '自动执行' })
     fireEvent.click(modeTrigger)
     const modeMenu = screen.getByRole('listbox', { name: '权限模式选项' })
     expect(modeMenu).toHaveAttribute('data-popover', 'control-center')
@@ -243,18 +272,18 @@ describe('Solid Workbench widgets', () => {
 
   it('reasoning widget renders menu, filters current value, and cycles', async () => {
     const services = renderWidget(() => <SolidReasoningWidget />, { reasoningSwitchMode: 'menu' })
-    const trigger = screen.getByRole('button', { name: 'none' })
+    const trigger = screen.getByRole('button', { name: '关闭思考' })
     fireEvent.click(trigger)
     const menu = screen.getByRole('listbox', { name: '思考强度选项' })
     expect(menu).toBeTruthy()
-    expect(screen.queryByRole('option', { name: 'none' })).toBeNull()
+    expect(screen.getByRole('option', { name: '关闭思考' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.keyDown(menu, { key: 'Escape' })
     await waitFor(() => expect(trigger).toHaveFocus())
     services.appearance.setTheme({ ...structuredClone(DEFAULTS), reasoningSwitchMode: 'cycle' })
     fireEvent.click(trigger)
     await waitFor(() => expect(services.commands.calls.length).toBeGreaterThan(0))
   })
-  it('切换中按钮显示静态 ...... 且不重复发命令', async () => {
+  it('切换中按钮显示进度且不重复发命令', async () => {
     const services = renderWidget(() => <SolidReasoningWidget />, { reasoningSwitchMode: 'menu' })
     const publish = (value: string) => {
       const document = createWorkbenchDocument('preview-session')
@@ -266,13 +295,13 @@ describe('Solid Workbench widgets', () => {
     publish('low')
     let release: (result: { ok: boolean }) => void = () => {}
     services.commands.setHandler('setConfigOption', () => new Promise(resolve => { release = resolve }))
-    fireEvent.click(screen.getByRole('button', { name: 'low' }))
-    fireEvent.click(screen.getByRole('option', { name: 'high' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '......' })).toBeTruthy())
-    fireEvent.click(screen.getByRole('option', { name: 'high' }))
+    fireEvent.click(screen.getByRole('button', { name: '轻量思考' }))
+    fireEvent.click(screen.getByRole('option', { name: '深入思考' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '切换中…' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('option', { name: '深入思考' }))
     expect(services.commands.calls).toHaveLength(1)
     release({ ok: true })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'low' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: '轻量思考' })).toBeTruthy())
   })
 
   it('空会话草稿态走 onDraftChange 且不发命令', () => {
@@ -282,8 +311,8 @@ describe('Solid Workbench widgets', () => {
       { reasoningSwitchMode: 'menu' },
       { sessionId: '' },
     )
-    fireEvent.click(screen.getByRole('button', { name: 'low' }))
-    fireEvent.click(screen.getByRole('option', { name: 'high' }))
+    fireEvent.click(screen.getByRole('button', { name: '轻量思考' }))
+    fireEvent.click(screen.getByRole('option', { name: '深入思考' }))
     expect(drafts).toEqual(['high'])
     expect(services.commands.calls).toHaveLength(0)
   })
@@ -299,12 +328,12 @@ describe('Solid Workbench widgets', () => {
     expect(screen.getByRole('button', { name: 'deepseek-v4-flash' })).toBeTruthy()
   })
 
-  it('权限控件：本体只显示机器值（不翻译），点击循环 mode', async () => {
+  it('权限控件显示可读名称，点击仍提交原始 mode', async () => {
     const services = renderWidget(() => <SolidModeWidget />, { permissionSwitchMode: 'cycle' })
-    const button = screen.getByRole('button', { name: 'auto' })
+    const button = screen.getByRole('button', { name: '自动执行' })
     expect(button.className).toContain('cc-permission-trigger')
     expect(button.getAttribute('data-mode')).toBe('auto')
-    expect(button.textContent).toBe('auto')
+    expect(button.textContent).toBe('自动执行')
     // 定位定案：排在思考强度右边，中间留 12px（PERMISSION_GAP_PX）
     expect((button.closest('.solid-permission-widget') as HTMLElement).style.marginLeft).toBe('12px')
     fireEvent.click(button)
@@ -312,34 +341,34 @@ describe('Solid Workbench widgets', () => {
     await waitFor(() => expect(services.commands.calls[0]?.args).toEqual(['preview-session', 'bypass']))
   })
 
-  it('权限控件：菜单选项显示机器值（不翻译），不出现中文标签', async () => {
+  it('权限控件：菜单显示可读标签及当前选择', async () => {
     renderWidget(() => <SolidModeWidget />, { permissionSwitchMode: 'menu' })
-    fireEvent.click(screen.getByRole('button', { name: 'auto' }))
+    fireEvent.click(screen.getByRole('button', { name: '自动执行' }))
     expect(screen.getByRole('listbox', { name: '权限模式选项' })).toBeTruthy()
-    expect(screen.getByRole('option', { name: 'bypass' })).toBeTruthy()
-    expect(screen.queryByRole('option', { name: '绕过确认' })).toBeNull()
+    expect(screen.getByRole('option', { name: '跳过确认' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: '自动执行' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('权限控件：permissionTextColor 留空不写 inline color（交语义色），给了颜色则覆盖', () => {
+  it('权限控件保留自定义色供皮肤消费，留空仍由语义色接手', () => {
     renderWidget(() => <SolidModeWidget />, { permissionTextColor: '' })
-    expect(screen.getByRole('button', { name: 'auto' }).style.color).toBe('')
+    expect(screen.getByRole('button', { name: '自动执行' }).style.getPropertyValue('--cc-widget-color')).toBe('')
     cleanup()
     renderWidget(() => <SolidModeWidget />, { permissionTextColor: '#ffffff' })
-    expect(screen.getByRole('button', { name: 'auto' }).style.color).toBe('rgb(255, 255, 255)')
+    expect(screen.getByRole('button', { name: '自动执行' }).style.getPropertyValue('--cc-widget-color')).toBe('#ffffff')
   })
 
-  it('空态 mode 下拉显示机器值且提交 raw auto', async () => {
+  it('空态 mode 下拉显示可读标签且提交原始值', async () => {
     const services = renderWidget(() => <SolidModeWidget
       forceDropdown
       draftValue={() => 'auto'}
       onDraftChange={value => services.runtime.update({ activeMode: value })}
     />)
-    const trigger = screen.getByRole('button', { name: 'auto' })
+    const trigger = screen.getByRole('button', { name: '自动执行' })
     fireEvent.click(trigger)
     expect(screen.getByRole('listbox', { name: '权限模式选项' })).toBeTruthy()
-    expect(screen.getByRole('option', { name: 'bypass' })).toBeTruthy()
-    expect(screen.queryByRole('option', { name: '绕过确认' })).toBeNull()
-    fireEvent.click(screen.getByRole('option', { name: 'bypass' }))
+    expect(screen.getByRole('option', { name: '跳过确认' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: '自动执行' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('option', { name: '跳过确认' }))
     await waitFor(() => expect(services.runtime.getSnapshot().activeMode).toBe('bypass'))
   })
 
@@ -352,7 +381,7 @@ describe('Solid Workbench widgets', () => {
     services.commands.setHandler('setMode', vi.fn(async () => ({ ok: false, error: 'mode denied' })))
 
     fireEvent.click(screen.getByRole('button', { name: 'deepseek-v4-flash' }))
-    fireEvent.click(screen.getByRole('button', { name: 'auto' }))
+    fireEvent.click(screen.getByRole('button', { name: '自动执行' }))
     expect(await screen.findByText('model denied')).toBeTruthy()
     expect(await screen.findByText('mode denied')).toBeTruthy()
   })
@@ -394,5 +423,41 @@ describe('Solid Workbench widgets', () => {
     expect(screen.getByRole('button')).toBeDisabled()
     disabledServices.destroy()
     window.removeEventListener('pylon:solid-input-send', sendEvent)
+  })
+})
+
+
+describe('#728 control request lifecycle', () => {
+  it('reports a thrown model command as a recoverable error', async () => {
+    const services = renderWidget(() => <SolidModelWidget />, { modelSwitchMode: 'menu' })
+    services.commands.setHandler('setModel', async () => { throw new Error('model unavailable') })
+    fireEvent.click(screen.getByRole('button', { name: 'deepseek-v4-flash' }))
+    fireEvent.click(screen.getByRole('option', { name: 'deepseek-v4-pro' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('model unavailable')
+    expect(screen.getByRole('button', { name: 'deepseek-v4-flash' })).toBeEnabled()
+  })
+
+  it('does not close a new session menu or expose an earlier request error after switching away and back', async () => {
+    const [sessionId, setSessionId] = createSignal('session-a')
+    const services = renderWidget(() => <SolidModelWidget />, { modelSwitchMode: 'menu' }, { get sessionId() { return sessionId() } })
+    let resolve!: (value: { ok: boolean; error: string }) => void
+    services.commands.setHandler('setModel', () => new Promise(done => { resolve = done }))
+    fireEvent.click(screen.getByRole('button', { name: 'deepseek-v4-flash' }))
+    fireEvent.click(screen.getByRole('option', { name: 'deepseek-v4-pro' }))
+    setSessionId('session-b')
+    setSessionId('session-a')
+    fireEvent.click(screen.getByRole('button', { name: 'deepseek-v4-flash' }))
+    resolve({ ok: false, error: 'stale error' })
+    await Promise.resolve()
+    expect(screen.getByRole('listbox', { name: '模型列表' })).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows a stop failure in the initiating session input state', async () => {
+    const services = renderWidget(() => <SolidCcSendButton mode="inline" />)
+    services.runtime.update({ generating: true })
+    services.commands.setHandler('cancel', async () => { throw new Error('stop unavailable') })
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }))
+    await waitFor(() => expect(services.sessionUi.get('preview-session', 'input-error', '')).toBe('stop unavailable'))
   })
 })

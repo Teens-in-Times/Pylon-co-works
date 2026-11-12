@@ -97,7 +97,7 @@ describe('TS-WI02 production addSession owner wiring', () => {
     resetStores()
     capturedDeps.length = 0
     // 预置一个不同的 activeAgent：若接线丢弃 agentId，store 将回退到它，断言即红
-    useIdentityStore.setState({ activeAgent: 'agent-active' })
+    useIdentityStore.setState({ activeAgent: 'agent-active', agents: [{ id: 'agent-active', name: 'Active Agent', provider: 'ACP' }] })
   })
 
   it('OverviewSheetView：恢复存档入口注入的 addSession 透传 agentId', async () => {

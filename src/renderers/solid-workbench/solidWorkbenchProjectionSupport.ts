@@ -1,5 +1,4 @@
 import { selectActivityDisplayOrder, type WorkbenchActivityNode, type WorkbenchDocument, type WorkbenchInteraction } from '../../domains/workbench/workbenchProjector.ts'
-import type { ContentPart } from '../../domains/workbench/content/contentPartSchema.ts'
 import type { LifecycleState } from '../../domains/workbench/lifecycle/lifecycleModel.ts'
 import type { Message } from '../../domains/chat/messageTypes.ts'
 export function canonicalTokenCount(
@@ -111,7 +110,7 @@ export function toSolidMessage(message: WorkbenchDocument['messages'][number]): 
   const wrapped: Message = {
     id: message.id,
     role: message.role === 'user' ? 'user' : message.role === 'reasoning' ? 'reasoning' : 'assistant',
-    sender: message.source.provider,
+    sender: message.role === 'user' ? 'user' : message.source.provider,
     content: message.content,
     time: message.time,
     running: message.running,
@@ -122,7 +121,7 @@ export function toSolidMessage(message: WorkbenchDocument['messages'][number]): 
     redacted: message.redacted,
     redactedReason: message.redactedReason,
     semanticParts: message.parts,
-  } as Message & { semanticParts: readonly ContentPart[] }
+  }
   solidMessageCache.set(message, wrapped)
   return wrapped
 }

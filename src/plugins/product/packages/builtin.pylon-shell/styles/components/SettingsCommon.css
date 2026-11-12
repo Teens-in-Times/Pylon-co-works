@@ -4,9 +4,9 @@
   --settings-subtle: var(--surface-panel);
   --settings-border: var(--stroke-subtle);
   --settings-shadow: var(--shadow-float);
-  --settings-radius-lg: var(--ui-radius-lg);
-  --settings-radius-md: var(--ui-radius-md);
-  --settings-radius-sm: var(--ui-radius-sm);
+  --settings-radius-lg: 4px;
+  --settings-radius-md: 2px;
+  --settings-radius-sm: 2px;
   color: var(--text);
 }
 
@@ -75,7 +75,7 @@
 .settings-section-description { margin: 4px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
 .settings-badge {
   flex: 0 0 auto; padding: 4px 9px; border: 1px solid var(--settings-border);
-  border-radius: var(--ui-radius-pill); background: var(--settings-subtle); color: var(--text-dim);
+  border-radius: 2px; background: var(--settings-subtle); color: var(--text-dim);
   font: 11px/1.2 var(--mono);
 }
 
@@ -95,16 +95,22 @@ textarea.settings-control { resize: vertical; line-height: 1.6; }
 select.settings-control { cursor: pointer; }
 select.settings-control option { background: var(--global-bg-color); color: var(--text); }
 
-.settings-action {
+.settings-action,
+.ps-btn {
   min-height: 34px; padding: 7px 14px; border: 1px solid var(--settings-border);
   border-radius: var(--settings-radius-sm); background: var(--settings-subtle); color: var(--text);
   font: 13px/1 var(--font); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard);
 }
-.settings-action:hover { background: var(--bg-hover); border-color: var(--border-focus); }
-.settings-action.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
+.settings-action:hover,
+.ps-btn:hover { background: var(--bg-hover); border-color: var(--border-focus); }
+.settings-action.primary,
+.ps-btn.primary { color: var(--text-on-accent); background: var(--accent); border-color: var(--accent); }
 .settings-action.danger { color: var(--state-danger); border-color: color-mix(in srgb, var(--state-danger) 38%, var(--settings-border)); background:var(--state-danger-surface); }
-.settings-action:disabled { opacity: .42; cursor: not-allowed; }
-.settings-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings-action:disabled,
+.ps-btn:disabled { opacity: .42; cursor: not-allowed; }
+.settings-action:focus-visible,
+.ps-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ps-btn.sm { min-height:30px; padding:5px 10px; font-size:12px; }
 
 .settings-dialog-footer {
   display: flex; align-items: center; justify-content: space-between; gap: 18px;

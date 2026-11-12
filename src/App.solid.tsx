@@ -11,6 +11,7 @@ import { IS_TAURI, isBrowserMockRuntime } from './infrastructure/tauri/env'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { tauriInvokeTransport } from './infrastructure/acp/tauriTransport.ts'
 import { appClients } from './app/appClients.ts'
+import { registerAgentSessionSelection } from './app/agentSessionSelection.ts'
 import { reportRuntimeError, resolveRuntimeErrors } from './app/runtimeError'
 import { sheetHasLeftColumn } from './workspace-sheets/sheetSidebarState.ts'
 import {
@@ -50,6 +51,7 @@ import { createActiveInterfaceModeContribution } from './infrastructure/state/so
 import { InterfaceModeSceneHost } from './sheets/interfaceModeScenes.solid.tsx'
 import { drainPersistentStateBeforeClose } from './app/lifecycle/drainPersistentStateBeforeClose.ts'
 import { useRightRailStore } from './domains/workspace/layoutRailsStore.ts'
+import { resolveRailLayout } from './domains/workspace/railLayout.ts'
 import { readPersistedApprovalMode } from './domains/permission/approvalMode.ts'
 import { restoreApprovalModeFromBackendAuthority } from './domains/permission/approvalModeRestore.ts'
 import { openOrFocusSettingsSheet } from './sheets/settingsSheetNavigation.ts'
@@ -124,36 +126,57 @@ export default function App() {
   const [sessionSettingsId, setSessionSettingsId] = createSignal<string | null>(null)
   const [showSheetLauncher, setShowSheetLauncher] = createSignal(false)
   // W1-03（F2-B）：左栏折叠/宽度真值源是 domains/workspace/layoutRailsStore（预设不覆盖布局），App 只读
-  const sidebarWidth = createZustandSignal(useRightRailStore, s => s.leftRailWidth)
+  const preferredSidebarWidth = createZustandSignal(useRightRailStore, s => s.leftRailWidth)
   const workspaceSheets = createZustandSignal(useWorkspaceStore, s => s.workspaceSheets)
   // active Sheet 的左栏模式同时决定折叠按钮能力与 TitleBar 左侧轨道宽度。
   const activeSheet = createMemo(() => workspaceSheets().sheets.find(sheet => sheet.id === workspaceSheets().activeSheetId))
-  const sidebarCollapsed = createZustandSignal(useRightRailStore, s => s.leftRailCollapsed)
+  const preferredSidebarCollapsed = createZustandSignal(useRightRailStore, s => s.leftRailCollapsed)
+  const preferredRightCollapsed = createZustandSignal(useRightRailStore, s => s.collapsed)
+  const preferredRightWidth = createZustandSignal(useRightRailStore, s => s.width)
   const showSidebar = createZustandSignal(useThemeStore, s => s.showSidebar !== false)
   // #154：左列是否存在以「注册表真的提供 sidebar 组件」为准，而不是只看 sidebarMode。
   // 后者会让「声明 'sheet' 但把左栏画在自己内容区里」的 Sheet 也空占一条标题栏轨道，
   // 那条轨道自画的边框由此与左列自己的边框错开（浏览器 Sheet 实测错开 84px）。
   // 主题级 showSidebar 一并计入，否则标题栏会为被主题隐藏的左栏保留轨道。
   const sidebarEnabled = createMemo(() => !!sheetHasLeftColumn(activeSheet()) && showSidebar() !== false)
-  const rightPanelEnabled = createMemo(() => {
-    const sheet = activeSheet()
-    if (!sheet) return false
-    return selectContextPanels(contextPanelSnapshot().entries, {
-      workspaceKind: sheet.kind,
-      sheetId: sheet.id,
-      activeSessionId: activeSession(),
-    }).length > 0
-  })
   const agents = createZustandSignal(useIdentityStore, s => s.agents)
   // #326：空串 = 没有 Agent（零 Agent 首跑）。不再回落硬编码 'peri'——那会凭空造出一个
   // 不存在的 Agent（sheet 聚焦、权限切片、会话归属都按它算）。
   const activeAgent = createZustandSignal(useIdentityStore, s => s.activeAgent)
+  const rightPanelEnabled = createMemo(() => {
+    const sheet = activeSheet()
+    return selectContextPanels(contextPanelSnapshot().entries, {
+      workspaceKind: sheet?.kind,
+      sheetId: sheet?.id ?? null,
+      activeSessionId: activeSession(),
+      activeAgent: activeAgent(),
+    }).length > 0
+  })
+  const [viewportWidth, setViewportWidth] = createSignal(window.innerWidth)
+  const [railPriority, setRailPriority] = createSignal<'left' | 'right'>('left')
+  const updateViewportWidth = () => setViewportWidth(window.innerWidth)
+  window.addEventListener('resize', updateViewportWidth)
+  onCleanup(() => window.removeEventListener('resize', updateViewportWidth))
+  const railLayout = createMemo(() => resolveRailLayout({
+    viewportWidth: viewportWidth(), leftEnabled: sidebarEnabled(), rightEnabled: rightPanelEnabled(),
+    leftCollapsed: preferredSidebarCollapsed(), rightCollapsed: preferredRightCollapsed(),
+    leftWidth: preferredSidebarWidth(), rightWidth: preferredRightWidth(), priority: railPriority(),
+  }))
+  const sidebarCollapsed = () => railLayout().leftCollapsed
+  const sidebarWidth = () => railLayout().leftWidth
+  const toggleRail = (side: 'left' | 'right') => {
+    const layout = railLayout()
+    const collapsed = side === 'left' ? layout.leftCollapsed : layout.rightCollapsed
+    if (collapsed && !(side === 'left' ? layout.canExpandLeft : layout.canExpandRight)) return
+    setRailPriority(side)
+    const store = useRightRailStore.getState()
+    if (side === 'left') store.setLeftRailCollapsed(!collapsed)
+    else store.setCollapsed(!collapsed)
+  }
   let prevActiveAgent = activeAgent()
 
   onMount(() => {
-    const clearActiveSession = () => setActiveSession(null)
-    window.addEventListener('pylon:agent-switched', clearActiveSession)
-    onCleanup(() => window.removeEventListener('pylon:agent-switched', clearActiveSession))
+    onCleanup(registerAgentSessionSelection(setActiveSession))
   })
 
   // 施工文档 §5.3：ErrorCenter/Overview 的恢复按钮经窗口事件打开现有 Settings /
@@ -347,7 +370,10 @@ export default function App() {
         sidebarCollapsed: sidebarCollapsed(),
         sidebarEnabled: sidebarEnabled(),
         rightPanelEnabled: rightPanelEnabled(),
-        onToggleSidebar: () => useRightRailStore.getState().setLeftRailCollapsed(!sidebarCollapsed()),
+        rightPanelCollapsed: railLayout().rightCollapsed,
+        sidebarCanExpand: railLayout().canExpandLeft,
+        rightPanelCanExpand: railLayout().canExpandRight,
+        onToggleSidebar: () => toggleRail('left'),
         onFocusSheet: (id: string) => useWorkspaceStore.getState().focusSheet(id),
         onCloseSheet: (id: string) => { void closeWorkspace(id) },
         menuActions: {
@@ -358,7 +384,7 @@ export default function App() {
           onReopen: () => useWorkspaceStore.getState().reopenSheet(),
         },
         onOpenSheet: () => setShowSheetLauncher(true),
-        onToggleRightPanel: () => useRightRailStore.getState().setCollapsed(!useRightRailStore.getState().collapsed),
+        onToggleRightPanel: () => toggleRail('right'),
         // 齿轮菜单的设置域项是唯一设置入口：幂等开/聚焦（ADR-0013）；关闭走页签（#195）。
         onOpenSettingsDomain: (domain: SettingsDomainId) => { openOrFocusSettingsSheet({ domain }) },
         interfaceMode: interfaceMode(),
@@ -398,6 +424,7 @@ export default function App() {
 
       {/* W1-03：布局段下移 SheetLayout（侧栏壳/主区/右栏壳 + profile 投影 effects） */}
       <SheetLayout
+        railLayout={railLayout()}
         activeSession={activeSession()}
         onSelectSession={setActiveSession}
         onProfileEdit={() => setShowProfileEdit(true)}

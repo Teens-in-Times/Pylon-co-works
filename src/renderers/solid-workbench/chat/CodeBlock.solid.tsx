@@ -3,13 +3,14 @@ import { Show, createEffect, createResource, createSignal, onCleanup, onMount, u
 import { findOversizeFoldPoint } from '../../../domains/rendererContent/textContentContracts.ts'
 import { highlightCode } from '../../../domains/chat/codeHighlight.ts'
 import { scheduleHighlightJob, trackCodeBlockVisibility } from './codeBlockDomLifecycle.ts'
+import { createCopyFeedback } from '../../../utils/copyFeedback.ts'
 
 export interface SolidCodeBlockProps {
   code: string
   language?: string
   /** 超过此行数折叠（默认 400）；折叠后完整文本仍可复制 */
   maxLines?: number
-  onCopy?: (text: string) => void
+  onCopy?: (text: string) => void | Promise<void>
   showLanguage?: boolean
   showCopyButton?: boolean
   wrap?: 'soft' | 'none'
@@ -23,8 +24,9 @@ export interface SolidCodeBlockProps {
  * - copy 是显式用户动作，不自动执行。
  */
 export function SolidCodeBlock(props: SolidCodeBlockProps) {
-  const [copied, setCopied] = createSignal(false)
-  let copiedTimer: number | undefined
+  const { copied, markCopied } = createCopyFeedback()
+  const [copyError, setCopyError] = createSignal('')
+  const [copying, setCopying] = createSignal(false)
 
   // #208：默认折叠保留（超大块不默认全渲，这是它存在的理由），但折叠不再是死路——
   // 「复制获取全部内容」是唯一出口时，长思考/长回答在界面上被静默截断，用户读不到。
@@ -127,12 +129,22 @@ export function SolidCodeBlock(props: SolidCodeBlockProps) {
     releaseLifecycle?.()
   })
 
-  const copy = () => {
-    if (props.onCopy) props.onCopy(props.code)
-    else void navigator.clipboard?.writeText(props.code).catch(() => {})
-    setCopied(true)
-    window.clearTimeout(copiedTimer)
-    copiedTimer = window.setTimeout(() => setCopied(false), 2000)
+  const copy = async () => {
+    if (copying()) return
+    setCopying(true)
+    setCopyError('')
+    try {
+      if (props.onCopy) await props.onCopy(props.code)
+      else {
+        if (!navigator.clipboard) throw new Error('剪贴板不可用')
+        await navigator.clipboard.writeText(props.code)
+      }
+      if (!disposed) markCopied()
+    } catch {
+      if (!disposed) setCopyError('复制失败，请重试或选中代码复制。')
+    } finally {
+      if (!disposed) setCopying(false)
+    }
   }
 
   return (
@@ -145,10 +157,12 @@ export function SolidCodeBlock(props: SolidCodeBlockProps) {
             class="term-code-copy"
             aria-label={copied() ? '已复制' : '复制代码'}
             data-copy-text={props.code}
-            onClick={copy}
+            disabled={copying()}
+            onClick={() => void copy()}
           >{copied() ? '✓' : '⎘'}</button></Show>
         </div>
       </Show>
+      <Show when={copyError()}>{message => <div class="px-2 py-1 text-sm text-danger" role="status">{message()}</div>}</Show>
       <Show when={isMultiLine()} fallback={<code class="term-inline-code">{props.code}</code>}>
         <pre class="term-code-body" style={{ 'white-space': props.wrap === 'none' ? 'pre' : 'pre-wrap' }}><code>{lines().map((line, index) => (
           <span class="term-code-line">

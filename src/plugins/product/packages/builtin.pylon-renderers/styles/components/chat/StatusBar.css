@@ -1,20 +1,7 @@
-/* ── StatusBar ── */
-
-/* ★ #266 CC-29：等宽 pill 那段已删 —— 类名在生产代码里零命中（CC-07 刀12 曾把它当正控保住，是错的；
-   该正控已在本单换成下面那条真活的规则）。 */
-
-/* 权限模式控件（S10 重构）：本体只显示后端机器值（不翻译）。
-   颜色＝[data-mode] 语义色；当 permissionTextColor 不是 'mode' 时，
-   组件会写 inline color 覆盖以下规则（内联样式优先级高于本文件）。
-
-   ★ 语义色四条**必须带槽位作用域前缀**（2026-09-23 修）：WorkbenchChrome.css 里那条
-   `.solid-workbench-control-center-slot :is(.cc-permission-trigger, …) { color: var(--text-dim) }`
-   的特异度是 (0,2,0)，与本文件不加前缀的 `[data-mode]` 四条**同分**，而它更靠后加载
-   ⇒ 语义色此前**从未生效**（一直显示灰色）。加前缀后四条升到 (0,3,0) > (0,2,0) ⇒ 语义色胜。
-   hover / aria-expanded 那条（同 (0,3,0)、更靠后）仍照旧覆盖颜色，故悬停反馈不受影响。
-   前缀安全性：权限控件只在中控里渲染，而中控根节点自己就带这个类（含设置页预览，同一组件）。 */
+/* Permission retains the raw mode for semantic coloring; labels are localized.
+   Explicit widget colors apply in classic/tactical and customization views. */
 .cc-permission-trigger { display:flex; align-items:center; justify-content:center; box-sizing:border-box; border:none; padding:0; cursor:pointer; font-family:var(--mono); color:inherit; }
-.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="bypass"] { color:var(--tool-err,#FF6B80); }
-.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="auto"]   { color:var(--mode-auto-color,#FFC107); }
-.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="edit"]   { color:var(--mode-edit-color,#A2A9E4); }
-.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="default"]{ color:var(--text-dim,#999); }
+.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="bypass"] { color:var(--cc-widget-color,var(--tool-err)); }
+.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="auto"] { color:var(--cc-widget-color,var(--mode-auto-color)); }
+.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="edit"] { color:var(--cc-widget-color,var(--mode-edit-color)); }
+.solid-workbench-control-center-slot .cc-permission-trigger[data-mode="default"] { color:var(--cc-widget-color,var(--text-dim)); }

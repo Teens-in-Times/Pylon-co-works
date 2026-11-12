@@ -76,10 +76,9 @@ describe('Settings Agent onboarding', () => {
     mountSettingsSheet({ domain: 'agents-connections', section: 'agent' })
 
     await screen.findByTestId('agent-runtime-panel')
-    expect(screen.getByText('尚未配置 Agent')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '当前 Agent 概况' })).toBeNull()
     expect(screen.queryByText('peri')).toBeNull()
-    expect(screen.getByText('状态：未配置')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重新连接' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '重新连接' })).toBeNull()
     // 结构化新建入口照常可用（引导落点）
     expect(screen.getByTestId('agent-runtime-panel')).toBeInTheDocument()
   })

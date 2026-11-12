@@ -79,3 +79,28 @@ describe('MessageSearchBar', () => {
     expect(nextButtons[1]).toBeDisabled()
   })
 })
+
+
+test('composition keys do not navigate or close search', () => {
+  const { onNext, onClose } = setup()
+  const input = screen.getByRole('textbox', { name: '搜索消息' })
+  fireEvent.compositionStart(input)
+  fireEvent.keyDown(input, { key: 'Enter' })
+  fireEvent.keyDown(input, { key: 'Escape' })
+  expect(onNext).not.toHaveBeenCalled()
+  expect(onClose).not.toHaveBeenCalled()
+  fireEvent.compositionEnd(input)
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(onNext).toHaveBeenCalledOnce()
+})
+
+test('no-match keyboard navigation behaves like disabled navigation buttons', () => {
+  const onNext = vi.fn()
+  const onPrevious = vi.fn()
+  render(() => <MessageSearchBar query="missing" matchIndex={0} matchCount={0} onQueryChange={vi.fn()} onNext={onNext} onPrevious={onPrevious} onClose={vi.fn()} />)
+  const input = screen.getByRole('textbox', { name: '搜索消息' })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+  expect(onNext).not.toHaveBeenCalled()
+  expect(onPrevious).not.toHaveBeenCalled()
+})

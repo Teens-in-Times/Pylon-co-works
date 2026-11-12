@@ -86,6 +86,65 @@ function factory(id: string, options: { delay?: number; fail?: boolean; mountFai
 }
 
 describe('RendererSuiteHost', () => {
+  it('keeps the renderer mount root connected for post-ready DOM updates', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    let mountRoot!: HTMLElement
+    const host = new RendererSuiteHost({ container, hostPort: fakeHost(), input })
+    await host.mount(activation('suite.root', {
+      async prepare() {
+        return {
+          mount(root) {
+            mountRoot = root
+            root.textContent = 'initial'
+            return {
+              update: value => { root.textContent = value.sessionId },
+              pause() {}, resume() {}, destroy: () => root.replaceChildren(),
+              on(event, listener) { if (event === 'ready') listener(undefined); return () => {} },
+            }
+          },
+        }
+      },
+    }))
+    expect(mountRoot.isConnected).toBe(true)
+    host.update({ ...input, sessionId: 'updated session' })
+    expect(container.textContent).toBe('updated session')
+    await host.destroy()
+    expect(mountRoot.isConnected).toBe(false)
+    container.remove()
+  })
+
+  it('ignores a superseded preparation rejection after a newer suite commits', async () => {
+    let rejectPrepare!: (error: unknown) => void
+    const pendingPrepare = new Promise<never>((_, reject) => { rejectPrepare = reject })
+    const container = document.createElement('div')
+    const port = fakeHost()
+    const diagnostic = vi.spyOn(port.diagnostics, 'report')
+    const host = new RendererSuiteHost({ container, hostPort: port, input })
+    await host.mount(activation('suite.a', factory('A')))
+    const stale = host.switchTo(activation('suite.b', { prepare: () => pendingPrepare }))
+    await host.switchTo(activation('suite.c', factory('C')))
+    rejectPrepare(new Error('late preparation failure'))
+    await stale
+    expect(host.getState()).toMatchObject({ phase: 'active', suiteId: 'suite.c' })
+    expect(container.textContent).toContain('C')
+    expect(diagnostic).not.toHaveBeenCalled()
+    await host.destroy()
+  })
+
+  it('does not revive a destroyed host when an initial preparation rejects late', async () => {
+    let rejectPrepare!: (error: unknown) => void
+    const pendingPrepare = new Promise<never>((_, reject) => { rejectPrepare = reject })
+    const container = document.createElement('div')
+    const host = new RendererSuiteHost({ container, hostPort: fakeHost(), input })
+    const mounting = host.mount(activation('suite.a', { prepare: () => pendingPrepare }))
+    await host.destroy()
+    rejectPrepare(new Error('late failure'))
+    await mounting
+    expect(host.getState().phase).toBe('destroyed')
+    expect(container.childElementCount).toBe(0)
+  })
+
   it('keeps old Suite visible until candidate ready, then swaps and destroys old', async () => {
     const container = document.createElement('div')
     const host = new RendererSuiteHost({ container, hostPort: fakeHost(), input })

@@ -6,6 +6,7 @@ import { useModalOverlayStore } from '../app/modalOverlayStore'
 import { getPermissionController } from '../infrastructure/acp/permissionController'
 import { activeForAgent } from '../domains/permission/permissionState.ts'
 import { resolvePermissionButtons } from '../domains/permission/permissionButtons.ts'
+import { createDialogFocus } from './ui/dialogFocus'
 import ElicitationRequestCard from './ElicitationRequestCard.solid.tsx'
 import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
 
@@ -32,7 +33,7 @@ import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts
  * （浏览器 WebView2，否则审批按钮被原生页面吃掉点击）；关闭/卸载回 false。
  */
 const OVERLAY = 'fixed inset-0 z-[200] flex items-center justify-center bg-[rgba(0,0,0,0.3)]'
-const DIALOG = 'min-w-[320px] max-w-[480px] p-4 border border-border rounded-none bg-[var(--surface-overlay)] shadow-[var(--shadow-float)] text-text font-[family-name:var(--font)]'
+const DIALOG = 'w-[min(480px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto p-4 border border-border rounded-none bg-[var(--surface-overlay)] shadow-[var(--shadow-float)] text-text font-[family-name:var(--font)]'
 const TITLE = 'font-semibold text-md mb-2'
 const META = 'font-mono text-[11px] text-text-dim mb-2 break-all'
 const PROMPT = 'text-[13px] text-text bg-bg-input border border-border rounded-none px-2.5 py-2 mb-3 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-words'
@@ -68,6 +69,12 @@ export default function PermissionDialog() {
     getPermissionController()?.abandon(requestId)
   }
 
+  let dialogRef: HTMLDivElement | undefined
+  createDialogFocus(() => dialogRef, active, () => {
+    const current = active()
+    if (current) onAbandon(current.request.requestId)
+  })
+
   return (
     <Show when={active()} keyed>
       {current => {
@@ -76,16 +83,12 @@ export default function PermissionDialog() {
         const buttons = resolvePermissionButtons(request)
         return (
           <div
+            ref={node => { dialogRef = node }}
             class={OVERLAY}
             role="dialog"
             aria-modal="true"
             aria-label="工具权限请求"
-            onKeyDown={event => {
-              if (event.key === 'Escape') {
-                event.preventDefault()
-                onAbandon(request.requestId)
-              }
-            }}
+
           >
             <div class={DIALOG}>
               <div class={TITLE}>

@@ -1,7 +1,7 @@
 //! `pylon-docs://` 资源协议：离线文档站（VitePress dist）的磁盘解析与响应（#371）。
 //!
 //! 与 `pylon-plugin` 先例的两处刻意差异：
-//! - **root 是 bundle 资源目录**（`resource_dir()/docs-site`），不是用户数据目录——
+//! - **root 是 bundle 资源目录**（`resource_dir()/resources/docs-site`），不是用户数据目录——
 //!   插件装进用户数据，文档站随包分发；
 //! - **clean URL 回退**：VitePress 站内链接无 `.html` 后缀（SPA 客户端路由不发起
 //!   请求，但初始加载/刷新/历史恢复会），按 exact → +".html" → +"/index.html"
@@ -21,13 +21,28 @@ pub(crate) enum DocsResourceError {
     NotFound,
 }
 
-/// 资源根：发行包内 `resources/docs-site/`。Tauri 的资源拷贝在打包态落 exe 旁、
-/// dev 态落 target 目录，`resource_dir()` 两者兼顾。
+/// bundle.resources 保留 `resources/docs-site` 相对路径；resource_dir() 只定位
+/// bundle 根（Windows 为 exe 所在目录），不会自动包含 resources 这一层。
 pub(crate) fn docs_site_root(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resource_dir()
-        .map(|dir| dir.join("docs-site"))
+        .map(|dir| docs_site_root_at(&dir))
         .map_err(|e| format!("resource dir unavailable: {e}"))
+}
+
+fn docs_site_root_at(resource_dir: &Path) -> PathBuf {
+    resource_dir.join("resources").join("docs-site")
+}
+
+/// 创建原生 WebView 前确认入口可读；缺少资源时由宿主错误页提供重试，
+/// 不能把成功创建空 WebView 当成文档站就绪。
+pub(crate) fn ensure_docs_site_available(root: &Path) -> Result<(), String> {
+    let entry = resolve_docs_asset(root, "/index.html")
+        .map_err(|_| "离线文档资源不完整：缺少 resources/docs-site/index.html".to_string())?;
+    let mut file =
+        std::fs::File::open(entry).map_err(|error| format!("无法读取离线文档入口：{error}"))?;
+    file.read_exact(&mut [0])
+        .map_err(|error| format!("离线文档入口为空或无法读取：{error}"))
 }
 
 /// percent-decode 单个路径段序列。拒绝编码后的分隔符与 NUL——它们只该以原始
@@ -216,6 +231,57 @@ mod tests {
         std::fs::write(dir.join("manual/release-package.html"), "<html>rp</html>").unwrap();
         std::fs::write(dir.join("manual/index.html"), "<html>manual</html>").unwrap();
         dir
+    }
+
+    #[test]
+    fn bundle_and_dev_resources_serve_from_the_preserved_resources_directory() {
+        for layout in ["portable", "target/debug"] {
+            let fixture = fixture_root("bundle-layout");
+            let resource_dir = fixture.join(layout);
+            let packaged_site = resource_dir.join("resources/docs-site");
+            std::fs::create_dir_all(packaged_site.join("assets")).unwrap();
+            std::fs::write(
+                packaged_site.join("index.html"),
+                "<html>packaged docs</html>",
+            )
+            .unwrap();
+            std::fs::write(
+                packaged_site.join("assets/docs.js"),
+                "export const docs = true",
+            )
+            .unwrap();
+            // A stale directory at the old location must never shadow the packaged site.
+            std::fs::create_dir_all(resource_dir.join("docs-site")).unwrap();
+            std::fs::write(resource_dir.join("docs-site/index.html"), "stale docs").unwrap();
+
+            let root = docs_site_root_at(&resource_dir);
+            ensure_docs_site_available(&root).unwrap();
+            for (path, expected) in [
+                ("/index.html", "<html>packaged docs</html>"),
+                ("/assets/docs.js", "export const docs = true"),
+            ] {
+                let response = docs_resource_response_at(
+                    &root,
+                    Request::builder().uri(path).body(Vec::new()).unwrap(),
+                );
+                assert_eq!(response.status(), StatusCode::OK, "{layout}: {path}");
+                assert_eq!(response.body(), expected.as_bytes());
+            }
+            std::fs::remove_dir_all(fixture).unwrap();
+        }
+    }
+
+    #[test]
+    fn missing_or_empty_entry_fails_preflight_and_can_be_retried_after_repair() {
+        let fixture = fixture_root("availability");
+        let root = docs_site_root_at(&fixture);
+        assert!(ensure_docs_site_available(&root).is_err());
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("index.html"), "").unwrap();
+        assert!(ensure_docs_site_available(&root).is_err());
+        std::fs::write(root.join("index.html"), "<html>repaired docs</html>").unwrap();
+        ensure_docs_site_available(&root).unwrap();
+        std::fs::remove_dir_all(fixture).unwrap();
     }
 
     #[test]

@@ -39,6 +39,7 @@ describe('SkinPreviewBar（S5-D）', () => {
     const { runtime, draft } = setup()
 
     render(() => <SkinPreviewBar runtime={runtime} />)
+    fireEvent.click(screen.getByText('高级调整'))
     fireEvent.input(screen.getByLabelText('Skin patch JSON'), {
       target: { value: '{"tokens":{"accent":"#ff0000"}}' },
     })

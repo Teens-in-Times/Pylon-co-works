@@ -111,6 +111,7 @@ export class RendererSuiteHost {
     }))
     const staging = this.options.container.ownerDocument.createElement('div')
     staging.dataset.rendererSuiteStaging = activation.suite.value.id
+    staging.className = 'flex h-full min-h-0 min-w-0 flex-1 flex-col'
     staging.style.display = 'none'
     this.options.container.append(staging)
     let prepared: PreparedWorkbenchRenderer | undefined
@@ -130,6 +131,7 @@ export class RendererSuiteHost {
       failurePhase = 'mount'
       const mountedInput = this.currentInput
       instance = await prepared.mount(staging, mountedInput, candidateHost)
+      if (request !== this.requestId || this.destroyed) throw new StaleSuiteRequest()
       candidateUnsubscribeError = instance.on('error', error => {
         if (this.destroyed) return
         if (!candidateCommitted) {
@@ -172,8 +174,10 @@ export class RendererSuiteHost {
         }
         void executeRendererSemanticCommand({ command: action, host: candidateHost, mountInput: this.currentInput })
       })
-      this.options.container.replaceChildren(...Array.from(staging.childNodes))
-      staging.remove()
+      // The renderer retains the exact root passed to mount for future inserts
+      // and cleanup. Moving only its children would strand those operations.
+      staging.style.removeProperty('display')
+      this.options.container.replaceChildren(staging)
       this.active = {
         activation, instance, gate, staging,
         unsubscribeError: candidateUnsubscribeError,
@@ -195,7 +199,7 @@ export class RendererSuiteHost {
       candidateUnsubscribeAction()
       if (instance) await this.safeDestroy(instance)
       staging.remove()
-      if (error instanceof StaleSuiteRequest) return
+      if (error instanceof StaleSuiteRequest || request !== this.requestId || this.destroyed) return
       this.publish(createRendererSuiteHostState(old ? 'active' : 'degraded', { suiteId: old?.activation.suite.value.id, previousSuiteId: activation.suite.value.id, registryRevision: activation.revision, documentRevision: this.options.hostPort.document.getSnapshot()?.revision, error }))
       this.options.hostPort.diagnostics.report({ code: 'renderer.suite.switch.failed', message: errorMessage(error), phase: failurePhase, recoverability: old ? 'none' : 'retry', suiteId: activation.suite.value.id, oldSuiteId: old?.activation.suite.value.id, newSuiteId: activation.suite.value.id, registryRevision: activation.revision, documentRevision: this.options.hostPort.document.getSnapshot()?.revision })
     }

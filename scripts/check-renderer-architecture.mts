@@ -3,16 +3,11 @@
  *
  * 规则来源：施工卡 A17「架构门禁与清理」步骤 1–3 + DIC-A17-01。
  * - R1 Solid/Suite 禁 import React、Zustand controller、provider adapter、canonical repository、Tauri client
- *   （#515 批7 起 SolidWorkbenchSmokeHost 已 Solid 化，React-host 豁免特判退役——与
- *   check-solid-workbench-boundaries 同口径，包类黑名单对 smoke host 与测试一并不豁免；
- *   仅路径类规则保留 __tests__ 豁免，测试可用宿主模块构造 fixture 对照）
+ *   包依赖约束覆盖测试，路径约束仅针对生产消费者。
  * - R2 projector（src/domains/workbench）禁 import renderer/plugin/settings 层
  * - R3 renderer 不解析 raw tool name：solid-workbench/host 禁 import normalizers/raw 字典源
  * - R4 production 只能经 Suite Host 进入 Solid：非 Suite 路径禁止 mount SolidWorkbenchApp
- * - M1 suite completeness matrix：active Suite 必须声明 compatibility/requiredKinds/optionalKinds/factory；
- *   每个 catalog kind 必须有 fallbackKind 且最终可达 content.unknown
- * - C16 coverage 门禁（DIC-A17-01）：inventory 里 not-transported 不得被计为已覆盖（由 vitest 门禁锁定，
- *   此处校验 inventory 文件存在且行数与字典口径一致）
+ * Catalog fallback 与 provider coverage 由实际定义的行为测试验证，不解析源码片段。
  *
  * 每条规则先以故意违规 fixture 证明失败，再删 fixture 证明通过（卡 TDD 要求）。
  */
@@ -33,7 +28,7 @@ const SCOPE_IMPORT_RULES = [
     roots: ['src/renderers/solid-workbench', 'src/host/renderer-suite'],
     forbiddenPackages: [
       'react', 'react-dom', 'zustand', 'motion/react', 'lucide-react', 'react-markdown',
-      '@testing-library/react',
+      '@testing-library/react', '@tauri-apps',
     ],
     forbiddenPathIncludes: [
       'components/chat/sessionRuntimeStore', // Zustand controller（旧 slices 权威）
@@ -120,45 +115,9 @@ for (const root of r4Roots) {
   }
 }
 
-// ── M1 suite completeness matrix ─────────────────────────────────────────
-
-try {
-  // 前端结构全修批（PR #455）把 coverage 台账迁到测试侧（`__tests__/coverage/`）——
-  // 台账是测试自有数据，门禁跟随新落点读。
-  const coverageIndex = await readFile(resolve(projectRoot, 'src/domains/workbench/__tests__/coverage/providerCoverageIndex.ts'), 'utf8')
-  if (!coverageIndex.includes('EXPECTED_UNITS')) {
-    violations.push('[M1/C16] providerCoverageIndex.ts 缺少 EXPECTED_UNITS 口径常量')
-  }
-  for (const expected of [44, 46, 31]) {
-    if (!coverageIndex.includes(String(expected))) {
-      violations.push(`[M1/C16] EXPECTED_UNITS 缺字典口径 ${expected}`)
-    }
-  }
-} catch {
-  violations.push('[M1/C16] coverage inventory 不存在（C16 交付物缺失）')
-}
-
-// catalog fallback 终局检查：每个 kind 的 fallbackKind 链必须可达 content.unknown
-try {
-  const textCatalog = await readFile(resolve(projectRoot, 'src/domains/rendererContent/textRenderKindCatalog.ts'), 'utf8')
-  const execCatalog = await readFile(resolve(projectRoot, 'src/domains/rendererContent/executionRenderKindCatalog.ts'), 'utf8')
-  for (const [name, source] of [['textRenderKindCatalog', textCatalog], ['executionRenderKindCatalog', execCatalog]]) {
-    const ids = [...source.matchAll(/id:\s*'([\w.-]+)'/g)].map(m => m[1]).filter(id => id.includes('.'))
-    const kindsWithoutFallback = ids.filter(id => !id.startsWith('content.unknown'))
-    if (kindsWithoutFallback.length > 0) {
-      const noFallbackField = kindsWithoutFallback.filter(id => {
-        const defStart = source.indexOf(`id: '${id}'`)
-        const seg = source.slice(defStart, defStart + 600)
-        return !seg.includes('fallbackKind')
-      })
-      if (noFallbackField.length > 0) {
-        violations.push(`[M1] ${name} 以下 kind 未声明 fallbackKind: ${noFallbackField.join(', ')}`)
-      }
-    }
-  }
-} catch (error) {
-  violations.push(`[M1] catalog 读取失败：${error.message}`)
-}
+// Catalog fallback paths and provider coverage are exercised against actual definitions
+// by rendererContent and workbench/coverage behavior tests. Source substring/line-window
+// checks duplicated those tests and could pass merely because a nearby entry had the field.
 
 // ── 结果 ──────────────────────────────────────────────────────────────────
 
@@ -166,4 +125,4 @@ if (violations.length > 0) {
   console.error(`A17 渲染器架构门禁失败：\n${violations.map(item => `- ${item}`).join('\n')}`)
   process.exit(1)
 }
-console.log('A17 渲染器架构门禁通过：R1–R4 import rules、Suite completeness、C16 coverage 口径全部合规')
+console.log('A17 渲染器架构门禁通过：R1–R4 import rules 合规；catalog/coverage 由行为测试验证')

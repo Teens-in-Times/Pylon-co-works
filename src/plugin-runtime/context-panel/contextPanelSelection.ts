@@ -9,19 +9,17 @@ const reportedWhenFailures = new WeakSet<NonNullable<ContextPanelRegistryEntry['
 /**
  * 当前上下文下**可以显示**的右栏面板（chrome、布局槽与宿主共用同一条选择器）。
  *
- * 只按 `when` 闸门过滤，**不再按 `workspaceKind` 过滤**：后者曾把右栏内容锁死在 Sheet
- * 种类上（agent Sheet 只有「上下文」、file Sheet 只有「关联」），于是一个面板的 Sheet 连
- * 切换器都凑不出来（用户实机报「侧栏内部没有切换栏种类的按钮」）。现在种类只决定
- * **自动选中谁**（见 `resolveContextPanelDefault`），用户想切到哪一类都能切。
- *
- * `when` 仍是硬闸门：它是插件表达「此刻这个面板根本没有意义」的手段（例如无会话时不显示），
- * 与「适不适合这个 Sheet」是两回事，两者不该混成一条轴。
+ * `workspaceKind` 表达默认选中的亲和性；可用性由 `when` 声明，不由宿主猜测。
+ * 内置上下文/文件关联通过 `when` 限定匹配工作区，插件可提供跨工作区的面板。
+ * 没有活动 Sheet 时只保留显式 global 贡献，避免无意义的上下文空壳占宽。
  */
 export function selectContextPanels(
   entries: readonly ContextPanelRegistryEntry[],
   context: ContextPanelContributionContext,
 ): readonly ContextPanelRegistryEntry[] {
   return entries.filter(entry => {
+    // With no active Sheet only explicitly global contributions have a context to render.
+    if (context.sheetId === null && entry.value.scope !== 'global') return false
     try {
       return entry.value.when?.(context) ?? true
     } catch (error) {

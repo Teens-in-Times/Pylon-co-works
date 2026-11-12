@@ -39,11 +39,7 @@ description: 对 Pylon 做「实机运行验收」——把改动装进真实 Ta
   #238 第③件已有人踩过：启动的二进制里嵌的是反向验证阶段的 `dist/`，发现后重建重跑才有效。
   自检手法：在页面里 `document.styleSheets` 读 CSSOM 文本，核对**这一轮刚改过的那些选择器**在不在
   （而不是只看界面像不像）。
-- ★ **渲染器层（`src/renderers/**`）的类型检查只在 `check:solid`，`bun run build` 的 `tsc -b` 不覆盖它。**
-  改渲染器的类型回归（例：引用一个已删的快照字段）**`tsc -b` 绿、`check:solid` 红** ——
-  `check:solid` 里那步是 `tsc -p tsconfig.solid.json`。刀7 实测：`ControlCenter.solid.tsx` 上一处
-  `Property 'ccScale' does not exist on type 'WorkbenchAppearanceSnapshot'` 在 `tsc -b` 下 EXIT=0，
-  只有 `check:solid` 抓得到。⇒ 动过 `src/renderers/**` 就**必须**跑 `check:solid`，别只看 build。
+- **前端类型检查已统一。** `bun run check:types` 与 `bun run build` 覆盖所有 TS/TSX（含渲染器）。长期插件/分层/样式契约由 `check:architecture` 负责，已包含在 `check:frontend` 与 CI 静态链。独立 `check:solid`、`tsconfig.solid.json` 与迁移 smoke 入口已随 #728 退役。
 - **`display:none` 会移动 grid 兄弟。** `.workspace-titlebar` 一类是三列 grid，移除一个 grid item 会让后面的兄弟前移一列（实测菜单 957/997/1037 → 4/44/84）。要「不占空间但保留格位」用 `width:0 + padding:0 + border:0 + visibility:hidden`。
 - **宽度 0 挡不住键盘焦点。** `width:0` 只裁像素；子元素自己的 `visibility` 规则还能覆盖父级，于是「不可见」的按钮仍 `focusable`。折叠态要同时处理继承与焦点。
 - **别顺手点。** 这些工具会真实改动 app 状态。只在验收需要时操作，不拿正在被人使用的实例当试验场；写路径能到单测与事件序列断言为止就不要到真机。

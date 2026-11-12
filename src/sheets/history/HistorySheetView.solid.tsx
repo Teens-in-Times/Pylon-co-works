@@ -8,31 +8,17 @@ import { useIdentityStore } from '../../domains/identity/identityStore'
 import { createStandardSwitchAgent, openOwnedSessionTransaction } from '../../application/transactions/openOwnedSessionTransaction'
 import { useReplayPostureStore } from '../../domains/chat/replayPostureStore'
 import { pagePersistedSessions, validateExportPath } from '../../domains/overview/persistedHistory.ts'
-import { type PersistedSessionSummary } from '../../domains/overview/persistedSessions.ts'
+import { normalizePersistedSessions, type PersistedSessionSummary } from '../../domains/overview/persistedSessions.ts'
+import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes'
 
-/**
- * HistorySheetView — 存档会话列表 + 导出（W4-01）+ 回放入口（W4-02，#279 第 1 梯队
- * Solid 化实体）。
- *
- * list_persisted_sessions 分页/排序（复用 overview normalize）；导出经 save 对话框
- * 取绝对路径 → export_session（预检路径绝对；目标文件已存在错误明确展示，后端权威）。
- * W4-02（姿态二拍板）：行「回放」复用 Overview resumeSession 机制（找/建 identity 行）
- * → 进入只读姿态 → 开 agent sheet；消息 load 由 agentWorkbenchLifecycle 承担（legacy React ChatView 已退役）
- * （load_persisted_session，listener 先于 load），姿态下无输入面直至点击继续。
- * 行为与 React 版逐行同构：错误上报 key/scope、OWNER-02 归属解析、I01-W4 owner-aware 打开。
- *
- * 样式绞杀（P93）：utility 类串原样携带；`history-sheet/history-sidebar(-total)/
- * history-row` 类名保留为 workspace adaptive.css（modern-gui 模式覆写）的锚点。
- */
-// #116 子项 2：同 Search——缺 flex-1 时按内容宽度收缩（实测 394×988）。
-const SHEET = 'history-sheet flex flex-1 min-w-0 overflow-hidden text-text font-[family-name:var(--font)]'
+/** Agent-owned archive browsing, filtering, read-only replay and local export. */
+const SHEET = 'history-sheet flex flex-1 min-w-0 overflow-hidden bg-surface-raised text-text font-[family-name:var(--font)]'
 // #154：左列几何归布局层的 .sidebar（见 SearchSheetView.solid 同处说明）；本类只管内容样式。
-const SIDEBAR = 'sidebar history-sidebar flex flex-col py-[var(--ui-space-5)] px-3 bg-[color-mix(in_srgb,var(--bg-panel)_72%,transparent)]'
-const SIDEBAR_HEAD = 'grid gap-2 mx-2 mb-4 pb-4 border-b border-border'
-const SIDEBAR_HEAD_SPAN = 'text-accent font-bold text-[10px] leading-[1] font-[family-name:var(--mono)] tracking-[.14em]'
+const SIDEBAR = 'sidebar history-sidebar flex flex-col py-[var(--ui-space-5)] px-3 bg-surface-panel'
+const SIDEBAR_HEAD = 'grid gap-2 mx-2 mb-4 pb-4 border-b border-stroke-subtle'
 const SIDEBAR_HEAD_STRONG = 'text-[15px]'
-const SIDEBAR_TOTAL = 'history-sidebar-total flex items-center gap-2 mb-3 p-3 text-text-dim border border-border text-[11px]'
+const SIDEBAR_TOTAL = 'history-sidebar-total flex items-center gap-2 mb-3 px-2 py-1 text-text-dim text-[12px]'
 const SIDEBAR_TOTAL_SVG = 'text-accent'
 const SIDEBAR_TOTAL_STRONG = 'text-text font-bold text-[14px] font-[family-name:var(--mono)]'
 const NAV = 'grid gap-[3px]'
@@ -40,21 +26,20 @@ const NAV_BTN_INVARIANT = 'flex items-center gap-2 min-h-[var(--ui-control-compa
 const NAV_BTN = `${NAV_BTN_INVARIANT} border border-transparent border-l-[3px] border-l-transparent bg-transparent text-text-dim enabled:hover:text-text enabled:hover:border-border enabled:hover:border-l-accent enabled:hover:bg-bg-hover`
 const NAV_BTN_ACTIVE = `${NAV_BTN_INVARIANT} border border-border border-l-[3px] border-l-accent bg-[color-mix(in_srgb,var(--accent)_10%,var(--bg-active))] text-text font-[650] enabled:hover:bg-bg-hover`
 const NAV_BTN_DISABLED_EXTRA = 'opacity-40 cursor-not-allowed'
-const SIDEBAR_FOOT = 'mt-auto pt-4 px-3 pb-0 border-t border-border text-text-dim font-[family-name:var(--mono)] text-[10px]'
-const MAIN = 'flex-1 min-w-0 max-w-[1120px] py-[var(--ui-space-6)] px-[clamp(var(--ui-space-5),4vw,var(--ui-space-7))] overflow-y-auto max-[720px]:py-[var(--ui-space-5)] max-[720px]:px-4'
-const KICKER = 'font-mono text-[11px] font-[650] tracking-[.12em] text-accent'
-const MAIN_TITLE = 'mt-1 mb-5 text-text text-[24px] font-bold tracking-[-.025em]'
+const SIDEBAR_FOOT = 'mt-auto pt-4 px-3 pb-0 border-t border-stroke-subtle text-text-dim text-[12px]'
+const MAIN = 'flex-1 min-w-0 max-w-[1120px] mx-auto py-[var(--ui-space-6)] px-[clamp(var(--ui-space-5),4vw,var(--ui-space-7))] overflow-y-auto max-[720px]:py-[var(--ui-space-5)] max-[720px]:px-4'
+const MAIN_TITLE = 'mt-1 mb-2 text-text text-[26px] font-semibold tracking-[-.025em]'
 const TREE_ERROR = 'm-1 mb-4 p-2 border rounded-[var(--ui-radius-sm)] text-[12px] text-[var(--state-danger)] bg-[var(--state-danger-surface)] border-[color-mix(in_srgb,var(--state-danger)_34%,var(--stroke-default))]'
 const HINT = 'text-[12px] text-text-dim'
 const PAGER_HINT = 'min-w-[56px] px-2 text-text-dim font-mono text-[11px] leading-[var(--ui-control-compact)] text-center'
-const RESULT_LIST = 'grid gap-2 m-0 p-0 list-none'
-const RESULT_ITEM = 'border border-border rounded-none bg-bg-panel transition-[border-color,background-color] duration-[120ms] hover:border-border-focus hover:bg-bg-hover'
-const ROW = 'history-row flex flex-wrap items-center gap-3 min-h-[var(--ui-control-emphasis)] px-3 py-2'
+const RESULT_LIST = 'grid gap-0 border-t border-stroke-subtle m-0 p-0 list-none'
+const RESULT_ITEM = 'border-b border-stroke-subtle last:border-b-0 bg-transparent transition-colors duration-[120ms] hover:bg-bg-hover'
+const ROW = 'history-row flex flex-wrap items-center gap-3 min-h-[60px] px-4 py-3'
 const ROW_PATH = 'flex-1 min-w-0 overflow-hidden text-text text-[13px] font-semibold truncate max-[720px]:basis-[calc(100%-var(--ui-space-3))] max-[720px]:whitespace-normal max-[720px]:[overflow-wrap:anywhere]'
 const ROW_TEXT = 'shrink-0 max-w-[40%] text-text-dim font-mono text-[11px] whitespace-nowrap max-[720px]:mr-auto'
-const ROW_BTN_NEUTRAL = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 border border-border rounded-none text-text-dim bg-bg-input cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-bg-hover disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
-const ROW_BTN_ACCENT = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 rounded-none cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] border border-[color-mix(in_srgb,var(--accent)_45%,var(--border))] text-accent bg-[color-mix(in_srgb,var(--accent)_9%,transparent)] enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
-const PAGER_BTN = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 border border-border rounded-none text-text-dim bg-bg-input cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-bg-hover disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+const ROW_BTN_NEUTRAL = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 border border-stroke-subtle rounded-[3px] text-text-dim bg-transparent cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-bg-hover disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+const ROW_BTN_ACCENT = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 rounded-[3px] cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] border border-accent-edge text-accent bg-accent-soft enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+const PAGER_BTN = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 border border-stroke-subtle rounded-[3px] text-text-dim bg-transparent cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-bg-hover disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 
 export interface HistorySheetViewProps {
   sheet: SheetRecord
@@ -66,17 +51,35 @@ export default function HistorySheetView(props: HistorySheetViewProps) {
   const [page, setPage] = createSignal(1)
   const [exportError, setExportError] = createSignal('')
   const [replayError, setReplayError] = createSignal('')
+  const [loading, setLoading] = createSignal(true)
+  const [loadFailed, setLoadFailed] = createSignal(false)
+  const [refresh, setRefresh] = createSignal(0)
+  const [query, setQuery] = createSignal('')
+  const agentId = createZustandSignal(useIdentityStore, state =>
+    state.agents.some(agent => agent.id === state.activeAgent) ? state.activeAgent : '',
+  )
 
   createEffect(() => {
     const sheetId = props.sheet.id
+    const owner = agentId()
+    refresh()
     let disposed = false
+    setRaw(null)
+    setPage(1)
+    setLoading(!!owner)
+    setLoadFailed(false)
+    if (!owner) return
     const client = appClients.session()
     client.listPersistedSessions().then(value => {
       if (!disposed) {
         setRaw(value)
+        setLoading(false)
         resolveRuntimeErrors({ key: `history:${sheetId}:list` })
       }
     }).catch(error => {
+      if (disposed) return
+      setLoading(false)
+      setLoadFailed(true)
       if (!disposed) reportRuntimeError('读取存档会话', error, undefined, {
         key: `history:${sheetId}:list`,
         scope: { kind: 'sheet', id: sheetId },
@@ -86,7 +89,11 @@ export default function HistorySheetView(props: HistorySheetViewProps) {
     onCleanup(() => { disposed = true })
   })
 
-  const paged = createMemo(() => pagePersistedSessions(raw(), page()))
+  const allEntries = createMemo(() => normalizePersistedSessions(raw()))
+  const paged = createMemo(() => {
+    const needle = query().trim().toLocaleLowerCase()
+    return pagePersistedSessions(allEntries().filter(entry => !needle || `${entry.title ?? ''} ${entry.source ?? ''} ${entry.id}`.toLocaleLowerCase().includes(needle)), page())
+  })
   const sidebarPages = createMemo(() => {
     const current = paged()
     const start = Math.max(1, Math.min(current.page - 3, current.pages - 6))
@@ -161,7 +168,7 @@ export default function HistorySheetView(props: HistorySheetViewProps) {
   return (
     <div class={SHEET}>
       <aside class={SIDEBAR} aria-label="存档导航">
-          <div class={SIDEBAR_HEAD}><span class={SIDEBAR_HEAD_SPAN}>HISTORY</span><strong class={SIDEBAR_HEAD_STRONG}>存档导航</strong></div>
+          <div class={SIDEBAR_HEAD}><strong class={SIDEBAR_HEAD_STRONG}>存档导航</strong></div>
           <div class={SIDEBAR_TOTAL}><LucideIcon name="Archive" size={16} class={SIDEBAR_TOTAL_SVG} /><span><strong class={SIDEBAR_TOTAL_STRONG}>{paged().total}</strong> 个存档</span></div>
           <Show when={paged().pages > 1}>
             <nav class={NAV} aria-label="存档分页">
@@ -172,9 +179,19 @@ export default function HistorySheetView(props: HistorySheetViewProps) {
           </Show>
           <div class={SIDEBAR_FOOT}>第 {paged().page} / {paged().pages} 页</div>
         </aside>
-      <main class={MAIN}>
-        <div class={KICKER}>HISTORY</div>
+      <main class={MAIN} aria-busy={loading()}>
         <h2 class={MAIN_TITLE}>存档会话（{paged().total}）</h2>
+        <p class="m-0 mb-6 text-[13px] leading-relaxed text-text-dim">回看已保存的对话，或将记录导出到本地。</p>
+        <div class="mb-5 flex items-center gap-3">
+          <label class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[3px] border border-stroke-subtle bg-transparent px-3 focus-within:border-accent">
+            <LucideIcon name="Search" size={15} class="shrink-0 text-text-dim" />
+            <input type="search" aria-label="筛选存档" placeholder="按名称或来源筛选…" value={query()} onInput={event => { setQuery(event.currentTarget.value); setPage(1) }} class="w-full min-w-0 border-0 bg-transparent text-[13px] text-text outline-none" />
+          </label>
+          <button type="button" class={PAGER_BTN} disabled={loading() || !agentId()} onClick={() => setRefresh(value => value + 1)} aria-label="刷新存档"><LucideIcon name="RefreshCw" size={15} /></button>
+        </div>
+        <Show when={loading()}><p class={HINT} role="status">正在读取存档…</p></Show>
+        <Show when={loadFailed()}><div class="mb-4 border border-border p-4" role="status"><p class={HINT}>读取存档失败，详情见右下角错误中心。</p><button type="button" class={`${PAGER_BTN} mt-3`} onClick={() => setRefresh(value => value + 1)}>重新加载存档</button></div></Show>
+        <Show when={!loading() && !loadFailed() && paged().total === 0}><div class="border-t border-stroke-subtle px-0 py-6 text-text-dim" role="status"><h3 class="mb-2 text-sm font-semibold text-text">{query().trim() ? '没有匹配的存档' : '还没有存档会话'}</h3><p class={HINT}>{query().trim() ? '换一个名称或来源关键词，或清空筛选查看全部存档。' : '完成的会话会显示在这里，可随时回放或导出。'}</p><Show when={!agentId()}><button type="button" class={`${ROW_BTN_ACCENT} mt-4`} onClick={() => window.dispatchEvent(new CustomEvent('pylon:open-settings', { detail: { domain: 'agents-connections', section: 'agent' } }))}>连接 Agent</button></Show></div></Show>
         <Show when={exportError()}>
           <div class={TREE_ERROR} role="alert">{exportError()}{exportError().includes('归属不明') && <button type="button" onClick={() => props.ctx.openProfileEdit()}>打开 Agent 设置</button>}</div>
         </Show>

@@ -13,6 +13,7 @@ const navButton = 'inline-flex items-center justify-center shrink-0 w-[var(--ui-
  * Esc=关闭。 */
 export default function MessageSearchBar(props: MessageSearchBarProps) {
   let inputRef: HTMLInputElement | undefined
+  let composing = false
 
   onMount(() => {
     inputRef?.focus()
@@ -30,9 +31,13 @@ export default function MessageSearchBar(props: MessageSearchBarProps) {
         ref={element => { inputRef = element }}
         value={props.query}
         onInput={event => props.onQueryChange(event.currentTarget.value)}
+        onCompositionStart={() => { composing = true }}
+        onCompositionEnd={() => { composing = false }}
         onKeyDown={event => {
+          if (composing || event.isComposing || event.keyCode === 229) return
           if (event.key === 'Enter') {
             event.preventDefault()
+            if (props.matchCount === 0) return
             if (event.shiftKey) props.onPrevious()
             else props.onNext()
           }

@@ -40,7 +40,7 @@ function extractManualAnchors(): string[] {
     join(root, 'docs/说明书/Pylon-插件系统说明书-开发者版.md'),
     'utf8',
   )
-  const section = source.match(/### 6\.2 Hooks[\s\S]*?```text\n([\s\S]*?)```/)
+  const section = source.match(/### 6\.2 Hooks[\s\S]*?```text\r?\n([\s\S]*?)```/)
   if (!section) fail('开发者手册缺少「### 6.2 Hooks」下的 ```text 词表块')
   const anchors = section![1]!
     .split('\n')

@@ -113,7 +113,7 @@ export function SolidToolInvocationCard(props: {
       <span class="term-tool-name">{displayName()}</span>
       <Show when={providerName()}>{value => <span class="term-tool-summary term-tool-summary-code"> ({value()})</span>}</Show>
       <Show when={summary()}>{value => <span class={`term-tool-summary${toolSummaryUsesCodeFont(renderModel().kind) ? ' term-tool-summary-code' : ''}`}> ({value()})</span>}</Show>
-      <span class="term-tool-suffix"> — {presentation().label}</span>
+      <span class="term-tool-state-label"> — {presentation().label}</span>
       <Show when={duration()}>{value => <span class="term-tool-duration"> · {value()}</span>}</Show>
     </button>
     <Show when={collapse.open()}>

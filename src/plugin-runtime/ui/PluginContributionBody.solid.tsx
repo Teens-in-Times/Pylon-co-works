@@ -29,7 +29,7 @@ type PluginContributionRef<P extends Record<any, any>> = FirstPartyContributionR
  *
  * 宿主只剩**数据投影**：first-party 的 props 工厂、isolated 的 wire 输入工厂与事件
  * 分诊、各宿主的 DOM 挂载 class；分发（isolated ? IsolatedPluginSurface :
- * Suspense+Dynamic）、surfaceId 缺失守卫、错误边界与 keyed 粒度全部收进本实体。
+ * Suspense）、装配完整性校验、错误边界与 keyed 粒度全部收进本实体。
  */
 export interface PluginContributionBodyProps<P extends Record<any, any>> {
   /** Runtime diagnostics 归因与错误占位 key（边界 fallback 上报用）。 */
@@ -49,9 +49,7 @@ export interface PluginContributionBodyProps<P extends Record<any, any>> {
   /** isolated 表面事件分诊（bridge.emit 回传）。 */
   readonly onSurfaceEvent?: (event: string, detail: unknown) => void
   /**
-   * Suspense fallback；缺省 `null`——现状最常见（Sidebar / AgentSheetPageHost /
-   * ContextPanelHost / WorkspaceTitlebar 四宿主均为 null；PluginSettingsPageHost
-   * 传自己的加载态文案）。
+   * Suspense fallback；缺省显示简短加载状态。宿主可传入具体上下文文案。
    */
   readonly suspenseFallback?: JSX.Element
   /**
@@ -70,18 +68,18 @@ export interface PluginContributionBodyProps<P extends Record<any, any>> {
 
 /**
  * PluginContributionBody — 插件贡献体统一挂载实体（#520 S4-P1-5：7 个宿主各自手写的
- * `PluginContributionBoundary + (isolated ? IsolatedPluginSurface : Suspense+Dynamic)`
+ * `PluginContributionBoundary + (isolated ? IsolatedPluginSurface : Suspense)`
  * 分发块的收敛真源）。
  *
- * 语义即各宿主现状的并集：isolated-surface 走 IsolatedPluginSurface（surfaceId 缺失
- * 渲染空）；first-party 组件包 Suspense（fallback 可配，默认 null）经 typed 直挂；
+ * isolated-surface 走 IsolatedPluginSurface；装配缺项进入可重试错误边界。
+ * first-party 组件包 Suspense（fallback 可配）经 typed 直挂；
  * 缺省套 PluginContributionBoundary（policy 见该实体）。实体名保留 "Body"：外壳
  * （标题/头部/tablist 等）仍归宿主，这里只负责贡献体的分发与边界。
  */
 export function PluginContributionBody<P extends Record<any, any>>(props: PluginContributionBodyProps<P>) {
   const renderArms = (contribution: PluginContributionRef<P>) => {
     if (contribution.renderKind === 'isolated-surface') {
-      if (!contribution.surfaceId) return null
+      if (!contribution.surfaceId) throw new Error(`插件贡献 ${props.contributionId} 缺少 surfaceId`)
       return (
         <IsolatedPluginSurface
           surfaceId={contribution.surfaceId}
@@ -91,16 +89,14 @@ export function PluginContributionBody<P extends Record<any, any>>(props: Plugin
         />
       )
     }
-    // first-party 贡献必须提供 props 工厂；缺省视为宿主装配错误，渲染空而不是拿
-    // 空 props 硬挂组件。装配错误必须在开发期可见（复查 P1：静默空白不可接受）。
+    // A broken host assembly must reach the same visible boundary as plugin failures.
     const componentProps = props.componentProps
     if (!componentProps) {
-      console.warn(`[PluginContributionBody] first-party 贡献缺少 componentProps 工厂：${props.contributionId}（宿主装配错误，渲染为空）`)
-      return null
+      throw new Error(`插件贡献 ${props.contributionId} 缺少 componentProps 工厂`)
     }
     const Contribution: Component<P> = contribution.component
     return (
-      <Suspense fallback={props.suspenseFallback}>
+      <Suspense fallback={props.suspenseFallback ?? <div role="status" class="px-3 py-2 text-sm text-content-muted">正在加载插件界面…</div>}>
         <Contribution {...componentProps()} />
       </Suspense>
     )

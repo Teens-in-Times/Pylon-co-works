@@ -1,4 +1,6 @@
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes.ts'
+import type { ShellContext } from '../../plugin-runtime/context-panel/contextPanelTypes.ts'
+import type { RailLayout } from '../../domains/workspace/railLayout.ts'
 
 // ── right-panel 域共享 props 类型（纯类型、零 JSX 的中立落点，
 //    实体间互不把对方的 JSX 拉进自己的编译面）──
@@ -25,12 +27,15 @@ export interface ContextPanelHostProps {
   sheet: SheetRecord
   ctx: SheetContext
   activePanelId?: string | null
+  /** Use the actual shell context even when rendering a global panel with a virtual Sheet. */
+  shellContext?: ShellContext
 }
 
 /**
  * RightRailHost 的 props。
  */
 export interface RightRailHostProps {
+  railLayout?: RailLayout
   sheet: SheetRecord | null
   ctx: SheetContext
   activeAgent?: string

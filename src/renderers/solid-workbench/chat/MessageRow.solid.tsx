@@ -10,6 +10,8 @@ import { createCollapsiblePresenter } from './CollapsiblePresenter.solid.tsx'
 import { createFrameTask } from '../frameTask.ts'
 import { createCopyFeedback } from '../../../utils/copyFeedback.ts'
 import { formatMessageClock } from '../../../domains/chat/messageTime.ts'
+import { LucideIcon } from '../../../components/LucideIcon.solid.tsx'
+import { Check, Copy } from 'lucide'
 
 /** 头像缩写：取显示名的首个字符（`Array.from` 按码点切，避免拆开 emoji/代理对）。 */
 export function avatarInitials(name: string): string {
@@ -102,6 +104,10 @@ export function AssistantContent(props: {
   semanticContent?: JSX.Element
 }) {
   const { copied, markCopied } = createCopyFeedback()
+  const [copyError, setCopyError] = createSignal('')
+  const [copying, setCopying] = createSignal(false)
+  let disposed = false
+  onCleanup(() => { disposed = true })
   const [completionPhase, setCompletionPhase] = createSignal<'idle' | 'settling' | 'complete'>('idle')
   let wasStreaming = props.streaming === true
   let completed = false
@@ -139,15 +145,26 @@ export function AssistantContent(props: {
   })
   onCleanup(clearMotionTimers)
 
-  const copy = () => {
-    void navigator.clipboard?.writeText(props.text).catch(() => {})
-    markCopied()
+  const copy = async () => {
+    if (copying()) return
+    setCopying(true)
+    setCopyError('')
+    try {
+      if (!navigator.clipboard) throw new Error('当前环境无法访问剪贴板')
+      await navigator.clipboard.writeText(props.text)
+      if (!disposed) markCopied()
+    } catch {
+      if (!disposed) setCopyError('复制失败，请重试或选中文字复制。')
+    } finally {
+      if (!disposed) setCopying(false)
+    }
   }
 
   const clock = () => formatMessageClock(props.time)
 
   return (
     <div class={`term-assistant${props.appearance.assistantDot ? ' has-dot' : ''}`}>
+      <Show when={!props.appearance.assistantDot}><span class="term-assistant-role-mark" aria-hidden="true"><LucideIcon name="Bot" size={16} strokeWidth={1.7} /></span></Show>
       <Show when={props.appearance.assistantDot}>
         <Show
           when={props.appearance.assistantDotImage}
@@ -162,8 +179,11 @@ export function AssistantContent(props: {
           {value => <time class="term-row-time" datetime={props.time}>{value()}</time>}
         </Show>
       </div>
-      <button class="copy-btn" type="button" onClick={copy} aria-label="复制消息">{copied() ? '✓' : '⎘'}</button>
+      <button class="copy-btn" type="button" onClick={() => void copy()} disabled={copying()} aria-label={copied() ? '已复制消息' : '复制消息'} title={copied() ? '已复制' : '复制消息'}>
+        <Show when={copied()} fallback={<LucideIcon name="Copy" node={Copy} size={14} strokeWidth={1.7} />}><LucideIcon name="Check" node={Check} size={14} strokeWidth={1.7} /></Show>
+      </button>
       <div class="term-assistant-body">
+        <Show when={copyError()}>{message => <div class="text-sm text-danger" role="status">{message()}</div>}</Show>
         <Show when={props.semanticContent !== undefined} fallback={<MarkdownContent text={props.text} streaming={props.streaming} />}>
           {props.semanticContent}
         </Show>
@@ -188,7 +208,7 @@ function UserLine(props: {
 }) {
   const name = () => props.appearance.userName
     || props.resolveUserName?.(props.sender)
-    || props.sender.replace(/^.*:/, '')
+    || (props.sender === 'user' ? '你' : props.sender.replace(/^.*:/, ''))
   const colorStyle = () => props.appearance.userColor ? { color: props.appearance.userColor } : undefined
   const clock = () => formatMessageClock(props.time)
 
@@ -320,6 +340,7 @@ export function ReasoningBlock(props: {
       <Show when={state() !== 'redacted' && state() !== 'missing'} fallback={
         // redacted/missing：无 body 可展开，原因作为可见说明文本
         <div class="term-reasoning-head term-reasoning-static">
+          <span class="term-reasoning-icon" aria-hidden="true"><LucideIcon name="Sparkles" size={14} strokeWidth={1.6} /></span>
           <span class="term-reasoning-label" aria-live={props.running ? 'polite' : undefined}>{label()}</span>
           <Show when={props.redacted && props.redactedReason}>
             {reason => <span class="term-reasoning-reason">{reason()}</span>}
@@ -327,8 +348,9 @@ export function ReasoningBlock(props: {
         </div>
       }>
         <button class="term-reasoning-head" type="button" onClick={collapse.toggle} aria-expanded={collapse.open()} aria-controls={collapse.bodyId}>
+          <span class="term-reasoning-icon" aria-hidden="true"><LucideIcon name="Sparkles" size={14} strokeWidth={1.6} /></span>
           <span class="term-reasoning-label" aria-live={props.running ? 'polite' : undefined}>{label()}</span>
-          <span class="term-reasoning-toggle" aria-hidden="true">{collapse.open() ? '−' : '+'}</span>
+          <span class="term-reasoning-toggle" aria-hidden="true"><Show when={collapse.open()} fallback={<LucideIcon name="ChevronRight" size={13} strokeWidth={1.6} />}><LucideIcon name="ChevronDown" size={13} strokeWidth={1.6} /></Show></span>
         </button>
         <SolidCollapsibleRegion open={collapse.open()} id={collapse.bodyId}>
           {/* C01 步骤4：正文复用 C00 markdown 管线，不建第二套渲染 */}

@@ -31,7 +31,7 @@ export default function ContextPanelHost(props: ContextPanelHostProps) {
   const optionsRegistry = getPluginSettingOptionsRegistry()
   const snapshot = createRegistrySignal(registry, () => registry.getSnapshot())
   // 可切换的面板 = 通过 `when` 闸门的全部面板（与 Sheet 种类无关）；种类只影响「没选过时默认看谁」。
-  const entries = createMemo(() => selectContextPanels(snapshot().entries, {
+  const entries = createMemo(() => selectContextPanels(snapshot().entries, props.shellContext ?? {
     workspaceKind: props.sheet.kind,
     sheetId: props.sheet.id,
     activeSessionId: props.ctx.activeSession,
@@ -137,9 +137,7 @@ export default function ContextPanelHost(props: ContextPanelHostProps) {
       // 下方面板 tablist 承载，这里不需要会话名。
       <aside class="context-panel" data-sheet-kind={props.sheet.kind} aria-label="右栏" style={{ '--right-width': `${rightWidth()}px` }}>
         <div class="context-panel-head">
-          {/* 切换器列出**所有可显示的面板**（`when` 闸门之上的全部），不再按 Sheet 种类裁剪：
-              按种类裁剪时，单面板的 Sheet 只剩一个撑满的标签，看上去是标题而不是切换器
-              （用户实机报「侧栏内部没有切换侧栏种类的按钮」）。 */}
+          <Show when={entries().length > 1} fallback={<h2 class="m-0 px-1 text-xs font-semibold text-text">{current().value.label}</h2>}>
           <div class="context-panel-tabs" role="tablist" aria-label="右栏面板">
             <For each={entries()}>{entry => (
               <button
@@ -160,6 +158,7 @@ export default function ContextPanelHost(props: ContextPanelHostProps) {
               </button>
             )}</For>
           </div>
+          </Show>
         </div>
         <div class="context-panel-body">
           <PanelBody />

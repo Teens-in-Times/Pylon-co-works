@@ -1,39 +1,14 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, on, onCleanup } from 'solid-js'
-import { getPluginUiRegistry } from '../runtimeServices.ts'
+/** Owns one DOM root and event bridge per registry entry; late work only touches its retired root. */
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js'
+import { reportRuntimeError } from '../../app/runtimeError.ts'
 import { createRegistrySignal } from '../../infrastructure/state/solidSheetSupport.solid.tsx'
-import type { PluginUiEventBridge, PluginUiUnmount } from './pluginUiTypes.ts'
+import type { RegistryEntry } from '../registry/types.ts'
+import { getPluginUiRegistry } from '../runtimeServices.ts'
+import { createPluginSurfaceSession } from './pluginSurfaceSession.ts'
+import type { PluginUiSurface } from './pluginUiTypes.ts'
 import { resolvePluginUiRuntime } from './pluginUiTypes.ts'
 
-function createBridge(onEvent?: (event: string, detail: unknown) => void): PluginUiEventBridge & { clear(): void } {
-  const listeners = new Map<string, Set<(detail: unknown) => void>>()
-  return {
-    emit(event, detail) {
-      onEvent?.(event, detail)
-      for (const listener of [...(listeners.get(event) ?? [])]) listener(detail)
-    },
-    on(event, listener) {
-      const group = listeners.get(event) ?? new Set()
-      group.add(listener)
-      listeners.set(event, group)
-      return () => {
-        group.delete(listener)
-        if (group.size === 0) listeners.delete(event)
-      }
-    },
-    clear: () => listeners.clear(),
-  }
-}
-
-async function unmount(result: PluginUiUnmount): Promise<void> {
-  if (typeof result === 'function') await result()
-  else if (result) await result.unmount()
-}
-
-/**
- * IsolatedPluginSurfaceProps — 插件 isolated-surface 贡献的挂载输入（wire 契约见
- * pluginUiApi/pluginUiRegistry，DOM data-* 属性是存量契约，禁止漂移）。
- */
 interface IsolatedPluginSurfaceProps {
   surfaceId: string
   className?: string
@@ -41,60 +16,56 @@ interface IsolatedPluginSurfaceProps {
   onEvent?: (event: string, detail: unknown) => void
 }
 
-/**
- * IsolatedPluginSurface — 插件 isolated-surface 贡献的 Solid 挂载实体（#515 贡献面翻转：
- * 本文件自 sheets/file/isolatedPluginSurface.solid.tsx 晋升为正式实现，file 域副本删除；
- * 原件是 React 版 IsolatedPluginSurface.tsx 的逐行 Solid 移植——注册表订阅/挂载生命周期/
- * host:input 推流语义与 data-* DOM 契约逐字节保持）。React 世界（App 的 interface-mode
- * shell surface）仍经同名薄桥挂载本实体，批7 拆桥后直连。
- */
-export function IsolatedPluginSurface(props: IsolatedPluginSurfaceProps) {
-  const pluginUiRegistry = getPluginUiRegistry()
-  const snapshot = createRegistrySignal(pluginUiRegistry, () => pluginUiRegistry.getSnapshot())
-  const entry = createMemo(() => snapshot().entries.find(candidate => candidate.value.id === props.surfaceId))
-  const runtime = createMemo(() => entry() ? resolvePluginUiRuntime(entry()!.value).runtime : undefined)
+function MountedSurface(props: IsolatedPluginSurfaceProps & { entry: RegistryEntry<PluginUiSurface> }) {
+  const runtime = resolvePluginUiRuntime(props.entry.value).runtime
+  const [ready, setReady] = createSignal(false)
+  const [failure, setFailure] = createSignal<{ error: unknown }>()
+  let container!: HTMLDivElement
+  let session: ReturnType<typeof createPluginSurfaceSession> | undefined
 
-  let containerElement: HTMLDivElement | undefined
-  let bridgeRef: (PluginUiEventBridge & { clear(): void }) | null = null
-
-  createEffect(() => {
-    const currentEntry = entry()
-    const container = containerElement
-    if (!container || !currentEntry) return
-    const bridge = createBridge((event, detail) => props.onEvent?.(event, detail))
-    bridgeRef = bridge
-    let disposed = false
-    let result: PluginUiUnmount
-    void Promise.resolve(currentEntry.value.mount(container, bridge)).then(value => {
-      if (disposed) void unmount(value)
-      else {
-        result = value
-        bridge.emit('host:input', props.input)
-      }
+  // Rethrow on the Solid owner so async failures reach the contribution boundary.
+  createEffect(() => { const value = failure(); if (value) throw value.error })
+  createEffect(() => { const input = props.input; session?.update(input) })
+  onCleanup(() => session?.dispose())
+  onMount(() => {
+    session = createPluginSurfaceSession({
+      container,
+      surface: props.entry.value,
+      input: props.input,
+      onEvent: (event, detail) => props.onEvent?.(event, detail),
+      onReady: () => setReady(true),
+      onError: error => setFailure({ error }),
+      onCleanupError: error => reportRuntimeError(`卸载插件界面 ${props.surfaceId}`, error, undefined, {
+        key: `plugin-surface-cleanup:${props.surfaceId}`,
+        source: 'plugin.surface',
+        visibility: 'diagnostic',
+      }),
     })
-    onCleanup(() => {
-      disposed = true
-      bridge.clear()
-      bridgeRef = null
-      void unmount(result)
-      container.replaceChildren()
-    })
+    session.mount()
   })
 
-  // input 变化 → 推流 host:input（挂载初期 bridge 未就绪时静默跳过，由 mount 兑现回调补发）。
-  createEffect(on(() => props.input, currentInput => {
-    bridgeRef?.emit('host:input', currentInput)
-  }))
-
-  return (
+  return <>
+    <Show when={!ready()}><div role="status" class="px-3 py-2 text-sm text-content-muted">正在加载插件界面…</div></Show>
     <div
-      ref={element => { containerElement = element }}
+      ref={element => { container = element }}
       class={props.className}
+      aria-busy={!ready()}
       data-plugin-ui-surface={props.surfaceId}
-      data-plugin-ui-owner={entry()?.ownerPluginId}
-      data-plugin-framework={runtime()?.framework}
-      data-plugin-runtime-version={runtime()?.version}
-      data-plugin-react-version={runtime()?.framework === 'react' ? runtime()?.version : undefined}
+      data-plugin-ui-owner={props.entry.ownerPluginId}
+      data-plugin-framework={runtime.framework}
+      data-plugin-runtime-version={runtime.version}
+      data-plugin-react-version={runtime.framework === 'react' ? runtime.version : undefined}
     />
-  )
+  </>
+}
+
+export function IsolatedPluginSurface(props: IsolatedPluginSurfaceProps) {
+  const registry = getPluginUiRegistry()
+  const snapshot = createRegistrySignal(registry, () => registry.getSnapshot())
+  const entry = createMemo(() => snapshot().entries.find(candidate => candidate.value.id === props.surfaceId))
+  return <Show when={entry()} keyed fallback={
+    <div class={props.className} role="status">插件界面尚未就绪</div>
+  }>
+    {current => <MountedSurface {...props} entry={current} />}
+  </Show>
 }

@@ -96,8 +96,8 @@ export function createCcWidgetRenderers(ctx: CcWidgetRenderContext): CcWidgetRen
         'font-size': `${ctx.appearance().modelFontSize ?? 12}px`,
         // ★ #266 遗留①：直读模型控件的颜色字段（借用关系见定义表 `borrowsFrom: 'model'`）——
         //   模型底色/文字色改成自由选色后，胶囊跟着模型走。
-        background: ctx.appearance().modelBgColor,
-        color: ctx.appearance().modelTextColor,
+        '--cc-widget-background': ctx.appearance().modelBgColor,
+        '--cc-widget-color': ctx.appearance().modelTextColor,
       })
       return <span class="cc-usage-pill" style={pillStyle()}>
         <span class="cc-usage-count">{usage().used !== undefined ? formatUsageTokens(usage().used!) : '—'}/{limit() && limit()! > 0 ? formatUsageTokens(limit()!) : '—'}</span>

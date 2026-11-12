@@ -65,4 +65,19 @@ describe('#537 左栏拖拽提交写左栏字段并落 v3 持久化', () => {
     fireEvent.keyDown(handle, { key: 'Home' })
     expect(useRightRailStore.getState().leftRailWidth).toBe(160)
   })
+
+  it('uses the rendered width as the drag origin and respects the viewport budget', () => {
+    const { container } = render(() => <LeftRailResizeHandle renderedWidth={200} maxWidth={250} />)
+    const handle = container.querySelector('[data-left-rail-resize]') as HTMLElement
+    expect(handle).toHaveAttribute('aria-valuenow', '200')
+    expect(handle).toHaveAttribute('aria-valuemax', '250')
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 0 })
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20 })
+    expect(useRightRailStore.getState().leftRailWidth).toBe(220)
+    fireEvent.pointerDown(handle, { pointerId: 2, button: 0, clientX: 0 })
+    fireEvent.pointerUp(handle, { pointerId: 2, clientX: 500 })
+    expect(useRightRailStore.getState().leftRailWidth).toBe(250)
+    fireEvent.keyDown(handle, { key: 'End' })
+    expect(useRightRailStore.getState().leftRailWidth).toBe(250)
+  })
 })

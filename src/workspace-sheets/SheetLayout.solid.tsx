@@ -7,7 +7,7 @@ import { useHydrationStore } from '../app/bootstrap/hydrationState'
 import { resolveSessionSource } from '../domains/chat/sessionCommandState'
 import { belongsToProfile } from '../domains/chat/sessionProfile'
 import { resolveSheetRender } from './sheetRegistry.ts'
-import { activateAgentSheet } from './activateAgentSheet'
+import { activateAgentSheet, isAgentSheetRuntimeReady } from './activateAgentSheet'
 import SheetHost from './SheetHost.solid.tsx'
 import SheetSidebarSlot from './SheetSidebarSlot.solid.tsx'
 import LeftRailResizeHandle from './LeftRailResizeHandle.solid.tsx'
@@ -17,6 +17,7 @@ import { getWorkspaceRegistrySnapshot, subscribeWorkspaceRegistry } from '../plu
 import { closeWorkspace } from './workspaceController'
 import { sheetHasLeftColumn } from './sheetSidebarState.ts'
 import { useRightRailStore } from '../domains/workspace/layoutRailsStore.ts'
+import type { RailLayout } from '../domains/workspace/railLayout.ts'
 import { reportRuntimeError, resolveRuntimeErrors } from '../app/runtimeError.ts'
 import { createZustandSignal } from '../infrastructure/state/solidStoreBridge.ts'
 import { createRegistrySignal } from '../infrastructure/state/solidSheetSupport.solid.tsx'
@@ -28,13 +29,14 @@ import { createRegistrySignal } from '../infrastructure/state/solidSheetSupport.
  * [侧栏壳 | 主区 | 右栏壳]。profile 投影与会话记忆 effects 从 App 原样搬运（行为不变）。
  * 无 sheet → 空态。Settings/对话框保持 App 单例挂载，不进本层。
  *
- * #515：Solid 实体。keep-alive 槽位**保实例语义**与 React keyed-by-id 对齐：
+ * keep-alive 槽位按稳定 sheet.id 保留实例：
  * 外层 `<For>` 以 sheet.id 串为键（同 id 串引用稳定 ⇒ 行不重建），内层以访问器
  * 响应式更新 sheet/ctx —— sheet 对象被 patch 换引用（如 patchSheetMetadata）时
  * 只换 props 不换实例，组件内状态与 keep-alive display:contents 活性保持。
  */
 
 interface SheetLayoutProps {
+  railLayout?: RailLayout
   activeSession: string | null
   onSelectSession: (id: string | null) => void
   onProfileEdit: () => void
@@ -51,8 +53,7 @@ function buildSheetContext(props: SheetLayoutProps, sidebarCollapsed: boolean): 
     selectSession: props.onSelectSession,
     openProfileEdit: props.onProfileEdit,
     openSessionSettings: props.onSessionSettings,
-    // I09-A-FE-01（L1）：ctx 经 createMemo 随折叠状态重建（见组件体内），消费方经
-    // 响应式 props 拿到的恒为新值——原 React 版靠重渲染刷新该字段，语义对齐。
+    // ctx 经 createMemo 随折叠状态重建，消费方经响应式 props 读取最新快照。
     sidebarCollapsed,
     // 右栏由应用级 RightRailHost 作为 .layout 的 flex sibling 占位，主区宽度已天然扣除；
     // renderer 再消费 rightInset 会二次挤压内容，并在折叠切换时产生异常跳宽。
@@ -65,13 +66,13 @@ function buildSheetContext(props: SheetLayoutProps, sidebarCollapsed: boolean): 
 }
 
 export default function SheetLayout(props: SheetLayoutProps) {
-  // registry 订阅不设在本层：SheetHost/SheetSidebarSlot/EmptyLayout 各自自持
-  // createRegistrySignal 订阅，顶层订阅是 React 期驱动重渲染的遗留，已删。
+  // SheetHost/SheetSidebarSlot/EmptyLayout 分别持有 registry 订阅，布局不重复订阅。
   const sheets = createZustandSignal(useWorkspaceStore, s => s.workspaceSheets.sheets)
   const activeSheetId = createZustandSignal(useWorkspaceStore, s => s.workspaceSheets.activeSheetId)
   const activeSheet = createMemo(() => sheets().find(sheet => sheet.id === activeSheetId()))
   // 左栏是统一应用布局；切换任何 Sheet 都保持同一折叠状态。
-  const sidebarCollapsed = createZustandSignal(useRightRailStore, s => s.leftRailCollapsed)
+  const preferredSidebarCollapsed = createZustandSignal(useRightRailStore, s => s.leftRailCollapsed)
+  const sidebarCollapsed = () => props.railLayout?.leftCollapsed ?? preferredSidebarCollapsed()
 
   const identityActiveAgent = createZustandSignal(useIdentityStore, s => s.activeAgent)
   const sheetOwnerAgentId = createMemo(() => {
@@ -88,44 +89,52 @@ export default function SheetLayout(props: SheetLayoutProps) {
   const hydrationReady = createZustandSignal(useHydrationStore, s => s.status === 'ready')
   let didColdStartActivate = false
 
-  // A（冷启动自动恢复）：hydrate 就绪后，若恢复出的激活 sheet owner ≠ 当前 activeAgent，
-  // 自动切到该 owner（连接对应 Agent），避免默认连 peri 导致 Hermes sheet 报错。
+  // hydrate 就绪后恢复激活 Sheet 的 owner；身份相同但 runtime 尚未连接也需启动。
   createEffect(() => {
     if (!hydrationReady() || didColdStartActivate) return
     const owner = sheetOwnerAgentId()
     if (!owner) return
-    const current = untrack(() => useIdentityStore.getState().activeAgent)
-    if (current === owner) return
+    if (untrack(() => isAgentSheetRuntimeReady(owner))) return
     didColdStartActivate = true
     const agentName = useIdentityStore.getState().agents.find(agent => agent.id === owner)?.name ?? owner
     void activateAgentSheet(owner, agentName, () => {}, { silent: true })
   })
 
-  // W1-03 原样搬运：启动时从权威记忆（sheetAgentStates）恢复当前 agent 的 profile 投影与会话，
-  // 不写回——写回只发生在用户显式 setActiveProfile / 选会话（下方 effect）。
-  // 修复：hydrate 就绪后才恢复（子 effect 先于 bootstrap hydrate 执行会读到空记忆）
-  createEffect(on(() => hydrationReady(), ready => {
+  // Restore on hydration and Agent Sheet changes. A global selection belonging
+  // to another Agent must never become this Sheet's remembered selection.
+  createEffect(on(() => [hydrationReady(), activeAgent()] as const, ([ready, agent]) => {
     if (!ready) return
     // #326：空串 = 没有 Agent（零 Agent 首跑）。它不是实体：读写 sheetAgentStates[''] 会
     // 把「没有 Agent」写进持久化记忆（重启后仍在），并喂给会话归属推断。
-    const agent = activeAgent()
     if (!agent) return
+    const currentSession: string | null = untrack(() => props.activeSession)
+    const current = useIdentityStore.getState().sessions.find(session => session.id === currentSession)
     const memory = useWorkspaceStore.getState().sheetAgentStates[agent]
     const currentProfileId = untrack(activeProfileId)
+    const targetProfileId = memory?.activeProfileId ?? currentProfileId
+    if (current?.agentId === agent && current.profileId === targetProfileId) return
     if (memory?.activeProfileId && memory.activeProfileId !== currentProfileId) {
       useIdentityStore.getState().setActiveProfile(memory.activeProfileId)
     }
-    const currentSession: string | null = untrack(() => props.activeSession)
-    if (memory?.activeSessionId && memory.activeSessionId !== currentSession) {
-      props.onSelectSession(memory.activeSessionId)
+    const remembered = useIdentityStore.getState().sessions.find(session => session.id === memory?.activeSessionId)
+    const rememberedId = remembered && (remembered.agentId !== agent || remembered.profileId !== targetProfileId)
+      ? null : memory?.activeSessionId ?? null
+    if (rememberedId !== currentSession) {
+      props.onSelectSession(rememberedId)
     }
   }))
 
   // W1-03 原样搬运：会话选择持久化到该 agent 记忆（profile 已由 setActiveProfile 同步）。
   // 修复：hydrate 就绪前跳过——否则用初始空 sheets 覆盖持久化（刷新丢 sheets → 启动页）
   createEffect(() => {
-    const agent = activeAgent()
+    const agent = sheetOwnerAgentId()
     if (!hydrationReady() || !agent) return
+    // Runtime switching and Sheet focus are separate steps. Until they agree,
+    // neither the old session nor the switch's temporary null may overwrite memory.
+    if (identityActiveAgent() !== agent) return
+    const selected = props.activeSession
+    const selectedSession = sessions().find(session => session.id === selected)
+    if (selected && (selectedSession?.agentId !== agent || selectedSession.profileId !== activeProfileId())) return
     useWorkspaceStore.getState().setSheetAgentState(agent, { activeSessionId: props.activeSession || undefined })
   })
 
@@ -134,16 +143,23 @@ export default function SheetLayout(props: SheetLayoutProps) {
     const profileId = activeProfileId()
     const session = props.activeSession
     const currentSessions = sessions()
+    // Hydration may restore an id before the corresponding session rows arrive.
+    // Absence is not evidence of a different profile.
+    if (session && !currentSessions.some(item => item.id === session || item.source === session)) return
     if (!belongsToProfile(session, profileId, currentSessions)) props.onSelectSession(null)
   })
 
-  // ctx 与 React 版同语义：每次「渲染」重建（此处 = 任一依赖变化后经 memo 产出新对象，
-  // 消费方经响应式 props 读取到新引用）
+  // Context snapshots change only when their tracked inputs change.
   const ctx = createMemo(() => buildSheetContext(props, sidebarCollapsed()))
   const activeSessionOwner = createMemo(() => sessions().find(session => session.id === props.activeSession)?.agentId)
   const contextForAgentSheet = (sheet: SheetRecord): SheetContext => {
-    const rememberedSession = sheet.agentId ? sheetAgentStates()[sheet.agentId]?.activeSessionId ?? null : null
-    const sessionId = activeSessionOwner() === sheet.agentId ? props.activeSession : rememberedSession
+    const memory = sheet.agentId ? sheetAgentStates()[sheet.agentId] : undefined
+    const remembered = sessions().find(session => session.id === memory?.activeSessionId)
+    const rememberedSession = remembered && remembered.agentId === sheet.agentId
+      && (!memory?.activeProfileId || remembered.profileId === memory.activeProfileId) ? remembered.id : null
+    const selected = sessions().find(session => session.id === props.activeSession)
+    const sessionId = activeSessionOwner() === sheet.agentId
+      && selected?.profileId === (memory?.activeProfileId ?? activeProfileId()) ? props.activeSession : rememberedSession
     const active = sheet.id === activeSheetId()
     return {
       ...ctx(),
@@ -154,6 +170,10 @@ export default function SheetLayout(props: SheetLayoutProps) {
       },
     }
   }
+  const activeSheetContext = createMemo(() => {
+    const sheet = activeSheet()
+    return sheet?.kind === 'agent' ? contextForAgentSheet(sheet) : ctx()
+  })
   const ccEditMode = createZustandSignal(useThemeStore, s => s.ccEditMode)
   const showSidebar = createZustandSignal(useThemeStore, s => s.showSidebar !== false)
   // #154：左列的可见性是布局层的状态——宽度、竖直分割线与 a11y 可见性都据它决定，
@@ -191,15 +211,15 @@ export default function SheetLayout(props: SheetLayoutProps) {
     <>
     <Show when={!activeSheet()} keyed>
       {_empty => (
-        <EmptyLayout ctx={ctx()} activeAgent={activeAgent()} ccEditMode={ccEditMode()} />
+        <EmptyLayout ctx={ctx()} activeAgent={activeAgent()} ccEditMode={ccEditMode()} railLayout={props.railLayout} />
       )}
     </Show>
     <Show when={activeSheet()} fallback={null}>
       {sheet => (
         <div class={`layout ${ccEditMode() ? 'cc-editing-app' : ''}`} data-sidebar={leftColumnVisible() ? 'expanded' : 'collapsed'} data-pylon-surface="workspace" data-agent-id={activeAgent()}>
-          <SheetSidebarSlot sheet={sheet()} ctx={ctx()} />
+          <SheetSidebarSlot sheet={sheet()} ctx={activeSheetContext()} />
           <Show when={leftColumnVisible()}>
-            <LeftRailResizeHandle />
+            <LeftRailResizeHandle maxWidth={props.railLayout?.leftMaxWidth} renderedWidth={props.railLayout?.leftWidth} />
           </Show>
           <Show when={sheet().kind !== 'agent' && sheet().kind !== 'file' && sheet().kind !== 'browser'}>
             <SheetHost sheet={sheet()} ctx={ctx()} />
@@ -212,6 +232,14 @@ export default function SheetLayout(props: SheetLayoutProps) {
             {id => {
               const entry = createMemo(() => keepAliveSheets().find(item => item.sheet.id === id)!)
               const active = createMemo(() => entry().sheet.id === activeSheetId())
+              // Own the projection in this keep-alive slot. A conditional JSX
+              // prop compiles to lazy memos that would otherwise be created
+              // when native resize/timer callbacks read ctx outside an owner.
+              const sheetContext = createMemo(() => {
+                const current = entry()
+                if (current.slot.kind === 'agent') return contextForAgentSheet(current.sheet)
+                return current.slot.passIsActive ? { ...ctx(), isActive: active() } : ctx()
+              })
               return (
                 <div
                   class={entry().slot.className}
@@ -221,15 +249,13 @@ export default function SheetLayout(props: SheetLayoutProps) {
                 >
                   <SheetHost
                     sheet={entry().sheet}
-                    ctx={entry().slot.kind === 'agent'
-                      ? contextForAgentSheet(entry().sheet)
-                      : entry().slot.passIsActive ? { ...ctx(), isActive: active() } : ctx()}
+                    ctx={sheetContext()}
                   />
                 </div>
               )
             }}
           </For>
-          <RightRailHost sheet={sheet()} ctx={ctx()} activeAgent={activeAgent()} />
+          <RightRailHost sheet={sheet()} ctx={activeSheetContext()} activeAgent={activeAgent()} railLayout={props.railLayout} />
         </div>
       )}
     </Show>
@@ -241,7 +267,7 @@ export default function SheetLayout(props: SheetLayoutProps) {
  * 在组件体急切求值——OverviewSheetView 的挂载 effect 不能在未插入时就跑）。以 keyed
  * Show 的子回调实现惰性创建：仅在无 active sheet 时才实例化空态子树。
  */
-function EmptyLayout(props: { ctx: SheetContext; activeAgent: string; ccEditMode: boolean }) {
+function EmptyLayout(props: { ctx: SheetContext; activeAgent: string; ccEditMode: boolean; railLayout?: RailLayout }) {
   // W1-05：无 active sheet → 虚拟 overview 接管空态（不写入持久 sheet 数组）
   const registry = createRegistrySignal({ subscribe: subscribeWorkspaceRegistry }, getWorkspaceRegistrySnapshot)
   const overviewEntry = createMemo(() => {
@@ -256,7 +282,7 @@ function EmptyLayout(props: { ctx: SheetContext; activeAgent: string; ccEditMode
           return <Overview sheet={VIRTUAL_OVERVIEW_SHEET} ctx={props.ctx} state={entry().deserialize(undefined)} />
         }}
       </Show>
-      <RightRailHost sheet={null} ctx={props.ctx} activeAgent={props.activeAgent} />
+      <RightRailHost sheet={null} ctx={props.ctx} activeAgent={props.activeAgent} railLayout={props.railLayout} />
     </div>
   )
 }

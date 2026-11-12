@@ -169,7 +169,7 @@ describe('SessionsPanel', () => {
     expect(collapsedSessions).toHaveAttribute('aria-hidden', 'true')
   })
 
-  it('将工作区身份与操作分成稳定几何层；会话计数不再显示', () => {
+  it('将工作区身份与操作分开，保留目录提示且隐藏零计数', () => {
     render(() => <SessionsPanel {...createProps()} />)
     const toggle = screen.getByRole('button', { name: '折叠 Pylon' })
     const head = toggle.closest('.cwd-group-head')!
@@ -179,8 +179,8 @@ describe('SessionsPanel', () => {
     expect(toggle).toHaveAttribute('title', 'G:/Project/Pylon')
     expect(head).toContainElement(screen.getByRole('button', { name: '在 Pylon 中新建会话' }))
     expect(head).toContainElement(screen.getByRole('button', { name: 'Pylon 工作区设置' }))
-    expect(document.querySelector('.cwd-group-count')).toBeNull()
-    expect(screen.queryByLabelText('0 个会话')).toBeNull()
+    expect(toggle).toHaveTextContent('Pylon')
+    expect(within(toggle).queryByText('0')).not.toBeInTheDocument()
   })
 
   it('无 cwd 会话落在会话列表最底部的独立分组，且带自己的新建入口', () => {
@@ -236,5 +236,31 @@ describe('SessionsPanel', () => {
   it('没有任何工作区也没有无 cwd 会话时给出起步空态', () => {
     render(() => <SessionsPanel {...createProps({ workspaces: [] })} />)
     expect(screen.getByText('从一个文件夹开始')).toBeInTheDocument()
+  })
+
+  it('常驻新会话入口使用当前会话的工作区，无当前工作区时创建独立会话', () => {
+    const props = createProps({ sessions: [boundSession, looseSession], activeSessionId: boundSession.id })
+    const [current, setCurrent] = createSignal(props)
+    render(() => <SessionsPanel {...current()} />)
+    fireEvent.click(screen.getByRole('button', { name: '新会话' }))
+    expect(props.onCreateWorkspaceSession).toHaveBeenCalledWith(workspace.id)
+    setCurrent({ ...props, activeSessionId: looseSession.id })
+    fireEvent.click(screen.getByRole('button', { name: '新会话' }))
+    expect(props.onCreateLooseSession).toHaveBeenCalledOnce()
+  })
+
+  it('切换到折叠分组的会话时显露当前位置，组内操作的键盘事件不误选中会话', () => {
+    localStorage.setItem('pylon-workspace-tree:v1', JSON.stringify([workspace.id]))
+    const props = createProps({ sessions: [boundSession], activeSessionId: boundSession.id })
+    render(() => <SessionsPanel {...props} />)
+    expect(screen.getByRole('button', { name: '折叠 Pylon' })).toHaveAttribute('aria-expanded', 'true')
+    const row = screen.getByRole('treeitem', { name: boundSession.name })
+    expect(row).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(screen.getByRole('button', { name: '实现界面 会话设置' }), { key: 'Enter' })
+    expect(props.onSelectSession).not.toHaveBeenCalled()
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(props.onSelectSession).toHaveBeenCalledWith(boundSession.id)
+    fireEvent.click(screen.getByRole('button', { name: '折叠 Pylon' }))
+    expect(row.closest('[role="group"]')).toHaveProperty('inert', true)
   })
 })

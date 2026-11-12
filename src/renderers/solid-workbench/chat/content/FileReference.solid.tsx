@@ -1,6 +1,8 @@
 /** @jsxImportSource solid-js */
 import { Show, createMemo, type JSX } from 'solid-js'
+import { LucideIcon } from '../../../../components/LucideIcon.solid.tsx'
 import type { ContentPart } from '../../../../domains/workbench/content/contentPartSchema.ts'
+import { MarkdownContent } from '../MarkdownContent.solid.tsx'
 import {
   fileContentLastSegment,
   formatFileSelectionRange,
@@ -63,7 +65,7 @@ export function SolidFileReferenceCard(props: { part: ContentPart; actions?: Fil
         style={cardStyle(props.appearance)}
         aria-label={part().kind === 'file-selection' ? '文件选择区' : '文件引用'}
       >
-        <span class="term-file-icon" aria-hidden="true" style={iconStyle(props.appearance)}>📄</span>
+        <span class="term-file-icon" aria-hidden="true" style={iconStyle(props.appearance)}><LucideIcon name="FileText" size={numberAppearance(props.appearance?.iconSize, 18)} /></span>
         <div class="term-file-meta">
           <span class="term-file-name">{displayTitle(part())}</span>
           <Show when={visiblePath(filePath(), props.appearance)}>
@@ -120,7 +122,7 @@ function SolidResourceCard(props: { part: ContentPart; actions?: FileReferenceAc
       style={cardStyle(props.appearance)}
       aria-label="外部资源"
     >
-      <span class="term-file-icon" aria-hidden="true" style={iconStyle(props.appearance)}>🔗</span>
+      <span class="term-file-icon" aria-hidden="true" style={iconStyle(props.appearance)}><LucideIcon name="Globe" size={numberAppearance(props.appearance?.iconSize, 18)} /></span>
       <div class="term-file-meta">
         <span class="term-file-name">{res().title || fileContentLastSegment(res().uri)}</span>
         <Show when={visiblePath(res().uri, props.appearance)}>
@@ -130,7 +132,7 @@ function SolidResourceCard(props: { part: ContentPart; actions?: FileReferenceAc
           {mime => <span class="term-file-meta-line" style={mutedStyle(props.appearance)}>{mime()}</span>}
         </Show>
         <Show when={preview()}>
-          {text => <pre class="term-file-preview" style={{ 'max-height': `${numberAppearance(props.appearance?.maxHeight, 360)}px` }}>{text()}</pre>}
+          {text => <ContentPreview text={text()} mimeType={res().mimeType} maxHeight={props.appearance?.maxHeight} />}
         </Show>
         <Show when={!preview() && isBinary()}>
           <span class="term-file-meta-line term-file-binary-note" style={mutedStyle(props.appearance)}>二进制内容不内联展示</span>
@@ -165,7 +167,7 @@ function SolidDocumentCard(props: { part: ContentPart; actions?: FileReferenceAc
       style={cardStyle(props.appearance)}
       aria-label="内联文档"
     >
-      <span class="term-file-icon" aria-hidden="true" style={iconStyle(props.appearance)}>📃</span>
+      <span class="term-file-icon" aria-hidden="true" style={iconStyle(props.appearance)}><LucideIcon name="FileText" size={numberAppearance(props.appearance?.iconSize, 18)} /></span>
       <div class="term-file-meta">
         <span class="term-file-name">{document().title || (source() ? fileContentLastSegment(source()!) : '文档')}</span>
         <Show when={source() ? visiblePath(source()!, props.appearance) : undefined}>
@@ -175,7 +177,7 @@ function SolidDocumentCard(props: { part: ContentPart; actions?: FileReferenceAc
           {mime => <span class="term-file-meta-line" style={mutedStyle(props.appearance)}>{mime()}</span>}
         </Show>
         <Show when={preview()}>
-          {text => <pre class="term-file-preview" style={{ 'max-height': `${numberAppearance(props.appearance?.maxHeight, 360)}px` }}>{text()}</pre>}
+          {text => <ContentPreview text={text()} mimeType={document().mimeType} maxHeight={props.appearance?.maxHeight} />}
         </Show>
         <Show when={!preview() && isBinary()}>
           <span class="term-file-meta-line term-file-binary-note" style={mutedStyle(props.appearance)}>二进制内容不内联展示</span>
@@ -198,6 +200,18 @@ function SolidDocumentCard(props: { part: ContentPart; actions?: FileReferenceAc
         </div>
       </Show>
     </article>
+  )
+}
+
+function ContentPreview(props: { text: string; mimeType?: string; maxHeight?: number }) {
+  const isMarkdown = () => /^text\/(?:markdown|x-markdown)(?:;|$)/i.test(props.mimeType ?? '')
+  const style = (): JSX.CSSProperties => ({ 'max-height': `${numberAppearance(props.maxHeight, 360)}px` })
+  return (
+    <Show when={isMarkdown()} fallback={<pre class="term-file-preview" style={style()}>{props.text}</pre>}>
+      <div class="term-file-preview term-file-preview-markdown" style={style()}>
+        <MarkdownContent text={props.text} typewriter={false} settleMotion={false} />
+      </div>
+    </Show>
   )
 }
 

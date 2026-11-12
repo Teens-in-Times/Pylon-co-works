@@ -9,9 +9,6 @@ const javascript = files.filter(name => name.endsWith('.js'))
 const combined = (await Promise.all(javascript.map(name => readFile(resolve(assetsDir, name), 'utf8')))).join('\n')
 const errors = []
 
-if (combined.includes('Solid Workbench browser smoke')) errors.push('生产产物包含 browser smoke harness')
-if (combined.includes('Solid Workbench smoke')) errors.push('生产产物包含 Solid smoke renderer')
-if (files.some(name => /^solid-(?:smoke|chunk)-/.test(name))) errors.push('生产 assets 出现独立 Solid smoke chunk')
 // Browser/demo seeding is development-only.  The App guard is intentionally
 // compile-time (`import.meta.env.DEV`) so the production graph has no adapter
 // chunk or seed entry point, even though the browser mock remains available in
@@ -35,4 +32,4 @@ if (errors.length > 0) {
   process.exit(1)
 }
 
-console.log(`生产产物隔离检查通过；扫描 ${javascript.length} 个 JS assets，未包含 Solid smoke / demo seed / mockTauri`)
+console.log(`生产产物隔离检查通过；扫描 ${javascript.length} 个 JS assets，未包含 demo seed / mockTauri`)

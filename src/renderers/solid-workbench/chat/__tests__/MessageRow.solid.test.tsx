@@ -243,3 +243,19 @@ describe('SolidMessageRow', () => {
     expect(avatarInitials('')).toBe('?')
   })
 })
+
+
+describe('#728 clipboard feedback', () => {
+  it('does not report success until copying completes and permits retry after failure', async () => {
+    const writeText = vi.fn().mockRejectedValueOnce(new Error('denied')).mockResolvedValueOnce(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const result = render(() => <AssistantContent text="copy this" appearance={APPEARANCE} />)
+    fireEvent.click(result.getByRole('button', { name: '复制消息' }))
+    expect(await result.findByRole('status')).toHaveTextContent('复制失败')
+    expect(result.queryByRole('button', { name: '已复制消息' })).toBeNull()
+    fireEvent.click(result.getByRole('button', { name: '复制消息' }))
+    expect(await result.findByRole('button', { name: '已复制消息' })).toBeTruthy()
+    expect(result.queryByRole('status')).toBeNull()
+    expect(writeText).toHaveBeenCalledWith('copy this')
+  })
+})

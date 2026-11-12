@@ -7,6 +7,7 @@ import type { Message } from '../../domains/chat/messageTypes.ts'
 import { persistMessageSnapshot } from '../../domains/chat/messagePersistence.ts'
 import { createAgentWorkbenchSessionRuntime } from '../../application/agent-workbench/agentWorkbenchSession.ts'
 import type { Session } from '../../domains/identity/identityStore.ts'
+import { MOCK_MESSAGES } from '../../demo/chatMockData.ts'
 
 /** The shape an ACP provider advertises: every option carries its own choices. */
 const PROVIDER_OPTIONS = [
@@ -36,6 +37,50 @@ function seedProviderOptions(runtime: ReturnType<typeof createAgentWorkbenchSess
 }
 
 describe('browser message snapshot bridge', () => {
+  it('retains the demo structured content in canonical parts and skips a completed empty placeholder', () => {
+    const source = MOCK_MESSAGES.find(message => message.id === 'mock-assistant-structured')!
+    const document = projectWorkbench(messageSnapshotToWorkbenchEnvelopes('demo-rich', [
+      source,
+      { id: 'empty', role: 'assistant', sender: 'assistant', content: '', time: '' },
+    ])).document
+    expect(document.messages).toHaveLength(1)
+    expect(document.messages[0].parts).toEqual([{ kind: 'markdown', text: source.content }, ...source.semanticParts!])
+    expect(document.messages[0].parts.map(part => part.kind)).toEqual(['markdown', 'location', 'progress', 'list', 'key-value', 'json', 'tool-use', 'tool-result', 'artifact', 'document', 'resource'])
+  })
+
+  it('normalizes wire blocks, preserves media-only messages, and does not duplicate mirrored body text', () => {
+    const document = projectWorkbench(messageSnapshotToWorkbenchEnvelopes('snapshot-parts', [
+      { id: 'mirrored', role: 'assistant', sender: 'assistant', content: 'hello world', time: '',
+        semanticParts: [{ kind: 'text', text: 'hello ' }, { kind: 'text', text: 'world' }] },
+      { id: 'media', role: 'assistant', sender: 'assistant', content: '', time: '',
+        contentBlocks: [{ type: 'image', source: { type: 'url', url: 'https://example.com/image.png' }, mimeType: 'image/png' }] },
+    ])).document
+    expect(document.messages).toHaveLength(2)
+    expect(document.messages[0].content).toBe('hello world')
+    expect(document.messages[1].parts).toEqual([expect.objectContaining({ kind: 'image', source: 'https://example.com/image.png' })])
+  })
+
+  it('preserves unsupported structured evidence as unknown rather than dropping or throwing', () => {
+    const document = projectWorkbench(messageSnapshotToWorkbenchEnvelopes('snapshot-invalid', [{
+      id: 'bad-structure', role: 'assistant', sender: 'assistant', content: '', time: '',
+      semanticParts: [null, { kind: 'image', source: 42 }] as never,
+    }])).document
+    expect(document.messages[0].parts.map(part => part.kind)).toEqual(['unknown', 'unknown'])
+  })
+
+  it('preserves adjacent complete assistant messages and their Markdown boundaries verbatim', () => {
+    const texts = ['A fenced example:\n\n```ts\nexport type ToolState = "completed"\n```', 'Plain text after the code.\nSecond line.']
+    const messages: Message[] = texts.map((content, index) => ({
+      id: `assistant-${index}`, role: 'assistant', sender: 'assistant', content, time: '',
+    }))
+    const envelopes = messageSnapshotToWorkbenchEnvelopes('demo-boundaries', messages, 'peri')
+    expect(envelopes.every(event => event.source.provider === 'peri' && event.provenance.trust === 'unverified' && event.provenance.provider === 'browser-demo')).toBe(true)
+    const document = projectWorkbench(envelopes).document
+    expect(document.messages.map(message => message.content)).toEqual(texts)
+    expect(document.messages.map(message => message.parts)).toEqual(texts.map(text => [{ kind: 'markdown', text }]))
+    expect(document.messages.every(message => !message.running)).toBe(true)
+  })
+
   it('projects legacy visual messages into the terminal Workbench document', () => {
     const messages: Message[] = [
       { id: 'u-1', role: 'user', sender: 'user', content: '检查渲染', time: '' },
@@ -65,6 +110,7 @@ describe('browser message snapshot bridge', () => {
     const runtime = createAgentWorkbenchSessionRuntime({ subscribe: () => () => {} })
     await runtime.bind(session)
     expect(runtime.runtime.getSnapshot().document?.messages.map(message => message.content)).toEqual(['Solid 已读取 mock'])
+    expect(runtime.runtime.getSnapshot().document?.messages[0].source.provider).toBe('peri')
     runtime.destroy()
   })
 

@@ -40,23 +40,23 @@ const BOOTSTRAP_STATE_LABELS: Readonly<Record<PluginBootstrapOverview['state'], 
 // 红线：同属性 utility 不跨常量组合（utilities 层内同 specificity，胜负
 // 取决于生成顺序），每个按钮变体必须自足完整，不做「基串 + 修饰」拼接。
 const PANEL = 'flex flex-col gap-4 text-base leading-[1.6] text-content-text'
-const OVERVIEW = 'flex flex-wrap gap-4 rounded-lg bg-surface-panel px-3 py-2.5'
-const GROUP = 'flex flex-col gap-2 rounded-lg bg-surface-panel px-3 py-2.5'
-const GROUP_TITLE = 'text-sm font-semibold uppercase tracking-[0.04em] text-content-muted'
+const OVERVIEW = 'flex flex-wrap gap-4 rounded-sm bg-surface-panel px-3 py-2.5'
+const GROUP = 'flex flex-col gap-3 border-t border-border py-4'
+const GROUP_TITLE = 'text-base font-semibold text-content-text'
 const LIST = 'flex flex-col gap-1.5'
-const ROW = 'flex flex-wrap items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-hover-bg'
-const ROW_TITLE = 'font-semibold'
-const MUTED_MONO = 'font-mono text-sm text-content-muted'
+const ROW = 'flex flex-wrap items-center gap-2.5 rounded-sm px-2 py-1.5 hover:bg-hover-bg'
+const ROW_TITLE = 'min-w-0 break-words font-semibold'
+const MUTED_MONO = 'min-w-0 break-all font-mono text-sm text-content-muted'
 const MUTED_TEXT = 'text-sm text-content-muted'
 const CONSENT_TEXT = 'text-content-muted'
 const ACTIONS = 'ml-auto flex flex-wrap gap-2'
-const BTN_INVARIANT = 'appearance-none cursor-pointer rounded-md border bg-transparent px-2.5 py-0.75 text-sm enabled:hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50'
+const BTN_INVARIANT = 'appearance-none cursor-pointer rounded-sm border bg-transparent px-2.5 py-0.75 text-sm enabled:hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 const BTN = `${BTN_INVARIANT} border-border text-content-text`
 const BTN_PRIMARY = `${BTN_INVARIANT} border-accent text-accent`
 const BTN_DANGER = `${BTN_INVARIANT} border-border text-danger`
 const HINT = MUTED_TEXT
 const LOG_LINE = MUTED_MONO
-const CONSENT = 'flex flex-col gap-2 rounded-lg border border-dashed border-border bg-surface-panel p-4'
+const CONSENT = 'flex flex-col gap-2 rounded-sm border border-dashed border-border bg-surface-panel p-4'
 const CONSENT_TITLE = 'text-md'
 
 function el(tag: string, className?: string, text?: string): HTMLElement {
@@ -98,7 +98,26 @@ export function mountPluginManagerPanel(
   const root = el('div', PANEL)
   let disposed = false
   const log: string[] = []
+  let pending = false
+  const operationStatus = el('p', MUTED_TEXT)
+  operationStatus.setAttribute('role', 'status')
+  operationStatus.setAttribute('aria-live', 'polite')
+  const beginOperation = (label: string) => {
+    if (pending || disposed) return false
+    pending = true
+    root.setAttribute('aria-busy', 'true')
+    operationStatus.textContent = `${label}中…`
+    root.querySelectorAll<HTMLButtonElement>('button').forEach(control => { control.disabled = true })
+    return true
+  }
+  const finishOperation = () => {
+    pending = false
+    root.setAttribute('aria-busy', 'false')
+    render()
+  }
   const notice = (message: string) => {
+    if (disposed) return
+    operationStatus.textContent = message
     log.push(`[${new Date().toLocaleTimeString()}] ${message}`)
     if (log.length > LOG_LIMIT) log.splice(0, log.length - LOG_LIMIT)
     options.onNotice?.(message)
@@ -108,23 +127,26 @@ export function mountPluginManagerPanel(
     label: string,
     operation: () => Promise<string | undefined>,
   ) => {
+    if (!beginOperation(label)) return
     try {
       const outcome = await operation()
       if (outcome !== undefined) notice(`${label}成功`)
+      else operationStatus.textContent = '已取消安装'
     } catch (error) {
       notice(`${label}失败：${error instanceof Error ? error.message : String(error)}`)
     }
-    render()
+    finishOperation()
   }
 
   const runOperation = async (label: string, operation: () => Promise<void>) => {
+    if (!beginOperation(label)) return
     try {
       await operation()
       notice(`${label}成功`)
     } catch (error) {
       notice(`${label}失败：${error instanceof Error ? error.message : String(error)}`)
     }
-    render()
+    finishOperation()
   }
 
   // 贡献清单区块可见性必须跨 render 重建存活（re-render 会重跑 renderManager）
@@ -142,8 +164,8 @@ export function mountPluginManagerPanel(
   }
 
   const render = () => {
-    if (disposed) return
-    root.replaceChildren()
+    if (disposed || pending) return
+    root.replaceChildren(operationStatus)
     root.dataset.pypmPanel = options.management ? 'manager' : 'consent'
     if (!options.management) {
       renderConsentGuide(root)
@@ -154,6 +176,9 @@ export function mountPluginManagerPanel(
 
   const renderManager = (parent: HTMLElement) => {
     const management = options.management!
+    const heading = el('header', 'flex flex-col gap-2 pb-3')
+    heading.append(el('h2', 'text-[24px] font-semibold text-content-text', '插件管理'), el('p', MUTED_TEXT, '安装扩展、管理启用状态，让工作台适合你的工作方式。'))
+    parent.append(heading)
 
     const overview = el('div', OVERVIEW)
     overview.setAttribute('aria-label', '插件概览')
@@ -205,42 +230,47 @@ export function mountPluginManagerPanel(
     builtins.append(builtinList)
     parent.append(builtins)
 
+    const advanced = document.createElement('details')
+    advanced.className = 'border-t border-border py-3'
+    const advancedSummary = el('summary', 'cursor-pointer py-2 text-sm font-semibold text-content-muted focus-visible:outline-2 focus-visible:outline-accent', '运行诊断与高级管理')
+    advanced.append(advancedSummary)
+    parent.append(advanced)
     const bootstrap = el('div', GROUP)
     bootstrap.append(groupTitle('启动故障'))
     const bootstrapList = el('div', LIST)
     bootstrap.append(bootstrapList)
-    parent.append(bootstrap)
+    advanced.append(bootstrap)
 
     const diagnostics = el('div', GROUP)
     diagnostics.append(groupTitle('契约诊断'))
     const diagnosticsList = el('div', LIST)
     diagnostics.append(diagnosticsList)
-    parent.append(diagnostics)
+    advanced.append(diagnostics)
 
     const shadow = el('div', GROUP)
     shadow.append(groupTitle('Shadow Update 诊断'))
     const shadowList = el('div', LIST)
     shadow.append(shadowList)
-    parent.append(shadow)
+    advanced.append(shadow)
 
     // P53 D5：运行时监管（进程）+ 存储配额 + 依赖关系图
     const processes = el('div', GROUP)
     processes.append(groupTitle('插件进程'))
     const processList = el('div', LIST)
     processes.append(processList)
-    parent.append(processes)
+    advanced.append(processes)
 
     const storage = el('div', GROUP)
     storage.append(groupTitle('存储配额'))
     const storageList = el('div', LIST)
     storage.append(storageList)
-    parent.append(storage)
+    advanced.append(storage)
 
     const dependencies = el('div', GROUP)
     dependencies.append(groupTitle('依赖与冲突'))
     const dependencyList = el('div', LIST)
     dependencies.append(dependencyList)
-    parent.append(dependencies)
+    advanced.append(dependencies)
 
     let contributionsGroup: HTMLElement | undefined
     if (contributionVisible) {
@@ -280,10 +310,12 @@ export function mountPluginManagerPanel(
       if (disposed) return
       try {
         const installed = await management.listInstalled()
+        if (disposed || !parent.contains(userList)) return
         const runtime = management.runtimeOverview()
         const bootstrapState = management.bootstrapOverview()
         const contract = management.contractDiagnostics()
 
+        if (operationStatus.textContent?.startsWith('读取插件状态失败')) operationStatus.textContent = '插件状态已刷新'
         overview.replaceChildren(
           el('span', undefined, `Plugin API ${PYLON_PLUGIN_API_LATEST}`),
           el('span', undefined, `${runtime.activePluginIds.length} 个运行中`),
@@ -492,9 +524,7 @@ export function mountPluginManagerPanel(
           dependencyList.append(el('p', HINT, `依赖图读取失败：${error instanceof Error ? error.message : String(error)}`))
         }
       } catch (error) {
-        // 只记日志不重入 render：持续性失败（如授权失效）会形成
-        // 失败→render→loadAll→失败 的活锁（review A N3）；错误经操作日志
-        // 在下一次用户交互/手动刷新时可见。
+        // Keep the existing page and expose a retryable failure without recursively loading.
         notice(`读取插件状态失败：${error instanceof Error ? error.message : String(error)}`)
       }
     }
@@ -503,15 +533,12 @@ export function mountPluginManagerPanel(
 
     const runInstall = async (api: PluginManagementApi) => {
       if (!options.pickDirectory) return
-      let sourcePath: string | null
-      try {
-        sourcePath = await options.pickDirectory()
-      } catch (error) {
-        notice(`选择目录失败：${error instanceof Error ? error.message : String(error)}`)
-        return
-      }
-      if (!sourcePath) return
-      await runOperation('安装/更新', () => api.installOrUpdate(sourcePath))
+      await runPickerInstall('安装/更新', async () => {
+        const sourcePath = await options.pickDirectory!()
+        if (!sourcePath) return undefined
+        await api.installOrUpdate(sourcePath)
+        return sourcePath
+      })
     }
 
     void loadAll()

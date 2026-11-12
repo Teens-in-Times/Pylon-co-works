@@ -41,9 +41,14 @@ export default function DocsSheetView(props: DocsSheetViewProps) {
   // 任一模态覆盖层打开（原 useModalOverlayOpen 的 Solid 等价消费）。
   const modalOverlayOpen = createZustandSignal(useModalOverlayStore, state => state.openKeys.size > 0)
   let viewport!: HTMLDivElement
+  let disposed = false
+  let starting = false
   const ready = () => snapshot().phase === 'ready'
 
   const start = async () => {
+    if (starting || disposed) return
+    starting = true
+    setSnapshot(previous => ({ ...previous, phase: 'starting', error: null }))
     const rect = viewport?.getBoundingClientRect()
     try {
       const next = await DOCS_CLIENT.start({
@@ -52,10 +57,13 @@ export default function DocsSheetView(props: DocsSheetViewProps) {
         width: Math.max(1, Math.round(rect?.width ?? 1)),
         height: Math.max(1, Math.round(rect?.height ?? 1)),
       }) as DocsSheetSnapshot
-      setSnapshot(next)
+      if (!disposed) setSnapshot(next)
     } catch (error) {
+      if (disposed) return
       setSnapshot(previous => ({ ...previous, phase: 'error', error: error instanceof Error ? error.message : String(error) }))
       reportRuntimeError('打开文档站', error)
+    } finally {
+      starting = false
     }
   }
 
@@ -119,6 +127,7 @@ export default function DocsSheetView(props: DocsSheetViewProps) {
 
   onMount(() => {
     onCleanup(() => {
+      disposed = true
       // Sheet 可能在 WebView 已创建但未 ready 时卸载；close 对 idle 幂等，覆盖所有状态。
       if (snapshot().phase !== 'idle') {
         void DOCS_CLIENT.close().catch(() => {})
@@ -129,7 +138,7 @@ export default function DocsSheetView(props: DocsSheetViewProps) {
   const runCommand = async (command: 'back' | 'forward' | 'reload' | 'home') => {
     try {
       const next = await DOCS_CLIENT[command]() as DocsSheetSnapshot
-      setSnapshot(previous => ({ ...previous, ...next }))
+      if (!disposed) setSnapshot(previous => ({ ...previous, ...next }))
     } catch (error) {
       reportRuntimeError('文档站导航', error)
     }
@@ -145,7 +154,7 @@ export default function DocsSheetView(props: DocsSheetViewProps) {
         <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('forward')} disabled={!ready()} aria-label="前进"><LucideIcon name="ChevronRight" size={18} /></button>
         <button type="button" class={toolbarButtonClass} onClick={() => void runCommand('reload')} disabled={!ready()} aria-label="刷新"><LucideIcon name="RotateCw" size={15} /></button>
         <span class="docs-title min-w-0 flex-1 px-1 text-[12px] text-text-dim truncate">Pylon 文档</span>
-        <span class={`docs-status inline-flex h-[24px] items-center justify-center px-[7px] border rounded-[4px] font-[family-name:var(--mono)] text-[10px] tracking-[.04em] uppercase ${ready() ? 'text-[var(--tool-ok)] border-[color-mix(in_srgb,var(--tool-ok)_38%,var(--border))]' : snapshot().phase === 'error' ? 'text-[var(--tool-err,var(--danger))] border-[color-mix(in_srgb,var(--tool-err,var(--danger))_38%,var(--border))]' : 'text-text-dim border-border'}`} data-phase={snapshot().phase}>{snapshot().phase}</span>
+        <span class={`docs-status inline-flex h-[24px] items-center justify-center px-[7px] border rounded-[2px] font-[family-name:var(--mono)] text-[10px] ${ready() ? 'text-success border-success-edge' : snapshot().phase === 'error' ? 'text-danger border-danger-edge' : 'text-text-dim border-border'}`} data-phase={snapshot().phase}>{({ idle: '未打开', starting: '加载中', ready: '就绪', error: '加载失败' })[snapshot().phase]}</span>
       </div>
       <div ref={element => { viewport = element }} class="docs-viewport relative flex flex-1 min-w-0 min-h-0 overflow-hidden">
         <Show when={!ready()}>
@@ -154,8 +163,8 @@ export default function DocsSheetView(props: DocsSheetViewProps) {
             <p class="m-0 text-[13px]">
               {snapshot().phase === 'error' ? (snapshot().error || '文档站加载失败') : snapshot().phase === 'idle' ? '文档站尚未启动' : '正在打开文档站…'}
             </p>
-            <Show when={snapshot().phase === 'error'}><p class="m-0 text-[11px] text-text-placeholder">离线文档站需随发行包分发的 docs-site 资源；开发构建可先运行 bun run docs:build:offline</p></Show>
-            <Show when={snapshot().phase === 'idle'}><button type="button" class="docs-retry px-3 h-[28px] border border-border rounded-[5px] text-[12px] text-text bg-bg-input cursor-pointer hover:border-accent hover:text-text hover:bg-bg-hover" onClick={() => void start()}>打开文档</button></Show>
+            <Show when={snapshot().phase === 'error'}><p class="m-0 text-[11px] text-text-placeholder">请确认应用的离线文档资源完整，然后重试。</p></Show>
+            <Show when={snapshot().phase === 'idle' || snapshot().phase === 'error'}><button type="button" class="docs-retry px-3 h-[28px] border border-border rounded-[2px] text-[12px] text-text bg-bg-input cursor-pointer hover:border-accent hover:text-text hover:bg-bg-hover" onClick={() => void start()}>{snapshot().phase === 'error' ? '重试打开文档' : '打开文档'}</button></Show>
           </div>
         </Show>
       </div>

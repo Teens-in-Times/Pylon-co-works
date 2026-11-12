@@ -67,8 +67,9 @@
 .workspace-menu-empty { padding:8px 10px; color:var(--text-dim); font-size:var(--font-size-xs); }
 .workspace-window-controls-divider { width:1px; height:18px; margin:auto var(--ui-space-1); background:color-mix(in srgb,var(--border) 78%,transparent); }
 .workspace-titlebar-launchers { border-left:0; border-right:0; }
+/* Window-button sizing must not reach menu descendants inside app controls. */
 .workspace-titlebar-icon,
-.workspace-window-controls button {
+.workspace-window-native-controls > button {
   -webkit-app-region:no-drag; border:0; border-radius: 0; background:transparent;
   color:var(--titlebar-text-muted); cursor:pointer; outline:none;
 }
@@ -89,19 +90,19 @@
 .workspace-titlebar:not(.sidebar-expanded) .workspace-titlebar-brand { display:none; }
 .workspace-titlebar-brand { margin-left:var(--ui-space-2); }
 .workspace-titlebar-icon:hover,
-.workspace-window-controls button:hover { background:var(--bg-hover); color:var(--titlebar-text-resolved); }
+.workspace-window-native-controls > button:hover { background:var(--bg-hover); color:var(--titlebar-text-resolved); }
 .workspace-titlebar-icon:disabled { cursor:default; opacity:0.25; background:transparent; color:var(--titlebar-text-muted); }
 .workspace-titlebar-icon:focus-visible,
-.workspace-window-controls button:focus-visible,
+.workspace-window-native-controls > button:focus-visible,
 .sheet-tab button:focus-visible { box-shadow:inset 0 0 0 var(--line-width-2) var(--accent); color:var(--titlebar-text-resolved); }
 /* Sheet Launcher 与恢复关闭项是 Workspace 导航入口，图标使用主题强调色。 */
 .workspace-window-controls { height:calc(var(--titlebar-h,44px) - var(--line-width-1)); }
 /* 标题栏里所有可点盒子的**高度与垂直位置**统一到一处：`--ui-control-standard`（36px）+ 居中。
    曾经窗口控制是 `margin:4px 0` + `height:calc(44px - 8px)`，与图标按钮的 `margin:auto` 差 0.5px，
    加上全高的「···」，同一行里三种高度，实机一眼就看出没对齐。 */
-.workspace-window-controls button { width:38px; margin:auto 0; height:var(--ui-control-standard); font-size:var(--font-size-md); }
-.workspace-window-native-controls button { display:grid; place-items:center; }
-.workspace-window-controls .close:hover { background:rgba(190,40,40,0.72); color:#fff; }
+.workspace-window-native-controls > button { width:38px; margin:auto 0; height:var(--ui-control-standard); font-size:var(--font-size-md); }
+.workspace-window-native-controls > button { display:grid; place-items:center; }
+.workspace-window-native-controls > .close:hover { background:rgba(190,40,40,0.72); color:#fff; }
 
 /* 页签区**收缩到内容宽度**（不再与拖拽区平分剩余空间）：新建 Sheet 的「+」因此紧贴最后一个页签，
    空档全部归右侧拖拽区——浏览器式的页签语法。
@@ -180,7 +181,7 @@
 @media (max-width:1100px) {
   .sheet-tab-strip { --sheet-tab-min-width:120px; --sheet-tab-agent-min-width:120px; }
   .sheet-tab { width:120px; flex:1 1 120px; min-width:var(--sheet-tab-min-width,120px); max-width:120px; }
-  .workspace-window-controls button { width:34px; }
+  .workspace-window-native-controls > button { width:34px; }
   .workspace-titlebar-entry-label { display:inline; }
 }
 
@@ -199,7 +200,7 @@
   .workspace-titlebar { --pylon-terminal-touch-target:44px; }
   .sheet-tab-close { visibility:visible; opacity:1; }
   .workspace-titlebar-icon,
-  .workspace-window-controls button,
+  .workspace-window-native-controls > button,
   .sheet-tab-close,
   /* 粗指针下「···」要放大到触控尺寸。**同时改 token**：JS 侧按这个宽度做预算，
      只改 min-width 会让预算短 20px，右缘那个页签又被切掉一点。 */
@@ -209,9 +210,9 @@
 
 @media (max-width:520px) {
   .workspace-titlebar-icon,
-  .workspace-window-controls button,
+  .workspace-window-native-controls > button,
   .app[data-interface-mode="modern-gui"] .workspace-titlebar-icon,
-  .app[data-interface-mode="modern-gui"] .workspace-window-controls button {
+  .app[data-interface-mode="modern-gui"] .workspace-window-native-controls > button {
     width:var(--ui-control-compact);
     margin-inline:0;
   }
@@ -333,7 +334,7 @@
 /* 齿轮是**图标**触发（左栏折叠钮那一套尺寸语法），不是被文字撑开的标签：把上面那条
    「auto 宽度 + 左右 padding」的标签语法单独覆盖掉。
    右栏折叠钮**必须**跟它同规格——两个图标按钮并排却一个 38×36、一个 36×36，看上去就是没对齐
-   （右栏钮若留给 `.workspace-window-controls button` 那条规则，会拿到 38 宽与 4px 上下外边距）。 */
+   （右栏钮若留给 `.workspace-window-native-controls > button` 那条规则，会拿到 38 宽与 4px 上下外边距）。 */
 .workspace-titlebar-menu-anchor > button.workspace-titlebar-menu-icon,
 .workspace-titlebar-icon.workspace-right-rail-toggle {
   display:grid; place-items:center;
@@ -361,7 +362,7 @@
   from { opacity:0; transform:translateY(-4px) scale(.985); }
   to { opacity:1; transform:translateY(0) scale(1); }
 }
-.workspace-titlebar .workspace-menu-chrome[data-menu-kind="settings"] { min-width:252px; }
+.workspace-titlebar .workspace-menu-chrome[data-menu-kind="app-menu"] { min-width:252px; }
 .workspace-menu-subheading {
   padding:2px 8px 5px;
   color:var(--text-placeholder);
@@ -418,14 +419,14 @@
 }
 
 .sheet-launcher-overlay {
-  position:fixed; inset:0; z-index:70; background:color-mix(in srgb,var(--text) 42%,transparent);
-  backdrop-filter:blur(4px); animation:sheet-launcher-in 100ms ease-out;
+  position:fixed; inset:0; z-index:70; background:color-mix(in srgb,var(--text) 22%,transparent);
+  animation:sheet-launcher-in 100ms ease-out;
 }
 .sheet-launcher-dialog {
-  position:fixed; z-index:71; top:9%; left:50%; width:min(780px,calc(100vw - 32px));
+  position:fixed; z-index:71; top:9%; left:50%; width:min(620px,calc(100vw - 32px));
   transform:translateX(-50%); overflow:hidden; border:1px solid var(--border-focus);
-  border-radius:var(--ui-radius-lg); background:var(--surface-overlay);
-  color:var(--text); box-shadow:var(--shadow-float); backdrop-filter:blur(24px) saturate(1.08); font-family:var(--font);
+  border-radius:var(--ui-radius-sm); background:var(--surface-raised);
+  color:var(--text); box-shadow:var(--shadow-raised); font-family:var(--font);
 }
 .sheet-launcher-input-row {
   min-height:56px; display:flex; align-items:center; gap:var(--ui-space-3); padding:0 var(--ui-space-4);
@@ -440,20 +441,20 @@
   padding:2px 6px; border:1px solid var(--border); border-radius:var(--ui-radius-xs);
   background:var(--bg-panel); color:var(--text-dim); font:10px var(--mono);
 }
-.sheet-launcher-list { max-height:min(680px,72vh); overflow-y:auto; padding:var(--ui-space-2) var(--ui-space-3) var(--ui-space-4); }
+.sheet-launcher-list { max-height:min(580px,64vh); overflow-y:auto; padding:4px 8px 12px; }
 .sheet-launcher-list [cmdk-group-heading] {
-  padding:var(--ui-space-4) var(--ui-space-1) var(--ui-space-2); color:var(--text-dim); font-size:var(--font-size-2xs);
-  font-weight:700; letter-spacing:0.12em; text-transform:uppercase;
+  padding:16px 10px 6px; color:var(--text-dim); font-size:12px;
+  font-weight:500;
 }
-.sheet-launcher-section [cmdk-group-items] { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ui-space-2); }
+.sheet-launcher-section [cmdk-group-items] { display:grid; grid-template-columns:1fr; gap:2px; }
 .sheet-launcher-list [cmdk-item] {
-  min-height:70px; display:flex; align-items:center; gap:var(--ui-space-3); padding:var(--ui-space-3);
-  border:1px solid var(--border); border-radius:var(--ui-radius-md); background:color-mix(in srgb,var(--bg-panel) 78%,transparent); color:var(--text); cursor:pointer; user-select:none;
+  min-height:52px; display:flex; align-items:center; gap:12px; padding:8px 10px;
+  border:1px solid transparent; border-radius:var(--ui-radius-xs); background:transparent; color:var(--text); cursor:pointer; user-select:none;
 }
-.sheet-launcher-list [cmdk-item][data-selected="true"] { border-color:color-mix(in srgb,var(--accent) 58%,var(--border)); background:var(--bg-active); box-shadow:0 8px 26px color-mix(in srgb,var(--accent) 9%,transparent); }
+.sheet-launcher-list [cmdk-item][data-selected="true"] { background:var(--state-selected-bg); box-shadow:none; }
 .sheet-launcher-list [cmdk-item]:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .sheet-launcher-list [cmdk-item][data-disabled="true"] { opacity:0.38; cursor:not-allowed; }
-.sheet-launcher-icon { width:38px; height:38px; flex:0 0 38px; display:grid; place-items:center; border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border)); border-radius:var(--ui-radius-md); background:color-mix(in srgb,var(--accent) 8%,var(--bg-panel)); color:var(--accent); }
+.sheet-launcher-icon { width:28px; height:28px; flex:0 0 28px; display:grid; place-items:center; color:var(--text-dim); }
 .sheet-launcher-copy { min-width:0; display:flex; flex:1; flex-direction:column; gap:2px; }
 .sheet-launcher-card-title { min-width:0; display:flex; align-items:center; gap:var(--ui-space-2); }
 .sheet-launcher-card-title strong, .sheet-launcher-copy > strong { overflow:hidden; color:var(--text); font-size:var(--font-size-base); font-weight:650; text-overflow:ellipsis; white-space:nowrap; }
@@ -589,7 +590,8 @@
      height and the compact default plus a small breathing gap. */
   position: fixed; right: 14px;
   bottom: var(--error-center-bottom, 130px); z-index: 90;
-  width: min(390px, calc(100vw - 28px)); max-height: min(42vh, 480px); overflow: hidden;
+  display:flex; flex-direction:column;
+  width: min(390px, calc(100vw - 28px)); max-height:min(60vh, calc(100dvh - var(--error-center-bottom,130px) - 16px)); overflow: hidden;
   padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--tool-err, #be2828) 38%, var(--border));
   border-radius: var(--ui-radius-md, 6px); background: color-mix(in srgb, var(--surface-panel, var(--bg-panel)) 96%, transparent);
   box-shadow: 0 10px 28px color-mix(in srgb, var(--text) 18%, transparent); backdrop-filter: blur(14px);
@@ -597,17 +599,20 @@
 }
 .error-center.severity-warning { border-color: color-mix(in srgb, var(--warning, #d29922) 38%, var(--border)); }
 .error-center.severity-info { border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
-.error-center-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: 700; }
-.error-center-head-hint { flex: 1; min-width: 0; color: var(--text-dim); font-size: var(--font-size-2xs); font-weight: 400; }
+.error-center-head { display: flex; flex-shrink:0; flex-wrap:wrap; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: 700; }
+.error-center-head-hint { flex:1 0 100%; order:1; min-width: 0; color: var(--text-dim); font-size: var(--font-size-2xs); font-weight: 400; }
+.error-center-head > strong { flex:1; }
+.error-center-action:disabled { opacity:var(--state-disabled-opacity); cursor:wait; }
 .error-center-action {
+  min-height:30px;
   border: 1px solid var(--border); border-radius: var(--ui-radius-sm, 4px); background: transparent;
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); font-size: var(--font-size-xs); cursor: pointer; padding: 3px 7px; white-space: nowrap;
 }
-.error-center-list { list-style: none; display: grid; gap: 7px; max-height: calc(min(42vh, 480px) - 54px); overflow: auto; overscroll-behavior: contain; margin: 0; padding: 0 2px 2px 0; }
+.error-center-list { list-style: none; display: grid; flex:1 1 auto; min-height:0; gap: 7px; overflow: auto; overscroll-behavior: contain; margin: 0; padding: 0 2px 2px 0; }
 .error-center-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 7px; padding: 8px; border: 1px solid color-mix(in srgb, var(--border) 72%, transparent); border-inline-start: 3px solid var(--tool-err, #be2828); border-radius: var(--ui-radius-sm, 4px); background: color-mix(in srgb, var(--tool-err, #be2828) 5%, transparent); }
 .error-center-item.severity-warning { border-inline-start-color: var(--warning, #d29922); background: color-mix(in srgb, var(--warning, #d29922) 5%, transparent); }
 .error-center-item.severity-info { border-inline-start-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.error-center-item-main { display: grid; flex: 1 1 220px; min-width: 0; gap: 3px; }
+.error-center-item-main { display: grid; flex:1 1 100%; min-width: 0; gap: 3px; }
 .error-center-item strong { color: var(--tool-err, #be2828); overflow-wrap: anywhere; }
 .error-center-item.severity-warning strong { color: var(--warning, #d29922); }
 .error-center-item.severity-info strong { color: var(--accent); }
@@ -630,6 +635,7 @@
 
 /* ── Agent 状态三灯（左上角品牌区）：保留原状态语义，移除连接线 ── */
 .agent-status-lights { position:relative; display:flex; align-items:center; padding:2px 1px; }
+.agent-status-label { display:none; }
 .agent-status-light { position:relative; z-index:1; border:1px solid color-mix(in srgb,currentColor 64%,transparent); border-radius:50%; background:var(--text-dim); color:var(--text-dim); opacity:0.3; }
 .agent-light-ok { background:var(--brand-node-ready); color:var(--brand-node-ready); }
 .agent-light-warn { background:var(--brand-node-warn); color:var(--brand-node-warn); }
@@ -653,76 +659,55 @@
 /* 辉光暗态不太暗：正常色保持，仅减弱辉光 */
 @keyframes agent-glow { 0%,100% { opacity:0.8; box-shadow:none; } 50% { opacity:1; box-shadow:0 0 8px currentColor; } }
 
-/* Modern GUI application shell. Kept mode-scoped so terminal profiles retain their exact geometry. */
-.app[data-interface-mode="modern-gui"] {
-  --titlebar-h: 58px; /* modern-gui 标题栏更高 */
-  background:
-    radial-gradient(circle at 18% -8%, color-mix(in srgb,var(--accent) 17%,transparent), transparent 34%),
-    radial-gradient(circle at 88% 102%, color-mix(in srgb,var(--accent) 9%,transparent), transparent 32%),
-    color-mix(in srgb,var(--surface-canvas) 94%,var(--surface-panel));
-}
+/* Modern workspace chrome: one quiet title rail, with the active document as the accent. */
+.app[data-interface-mode="modern-gui"] { --titlebar-h:48px; background:var(--surface-canvas); }
 .app[data-interface-mode="modern-gui"] .workspace-titlebar {
-  height:58px; min-height:58px; grid-template-columns:max(var(--sheet-sidebar-track-width,0px),var(--titlebar-rail-toggle-width)) minmax(0,1fr) auto;
-  padding:7px 8px; gap:8px; border-bottom:0; background:color-mix(in srgb,var(--surface-canvas) 74%,transparent);
-  box-shadow:none; backdrop-filter:blur(28px) saturate(1.18);
+  height:48px; min-height:48px;
+  grid-template-columns:max(var(--sheet-sidebar-track-width,0px),var(--titlebar-rail-toggle-width)) minmax(0,1fr) auto;
+  padding:0 8px; gap:8px; border-bottom:0; background:var(--surface-canvas);
+  box-shadow:none; backdrop-filter:none;
 }
 .app[data-interface-mode="modern-gui"] .workspace-titlebar-sidebar,
 .app[data-interface-mode="modern-gui"] .workspace-titlebar-workspace,
 .app[data-interface-mode="modern-gui"] .workspace-window-controls {
-  min-height:44px; border:1px solid color-mix(in srgb,var(--border) 76%,transparent); border-radius:14px;
-  background:color-mix(in srgb,var(--surface-panel) 86%,transparent); box-shadow:0 8px 28px color-mix(in srgb,var(--text) 6%,transparent);
+  min-height:40px; border:0; border-radius:0; background:transparent; box-shadow:none;
 }
-.app[data-interface-mode="modern-gui"] .workspace-titlebar-sidebar { padding:0 7px; border-right:1px solid color-mix(in srgb,var(--border) 76%,transparent); }
-.app[data-interface-mode="modern-gui"] .workspace-titlebar-workspace { align-items:center; padding:4px; }
+.app[data-interface-mode="modern-gui"] .workspace-titlebar-sidebar { padding:0 4px; }
+.app[data-interface-mode="modern-gui"] .agent-status-lights { gap:7px !important; }
+.app[data-interface-mode="modern-gui"] .agent-status-light { max-width:7px; max-height:7px; border:0; opacity:1; animation:none; box-shadow:none; filter:none; }
+.app[data-interface-mode="modern-gui"] .agent-status-light:not(:first-child) { display:none; }
+.app[data-interface-mode="modern-gui"] .agent-status-label { display:block; color:var(--text-dim); font:12px/1.4 var(--font); }
+.app[data-interface-mode="modern-gui"] .workspace-titlebar-workspace { align-items:center; padding:0; }
 .app[data-interface-mode="modern-gui"] .workspace-titlebar-drag { min-width:8px; }
 .app[data-interface-mode="modern-gui"] .workspace-titlebar-icon,
-.app[data-interface-mode="modern-gui"] .workspace-window-controls button {
-  display:grid; place-items:center; width:34px; height:34px; margin:auto 1px; border-radius:10px;
-  transition:background 140ms ease,color 140ms ease,transform 140ms ease;
+.app[data-interface-mode="modern-gui"] .workspace-window-native-controls > button {
+  display:grid; place-items:center; width:32px; height:32px; margin:auto 1px; border-radius:var(--ui-radius-sm);
+  transition:background var(--motion-fast),color var(--motion-fast);
 }
-.app[data-interface-mode="modern-gui"] .workspace-titlebar-menu-anchor > button {
-  width:auto; min-width:0; border-radius:0; background:transparent; transform:none;
-}
-/* 齿轮是**图标**触发（与左栏折叠钮同一套尺寸语法），不是文字标签：把它从上面那条
-   「auto 宽度」里单独拎出来，否则会退回被文字撑开的形状。 */
-.app[data-interface-mode="modern-gui"] .workspace-titlebar-menu-anchor > button.workspace-titlebar-menu-icon {
-  width:34px; height:34px; padding:0; margin:auto 1px; border-radius:10px;
-}
-.app[data-interface-mode="modern-gui"] .workspace-titlebar-menu-anchor > button:hover { transform:none; }
-.app[data-interface-mode="modern-gui"] .workspace-titlebar-icon:hover,
-.app[data-interface-mode="modern-gui"] .workspace-window-controls button:hover { transform:translateY(-1px); }
-.app[data-interface-mode="modern-gui"] .workspace-window-controls { height:44px; padding:0 4px; }
-.app[data-interface-mode="modern-gui"] .workspace-window-controls-divider { height:22px; margin-inline:3px; }
-.app[data-interface-mode="modern-gui"] .workspace-window-controls .close:hover { border-radius:10px; }
-.app[data-interface-mode="modern-gui"] .sheet-tab-region { height:36px; align-items:center; }
-.app[data-interface-mode="modern-gui"] .sheet-tab-strip { align-items:center; gap:4px; padding:0 3px; --sheet-tab-min-width:132px; --sheet-tab-agent-min-width:132px; }
+.app[data-interface-mode="modern-gui"] .workspace-titlebar-menu-anchor > button { width:auto; min-width:0; border-radius:var(--ui-radius-sm); transform:none; }
+.app[data-interface-mode="modern-gui"] .workspace-titlebar-menu-anchor > button.workspace-titlebar-menu-icon { width:32px; height:32px; padding:0; margin:auto 1px; }
+.app[data-interface-mode="modern-gui"] .workspace-window-controls { height:40px; padding:0; }
+.app[data-interface-mode="modern-gui"] .workspace-window-controls-divider { height:18px; margin-inline:6px; }
+.app[data-interface-mode="modern-gui"] .sheet-tab-region { height:40px; align-items:center; }
+.app[data-interface-mode="modern-gui"] .sheet-tab-strip { align-items:center; gap:2px; padding:0; --sheet-tab-min-width:112px; --sheet-tab-agent-min-width:132px; }
 .app[data-interface-mode="modern-gui"] .sheet-tab {
-  width:172px; flex:1 1 172px; min-width:var(--sheet-tab-min-width,132px); max-width:190px; height:34px; border:1px solid transparent; border-radius:10px;
+  width:172px; flex:1 1 172px; min-width:var(--sheet-tab-min-width); max-width:220px; height:36px;
+  border:0; border-radius:var(--ui-radius-xs); color:var(--text-dim); background:transparent;
 }
-.app[data-interface-mode="modern-gui"] .sheet-tab:hover { border-color:color-mix(in srgb,var(--border) 72%,transparent); }
-.app[data-interface-mode="modern-gui"] .sheet-tab.active {
-  border-color:color-mix(in srgb,var(--accent) 28%,var(--border)); background:color-mix(in srgb,var(--accent) 10%,var(--surface-raised));
-  box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 10%,transparent);
-}
-.app[data-interface-mode="modern-gui"] .sheet-tab-focus { align-self:center; height:32px; padding:0 9px; border-radius:9px; }
+.app[data-interface-mode="modern-gui"] .sheet-tab:hover { background:var(--state-hover-bg); color:var(--text); }
+.app[data-interface-mode="modern-gui"] .sheet-tab.active { background:var(--surface-panel); color:var(--text); box-shadow:inset 0 -2px var(--accent); }
+.app[data-interface-mode="modern-gui"] .sheet-tab-focus { align-self:center; height:34px; padding:0 10px; border-radius:0; font-size:13px; }
 .app[data-interface-mode="modern-gui"] .sheet-tab-kind-mark.sheet-tab-kind-icon {
-  width:18px; height:18px; flex-basis:18px; display:grid; place-items:center; border:0; border-radius:6px;
-  color:var(--text-dim); background:color-mix(in srgb,var(--text) 5%,transparent); box-shadow:none;
+  width:18px; height:18px; flex-basis:18px; display:grid; place-items:center; border:0; border-radius:0;
+  color:var(--text-dim); background:transparent; box-shadow:none;
 }
-.app[data-interface-mode="modern-gui"] .sheet-tab.active .sheet-tab-kind-icon { color:var(--accent); background:color-mix(in srgb,var(--accent) 13%,transparent); }
-.app[data-interface-mode="modern-gui"] .sheet-tab-close { display:grid; place-items:center; width:24px; height:24px; border-radius:7px; }
-.app[data-interface-mode="modern-gui"] .sheet-tab-overflow-trigger { height:34px; border:0; border-radius:9px; background:transparent; }
-.app[data-interface-mode="modern-gui"] .sheet-launcher-overlay { background:color-mix(in srgb,var(--surface-canvas) 52%,transparent); backdrop-filter:blur(14px); }
-.app[data-interface-mode="modern-gui"] .sheet-launcher-dialog { top:11%; border-radius:22px; border-color:color-mix(in srgb,var(--accent) 25%,var(--border)); box-shadow:0 32px 90px rgba(0,0,0,.28); }
-.app[data-interface-mode="modern-gui"] .sheet-launcher-list [cmdk-item] { min-height:78px; border-radius:15px; transition:transform 140ms ease,border-color 140ms ease,background 140ms ease; }
-.app[data-interface-mode="modern-gui"] .sheet-launcher-list [cmdk-item][data-selected="true"] { transform:translateY(-1px); }
-.app[data-interface-mode="modern-gui"] .sheet-launcher-icon { width:42px; height:42px; flex-basis:42px; border-radius:13px; }
-.app[data-interface-mode="modern-gui"] .sheet-launcher-dialog kbd,
-.app[data-interface-mode="modern-gui"] .sheet-launcher-badge { border-radius:7px; }
-@media (prefers-reduced-motion:no-preference) {
-  .app[data-interface-mode="modern-gui"] .workspace-titlebar { animation:modern-shell-enter 260ms cubic-bezier(.2,.8,.2,1); }
-  @keyframes modern-shell-enter { from { opacity:0; transform:translateY(-6px); } }
-}
+.app[data-interface-mode="modern-gui"] .sheet-tab.active .sheet-tab-kind-icon { color:var(--accent); }
+.app[data-interface-mode="modern-gui"] .sheet-tab-close { display:grid; place-items:center; width:24px; height:24px; border-radius:var(--ui-radius-xs); }
+.app[data-interface-mode="modern-gui"] .sheet-tab-overflow-trigger { height:32px; border:0; border-radius:var(--ui-radius-xs); background:transparent; }
+.app[data-interface-mode="modern-gui"] .sheet-launcher-dialog { top:12%; border-color:var(--stroke-subtle); }
+.app[data-interface-mode="modern-gui"] .sheet-launcher-list [cmdk-item] { min-height:52px; border-color:transparent; background:transparent; }
+.app[data-interface-mode="modern-gui"] .sheet-launcher-list [cmdk-item][data-selected="true"] { background:var(--state-selected-bg); border-color:var(--accent-edge); box-shadow:none; }
+.app[data-interface-mode="modern-gui"] .sheet-launcher-icon { color:var(--text-dim); }
 
 /* 设置 sheet 是普通布局 sheet：标题栏不因设置打开而锁任何交互（关闭走页签，
    #195 已回收覆盖层时代的「设置打开态」交互锁，不得回潮——契约见 workspaceTitlebar.css.test）。 */

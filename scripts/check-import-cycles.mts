@@ -17,8 +17,7 @@
  *
  * 扫描面：src/ 全部 .ts/.tsx/.mts 工作树现存文件（含未跟踪的在途成品，删除态文件
  * 自然跳过）。剔除测试资产：__tests__/、__fixtures__/、*.test.*、src/test/、
- * src/test-utils/，以及 solid-workbench/smoke/（vite 独立 smoke 构建的挂载 harness，
- * 无生产消费方，见 check-production-excludes-solid-smoke 的反向隔离门禁）。
+ * src/test-utils/。
  * src/demo/ 保留在图内：经 app/bootstrap/browserDemoBootstrap 静态入生产图，DEV 门
  * 只是运行时开关。
  *
@@ -42,7 +41,6 @@ const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 function isTestAsset(rel: string): boolean {
   return rel.includes('/__tests__/') || rel.includes('/__fixtures__/') || rel.startsWith('src/test/')
     || rel.startsWith('src/test-utils/')
-    || rel.startsWith('src/renderers/solid-workbench/smoke/')
     || /\.test\.[cm]?[jt]sx?$/.test(rel)
 }
 

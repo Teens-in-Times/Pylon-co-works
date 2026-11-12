@@ -261,7 +261,9 @@
 .app[data-interface-mode="terminal-like"] .agent-sidebar {
   --sidebar-rail-pad: 10px;
   color:var(--sidebar-text-color,var(--text));
+  font-family:var(--mono);
 }
+.app[data-interface-mode="terminal-like"] .agent-sidebar .session-new-action { min-height:30px; border-radius:0; background:transparent; font-family:var(--mono); }
 .app[data-interface-mode="terminal-like"] .agent-sidebar .sidebar-modules {
   padding-block:8px 12px;
   gap:4px;
@@ -423,16 +425,18 @@
 /* 折叠箭头默认压到很淡、悬停/聚焦才亮：用户点名「折叠按钮也太显眼」。 */
 .cwd-group-folder { width:15px; flex:0 0 15px; display:grid; place-items:center; color:color-mix(in srgb,var(--accent) 72%,var(--text)); }
 .cwd-group-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--sidebar-name-size, 14px); font-weight:600; color:var(--text); }
-/* 计数与动作**共用一个流内格子**：两者交叉淡出（悬停时计数让位给动作），因此格子尺寸由
-   较宽的动作决定，切换时不发生位移。旧写法把两者绝对定位、再给 `.cwd-group-toggle` 预留
-   `padding-right:62px`——那个 62px 是手抄的动作宽度之和，加第三个动作就会静默压字。 */
+/* 身份与会话计数在 toggle 中，工作区动作占独立流内列，避免覆盖长项目名。 */
 .cwd-group-meta { position:relative; flex:0 0 auto; display:grid; place-items:center; padding-right:2px; }
-/* 组右侧**只剩动作按钮**（用户去掉了会话数量的显示）。动作常驻占位、按需显形：
-   显形用 opacity + visibility/pointer-events 同步门控，未显形时不参与命中测试。 */
+/* 设置动作按悬停/焦点显示；新建入口保持可发现。 */
 .cwd-group-actions { grid-area:1/1; display:flex; gap:2px; opacity:0; visibility:hidden; pointer-events:none; transition:opacity var(--motion-fast) var(--ease-standard); }
 .cwd-group:hover .cwd-group-actions, .cwd-group:focus-within .cwd-group-actions { opacity:1; visibility:visible; pointer-events:auto; transition-delay:0s; }
 .cwd-group-add { width:22px; height:22px; display:grid; place-items:center; padding:0; border:1px solid transparent; border-radius:var(--ui-radius-sm); background:transparent; color:var(--text-dim); cursor:pointer; font-size:12px; }
 .cwd-group-add:hover { color:var(--accent); background:var(--bg-hover); border-color:var(--border); }
+.cwd-group-head[data-current="true"] .cwd-group-name { color:var(--accent); }
+.app[data-interface-mode="modern-gui"] .cwd-group-actions { opacity:1; visibility:visible; pointer-events:auto; }
+.app[data-interface-mode="modern-gui"] .cwd-group-settings { opacity:0; pointer-events:none; }
+.app[data-interface-mode="modern-gui"] .cwd-group:hover .cwd-group-settings,.app[data-interface-mode="modern-gui"] .cwd-group:focus-within .cwd-group-settings { opacity:1; pointer-events:auto; }
+.app[data-interface-mode="modern-gui"] .cwd-group-sessions { margin-left:12px; }
 /* 会话列表缩进减到 12px、去掉虚线导引轨：旧写法左侧共缩进 30px（20 margin + 10 padding）
    而右侧只有 6px，左右不对称；虚线本身也在单行紧凑行里变成噪声。 */
 /* 会话列表缩进 = 左轨 + 一个图标位，使会话名与工作区名同列（用户要求缩进一致）。 */
@@ -502,32 +506,35 @@
 .cwd-settings-dialog > .cwd-settings { margin:0 20px 16px; }
 @media (hover:none) { .cwd-group-actions { opacity:1; visibility:visible; pointer-events:auto; } .session-tail > .session-meta { opacity:0; } .session-actions { opacity:1; visibility:visible; pointer-events:auto; } }
 
-/* Modern GUI workspace rail. Local values intentionally stay in this package. */
+/* A single navigation surface; sections are separated by space rather than nested cards. */
 .app[data-interface-mode="modern-gui"] .layout { --rail-gap:8px; gap:var(--rail-gap); padding:0 8px 8px; }
 .app[data-interface-mode="modern-gui"] .sidebar {
-  margin:0; overflow:hidden; border:1px solid color-mix(in srgb,var(--border) 82%,transparent); border-radius:16px;
-  background:color-mix(in srgb,var(--surface-panel) 70%,transparent); box-shadow:0 14px 38px color-mix(in srgb,var(--text) 5%,transparent);
+  margin:0; overflow:hidden; border:0; border-inline-end:1px solid var(--stroke-subtle); border-radius:0;
+  background:var(--surface-panel); box-shadow:none;
 }
 .app[data-interface-mode="modern-gui"] .sidebar::before { border-radius:inherit; }
-.app[data-interface-mode="modern-gui"] .sidebar-block { margin:0 8px 6px; border:1px solid color-mix(in srgb,var(--border) 78%,transparent); border-radius:12px; overflow:hidden; }
-.app[data-interface-mode="modern-gui"] .sidebar-block-head { padding:8px 10px; border-radius:12px; background:transparent; }
-.app[data-interface-mode="modern-gui"] .sidebar-block-action { border-radius:8px; }
-.app[data-interface-mode="modern-gui"] .session-list { padding:6px 8px 10px; }
-.app[data-interface-mode="modern-gui"] .session-item { min-height:52px; margin:3px 0; padding:8px 10px; border-radius:12px; }
-.app[data-interface-mode="modern-gui"] .session-item:hover { transform:translateX(2px); }
-.app[data-interface-mode="modern-gui"] .session-item.active { box-shadow:0 5px 16px color-mix(in srgb,var(--accent) 8%,transparent); }
-.app[data-interface-mode="modern-gui"] .session-item.active::before { left:3px; top:13px; bottom:13px; width:3px; border-radius:3px; }
+.app[data-interface-mode="modern-gui"] .sidebar-modules { gap:16px; padding:12px 0; }
+.app[data-interface-mode="modern-gui"] .sidebar-block { margin:0 8px; border:0; border-radius:0; overflow:hidden; }
+.app[data-interface-mode="modern-gui"] .sidebar-block-head { min-height:32px; padding:6px 8px; border-radius:0; background:transparent; font-size:12px; }
+.app[data-interface-mode="modern-gui"] .sidebar-block-action { border-radius:var(--ui-radius-xs); }
+.app[data-interface-mode="modern-gui"] .session-list { padding:0 8px 8px; }
+.app[data-interface-mode="modern-gui"] .session-item { min-height:34px; margin:1px 0; padding:4px 6px; border-radius:3px; }
+.app[data-interface-mode="modern-gui"] .session-item:hover { transform:none; }
+.app[data-interface-mode="modern-gui"] .session-item.active { background:var(--accent-soft); box-shadow:none; }
+.app[data-interface-mode="modern-gui"] .session-item.active::before { left:0; top:6px; bottom:6px; width:3px; border-radius:0; }
+.app[data-interface-mode="modern-gui"] .session-item.active .session-name { font-weight:650; color:var(--text); }
+.app[data-interface-mode="modern-gui"] .session-dot:not([data-running="true"]) { visibility:hidden; }
 .app[data-interface-mode="modern-gui"] .session-pin,
 .app[data-interface-mode="modern-gui"] .profile-edit,
-.app[data-interface-mode="modern-gui"] .sidebar-action { border-radius:7px; }
-.app[data-interface-mode="modern-gui"] .profile-bar { margin:0 8px 8px; padding:9px; border:1px solid var(--border); border-radius:12px; background:color-mix(in srgb,var(--surface-raised) 70%,transparent); }
-.app[data-interface-mode="modern-gui"] .profile-avatar { border-radius:10px; }
-.app[data-interface-mode="modern-gui"] .cwd-group { margin-bottom:5px; border-radius:12px; }
-.app[data-interface-mode="modern-gui"] .cwd-group-head { min-height:56px; }
-.app[data-interface-mode="modern-gui"] .cwd-group-toggle { border-radius:10px; }
+.app[data-interface-mode="modern-gui"] .sidebar-action { border-radius:var(--ui-radius-xs); }
+.app[data-interface-mode="modern-gui"] .profile-bar { margin:0 12px 8px; padding:12px 0; border:0; border-bottom:1px solid var(--stroke-subtle); border-radius:0; background:transparent; }
+.app[data-interface-mode="modern-gui"] .profile-avatar { border-radius:var(--ui-radius-sm); }
+.app[data-interface-mode="modern-gui"] .cwd-group { margin-bottom:8px; border-radius:0; }
+.app[data-interface-mode="modern-gui"] .cwd-group-head { min-height:36px; }
+.app[data-interface-mode="modern-gui"] .cwd-group-toggle { border-radius:var(--ui-radius-xs); }
 .app[data-interface-mode="modern-gui"] .cwd-new,
 .app[data-interface-mode="modern-gui"] .cwd-settings-section,
-.app[data-interface-mode="modern-gui"] .workspace-empty { border-radius:12px; }
+.app[data-interface-mode="modern-gui"] .workspace-empty { border-radius:var(--ui-radius-xs); }
 /* 折叠态必须真正归零。上面的卡片装饰（描边/圆角/底色/投影）声明在
    `.layout[data-sidebar="collapsed"] .sidebar` 的归零规则之后，同特异性下后者胜——
    不复位就会留下 2px 描边占位（轨道宽 0 但盒子最小 = 两条边框）。flex gap 也会为
@@ -540,8 +547,7 @@
   margin-inline-end:0;
   margin-inline-start:calc(-1 * var(--rail-gap, 8px));
 }
-/* 卡片边框自己就是分栏边界：#154 那条贯穿全高的 1px 线按轨道宽定位，
-   在现代模式会落在卡片内部（实测 left:249，卡片右缘 258），故现代模式不画。 */
+/* The navigation surface owns its separator; don't draw a second layout line. */
 .app[data-interface-mode="modern-gui"] .layout[data-sidebar="expanded"]::before { display:none; }
 
 /* Q4/DF-05a：中心 workbench 先保留内容预算，再让宿主侧栏弹性收缩。 */

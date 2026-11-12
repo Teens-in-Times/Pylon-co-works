@@ -5,6 +5,7 @@ import { LucideIcon } from './LucideIcon.solid.tsx'
 import { useIdentityStore } from '../domains/identity/identityStore'
 import { useRuntimeStore } from '../domains/runtime/runtimeStore'
 import Select from './ui/Select.solid.tsx'
+import { createDialogFocus } from './ui/dialogFocus'
 
 // 样式绞杀（P93）：原 ProfileEditor.css 的 utility 化。settings-* 共享底座
 // 类（Settings.css 供给）原样保留；pe-textarea 类保留为 :has() 锚点；
@@ -67,16 +68,19 @@ export default function ProfileEditor(props: ProfileEditorProps) {
   const dirty = createMemo(() => name() !== (profile()?.name || '')
     || avatar() !== (profile()?.avatar || '')
     || persona() !== (profile()?.persona || '')
-    || model() !== (profile()?.model || 'deepseek-v4-flash'))
+    || model() !== (profile()?.model || ''))
 
   const requestClose = () => {
     if (dirty() && !window.confirm('放弃未保存的 Profile 修改？')) return
     props.onClose()
   }
 
+  let dialogRef: HTMLDivElement | undefined
+  createDialogFocus(() => dialogRef, () => true, requestClose)
+
   return (
     <div class={OVERLAY} onClick={e => { if (e.target === e.currentTarget) requestClose() }}>
-      <div class={EDITOR} role="dialog" aria-modal="true" aria-labelledby="profile-editor-title">
+      <div ref={node => { dialogRef = node }} class={EDITOR} role="dialog" aria-modal="true" aria-labelledby="profile-editor-title">
         <div class="pe-header settings-dialog-header shrink-0">
           <div>
             <h3 id="profile-editor-title" class="settings-dialog-title">{creating() ? '新建 Profile' : '编辑 Profile'}</h3>

@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { For, Show, type JSX } from 'solid-js'
+import { createSignal, For, Show, type JSX } from 'solid-js'
 import type { AgentRuntimeCandidate, AgentDetectionDiagnostic, AgentProviderPreflight } from '../../domains/agent/agentDetector.ts'
 import { candidateImportMode, candidateValidationDetails, type AgentCandidateValidationState } from '../../domains/agent/candidateValidation.ts'
 import { presentDetectionDiagnostic } from './agentDetectionDiagnostics.ts'
@@ -7,23 +7,10 @@ import ArgumentListEditor from './ArgumentListEditor.solid.tsx'
 import { describeInvocation } from '../../domains/agent/invocationDraft.ts'
 import type { CandidateDraft } from './useAgentCandidateProvisioning.solid.ts'
 
-const actionBase = 'inline-flex min-h-8 items-center justify-center rounded-sm border px-3 py-1 font-sans text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-default disabled:opacity-50'
+const actionBase = 'inline-flex min-h-8 items-center justify-center rounded-[4px] border px-3 py-1 font-sans text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-default disabled:opacity-50'
 const actionButton = `${actionBase} border-stroke-default bg-surface-raised text-content-text hover:bg-hover-bg`
-const primaryButton = `${actionBase} border-accent-edge bg-accent-soft text-content-text font-semibold hover:bg-accent-soft-strong`
-const draftInput = 'w-full min-w-0 rounded-sm border border-stroke-default bg-surface-panel px-2 py-1 font-sans text-sm text-content-text focus-visible:outline-2 focus-visible:outline-focus-ring disabled:opacity-50'
-
-function candidateProtocolLabel(validation: AgentCandidateValidationState | undefined): string {
-  if (validation?.status === 'testing') return '验证中'
-  if (validation?.status === 'ok') return '可用'
-  if (validation?.status === 'failed') return '失败'
-  return '未验证'
-}
-
-function candidateStartabilityLabel(startability: AgentRuntimeCandidate['startability']): string {
-  if (startability === 'verified') return '可启动'
-  if (startability === 'failed') return '启动失败'
-  return '版本未确认'
-}
+const primaryButton = `${actionBase} border-accent-edge bg-accent text-[color:var(--text-on-accent)] font-semibold hover:opacity-90`
+const draftInput = 'w-full min-w-0 h-9 rounded-[4px] border border-stroke-default bg-bg-input px-3 font-sans text-[13px] text-content-text focus-visible:outline-2 focus-visible:outline-focus-ring disabled:opacity-50'
 
 /** 候选卡内的启动命令预览（与共享 InvocationPreview 同构；候选卡用它自己的 issues 面）。 */
 function InvocationPreview(props: { executable: string; args: string[] }): JSX.Element {
@@ -108,136 +95,159 @@ interface AgentCandidateListProps {
 }
 
 /**
- * 设置页发现入口：优先展示候选与导入动作，报告、草稿和诊断按需展开。
- * 状态与副作用由宿主提供，此组件只呈现状态并转发操作。
- *
- * #515 W1：Solid 实体。DOM/class/aria 契约：section.agent-runtime-discovery
- * [aria-label="发现的运行时"] > .set-preset-row 动作行 + details 探测报告 +
- * .agent-candidate-row[aria-expanded] 候选卡；候选卡内的派生值（草稿/验证/导入态）
- * 全部收进 per-candidate accessor，读取时求值。
+ * Candidate selection and one focused setup surface. The host owns all drafts,
+ * validation receipts and persistence; this view only chooses what to reveal.
  */
 export default function AgentCandidateList(props: AgentCandidateListProps) {
+  const [reportOpen, setReportOpen] = createSignal(false)
+  const selected = () => props.candidates.find(candidate => candidate.candidateId === props.selectedCandidateId)
+  const importedId = (candidate: AgentRuntimeCandidate) => props.importedCandidateIds[candidate.candidateId] ?? props.resolveImportedAgentId(candidate)
   return (
     <section class="agent-runtime-discovery" aria-label="发现的运行时">
-      <div class="set-preset-row mt-3">
-        <strong>发现的运行时（{props.candidates.length}）</strong>
-        <button class={actionButton} type="button" disabled={props.detecting || props.provisioningCandidateId !== null} onClick={props.onRedetect}>{props.detecting ? '探测中…' : '重新探测'}</button>
-        <Show when={props.detecting}><button class={actionButton} type="button" onClick={props.onCancelDetection}>取消探测</button></Show>
-        <button class={actionButton} type="button" disabled={props.provisioningCandidateId !== null} onClick={props.onManualCreate}>手动添加</button>
-      </div>
-      <p class="set-hint">选择启动入口后验证并导入。导入会保存配置，点击“使用此 Agent”再连接并打开工作区。</p>
-      <Show when={props.detecting}><div class="set-hint" role="status">正在检查本机的 ACP 启动入口…</div></Show>
+      <header class="flex items-start justify-between gap-4 flex-wrap mb-5">
+        <div><h4 class="m-0 text-[17px] font-semibold text-text">添加 Agent</h4><p class="m-0 mt-1 text-[13px] text-text-dim leading-relaxed">选择本机运行时，验证连接后即可开始对话。</p></div>
+        <div class="flex items-center gap-2">
+          <button class={actionButton} type="button" disabled={props.detecting || props.provisioningCandidateId !== null} onClick={props.onRedetect}>{props.detecting ? '正在发现…' : '重新探测'}</button>
+          <Show when={props.detecting}><button class={actionButton} type="button" onClick={props.onCancelDetection}>取消探测</button></Show>
+          <button class={actionButton} type="button" disabled={props.provisioningCandidateId !== null} onClick={props.onManualCreate}>手动添加</button>
+        </div>
+      </header>
+      <Show when={props.detecting}><p class="set-hint" role="status">正在检查本机的 ACP 启动入口…</p></Show>
       <Show when={props.detectionCompleted && props.candidates.length === 0}>
-        <div class="agent-runtime-empty" role="status">
-          未发现可自动配置的 ACP Agent。若 Agent 已安装但不在 PATH 中，可以手动选择其可执行文件。
+        <div class="agent-runtime-empty" role="status"><strong>没有发现可直接导入的 Agent</strong><span>未发现可自动配置的 ACP Agent。已安装的程序不在 PATH 中时，可选择“手动添加”指定启动文件。</span></div>
+      </Show>
+      <Show when={props.candidates.length > 0}>
+        <div class="agent-discovery-workspace">
+          <div class="agent-candidate-picker" role="group" aria-label="选择 Agent 运行时">
+            <For each={props.candidates}>{candidate => (
+              <button type="button" class={`agent-candidate-row ${candidate.candidateId === props.selectedCandidateId ? 'active' : ''}`}
+                disabled={props.provisioningCandidateId !== null && props.provisioningCandidateId !== candidate.candidateId}
+                aria-pressed={candidate.candidateId === props.selectedCandidateId}
+                onClick={() => props.onSelectCandidate(candidate.candidateId)}>
+                <span><strong>{candidate.name}</strong><small>{candidate.provider}</small></span>
+                <span>{candidateStatus(candidate, props.candidateValidation[candidate.candidateId], importedId(candidate))}</span>
+              </button>
+            )}</For>
+          </div>
+          <Show when={selected()} keyed>{candidate => <CandidateSetup candidate={candidate} state={props} />}</Show>
         </div>
       </Show>
-      <details class="my-2">
-        <summary class="cursor-pointer text-sm text-muted">探测报告与安装状态{props.detectionDiagnostics.length > 0 ? `（${props.detectionDiagnostics.length} 条提示）` : ''}</summary>
-        <Show when={props.detectionElapsedMs > 0 || props.detectionTruncated}>
-          <div class="set-hint">探测耗时：{props.detectionElapsedMs}ms{props.detectionTruncated ? ' · 结果已截断' : ''}</div>
+      <div class="mt-5 pt-3 border-t border-stroke-subtle">
+        <button type="button" class="agent-disclosure" aria-expanded={reportOpen()} onClick={() => setReportOpen(!reportOpen())}>扫描报告与安装帮助{props.detectionDiagnostics.length ? ` · ${props.detectionDiagnostics.length} 条提示` : ''}<span aria-hidden="true">{reportOpen() ? '−' : '+'}</span></button>
+        <Show when={reportOpen()}>
+          <Show when={props.detectionElapsedMs > 0 || props.detectionTruncated}><p class="set-hint">探测耗时：{props.detectionElapsedMs}ms{props.detectionTruncated ? ' · 结果已截断' : ''}</p></Show>
+          <For each={props.detectionDiagnostics}>{diagnostic => <p class="set-hint" role="status">{presentDetectionDiagnostic(diagnostic).text}</p>}</For>
+          <AgentInstallStatusList preflight={props.detectionPreflight} />
         </Show>
-        <For each={props.detectionDiagnostics}>{diagnostic => {
-          // #116 子项 10：UI 只呈现「哪条探测 · 哪个候选 · 本地化原因」；
-          // 内部码与系统级原文由 presentDetectionDiagnostic 的 raw 进运行日志。
-          const presented = presentDetectionDiagnostic(diagnostic)
-          return (
-            <div class="set-hint" role="status">
-              {presented.text}
-            </div>
-          )
-        }}</For>
-        <AgentInstallStatusList preflight={props.detectionPreflight} />
-      </details>
-      <For each={props.candidates}>{candidate => {
-        const discoveredDraft = () => props.candidateDrafts[candidate.candidateId] ?? { id: candidate.suggestedAgentId, name: candidate.name, executable: candidate.executable, args: [...candidate.args], provider: candidate.provider }
-        const validation = () => props.candidateValidation[candidate.candidateId]
-        const importMode = () => candidateImportMode(candidate, validation())
-        const validationDetails = () => validation() ? candidateValidationDetails(validation()!) : null
-        const selected = () => candidate.candidateId === props.selectedCandidateId
-        // 导入态：本面板的导入凭据优先，其次注册表现状解析。
-        const importedId = () => props.importedCandidateIds[candidate.candidateId] ?? props.resolveImportedAgentId(candidate)
-        const busy = () => props.provisioningCandidateId === candidate.candidateId
-        const alternatives = () => [{ candidateId: candidate.candidateId, executable: candidate.executable, args: candidate.args, startability: candidate.startability }, ...(candidate.alternatives ?? [])]
-        const invocation = () => alternatives().find(entry => entry.executable === discoveredDraft().executable && JSON.stringify(entry.args) === JSON.stringify(discoveredDraft().args))
-        const readiness = () => validation()?.status === 'ok' ? '连接验证通过' : candidateStartabilityLabel(invocation()?.startability)
-        return <div class="agent-candidate-option">
-          <button type="button" class={`agent-candidate-row ${selected() ? 'active' : ''}`} disabled={props.provisioningCandidateId !== null && !busy()} aria-expanded={selected()} onClick={() => props.onSelectCandidate(candidate.candidateId)}>
-            <span><strong>{candidate.name}</strong><small>{candidate.provider}</small></span>
-            <span>{importedId() ? `已导入 · ${importedId()}` : `${readiness()} · ${candidateProtocolLabel(validation())}`}</span>
-          </button>
-          <Show when={selected()}>
-            <div class="agent-runtime-card">
-              <div class="set-hint"><strong>{candidate.name}</strong> · ACP：{candidateProtocolLabel(validation())} · {importedId() ? `已导入为 ${importedId()}` : '尚未导入'}</div>
-              <Show when={!importedId() && alternatives().length > 1}>
-                <label class="flex flex-col gap-1 text-sm">
-                  启动入口
-                  <select class={draftInput} aria-label={`${candidate.name} 启动入口`} disabled={props.provisioningCandidateId !== null} value={invocation()?.candidateId ?? ''} onChange={event => {
-                    const entry = alternatives().find(item => item.candidateId === event.currentTarget.value)
-                    if (entry) props.onUpdateCandidateDraft(candidate, { executable: entry.executable, args: [...entry.args] })
-                  }}>
-                    <Show when={!invocation()}>
-                      <option value="">自定义启动入口</option>
-                    </Show>
-                    <For each={alternatives()}>{entry => <option value={entry.candidateId}>{describeInvocation(entry).display}</option>}</For>
-                  </select>
-                </label>
-              </Show>
-              <InvocationPreview executable={discoveredDraft().executable} args={discoveredDraft().args} />
-              <Show when={!importedId()}>
-                <details class="my-2">
-                  <summary class="cursor-pointer text-sm text-muted">调整导入配置</summary>
-                  <fieldset class="m-0 min-w-0 border-0 p-0" disabled={busy() && props.provisioningPhase === 'saving'}>
-                    <div class="agent-runtime-edit">
-                      <label>标识<input class={draftInput} value={discoveredDraft().id} onInput={event => props.onUpdateCandidateDraft(candidate, { id: event.currentTarget.value })} aria-label={`${candidate.name} Agent id`} /></label>
-                      <label>名称<input class={draftInput} value={discoveredDraft().name} onInput={event => props.onUpdateCandidateDraft(candidate, { name: event.currentTarget.value })} aria-label={`${candidate.name} Agent name`} /></label>
-                      <label>可执行文件<input class={draftInput} value={discoveredDraft().executable} onInput={event => props.onUpdateCandidateDraft(candidate, { executable: event.currentTarget.value })} aria-label={`${candidate.name} executable`} /></label>
-                      <ArgumentListEditor args={discoveredDraft().args} label={candidate.name} onChange={args => props.onUpdateCandidateDraft(candidate, { args })} />
-                      <label>提供方<input class={draftInput} value={discoveredDraft().provider} onInput={event => props.onUpdateCandidateDraft(candidate, { provider: event.currentTarget.value })} aria-label={`${candidate.name} provider`} /></label>
-                    </div>
-                  </fieldset>
-                </details>
-              </Show>
-              <details class="my-2">
-                <summary class="cursor-pointer text-sm text-muted">发现依据与其他入口（{candidate.evidence.length}）</summary>
-                <For each={candidate.evidence}>{evidence => <div class="set-hint">{evidence.kind}：{evidence.detail}</div>}</For>
-                <For each={candidate.warnings}>{warning => <div class="set-hint" role="status">{warning}</div>}</For>
-              </details>
-              <Show when={props.candidateErrors[candidate.candidateId]}>
-                <div class="set-hint" role="alert">{props.candidateErrors[candidate.candidateId]}</div>
-              </Show>
-              <div class="set-preset-row">
-                <Show when={importedId()} fallback={
-                  <>
-                    <button class={primaryButton} type="button" aria-busy={busy()} disabled={props.provisioningCandidateId !== null} onClick={() => props.onValidateAndImport(candidate)}>{busy() ? props.provisioningPhase === 'saving' ? '保存配置中…' : '验证连接中…' : validation()?.status === 'ok' ? '导入已验证配置' : validation()?.status === 'failed' ? '重新验证并导入' : '验证并导入'}</button>
-                    <Show when={importMode() === 'unverified'}>
-                      <button class={actionButton} type="button" disabled={props.provisioningCandidateId !== null} onClick={() => props.onImportUnverified(candidate)}>仍然导入（未验证）</button>
-                    </Show>
-                  </>
-                }>
-                  <button class={primaryButton} type="button" aria-busy={busy()} disabled={props.provisioningCandidateId !== null} onClick={() => props.onActivateImported(candidate)}>{busy() ? props.provisioningPhase === 'activating' ? '连接中…' : '刷新配置中…' : '使用此 Agent'}</button>
-                </Show>
-                <Show when={busy() && props.provisioningPhase === 'testing'}>
-                  <button class={actionButton} type="button" onClick={props.onCancelValidation}>取消验证</button>
-                  <span class="set-hint">正在验证连接，最长 15 秒</span>
-                </Show>
-              </div>
-              <Show when={validationDetails()}>
-                <div class={`agent-candidate-validation ${validation()?.status === 'failed' ? 'failed' : 'ok'}`} role="status">
-                  <strong>{validationDetails()!.headline}</strong>
-                  <span>耗时：{validationDetails()!.duration}{validation()?.status === 'failed' ? ` · 阶段：${validationDetails()!.stage}` : ''}</span>
-                  <Show when={validationDetails()!.message}><span>{validationDetails()!.message}</span></Show>
-                  <Show when={validation()?.status === 'failed'}>
-                    <details><summary class="cursor-pointer">错误详情</summary><span>退出码：{validationDetails()!.exitCode}</span><pre class="max-h-48 overflow-auto whitespace-pre-wrap break-words">stderr：{validationDetails()!.stderr}</pre></details>
-                  </Show>
-                  <Show when={importMode() === 'unverified'}><span>高置信候选可继续导入，导入后标记为未验证。</span></Show>
-                  <Show when={validation()?.status === 'failed' && importMode() === 'blocked'}><span>当前置信度必须通过验证后才能导入。</span></Show>
-                </div>
-              </Show>
+      </div>
+    </section>
+  )
+}
+
+function candidateStatus(candidate: AgentRuntimeCandidate, validation: AgentCandidateValidationState | undefined, importedId?: string): string {
+  if (importedId) return '已添加'
+  if (validation?.status === 'testing') return '验证中'
+  if (validation?.status === 'ok') return '验证通过'
+  if (validation?.status === 'failed') return '连接未通过'
+  if (candidate.startability === 'failed') return '启动异常'
+  return '待验证'
+}
+
+function shortEntry(path: string): string {
+  const segments = path.split(/[\\/]/).filter(Boolean)
+  return segments.slice(-2).join('/') || path
+}
+
+function CandidateSetup(props: { candidate: AgentRuntimeCandidate; state: AgentCandidateListProps }) {
+  const candidate = props.candidate
+  const state = props.state
+  const [advanced, setAdvanced] = createSignal(false)
+  const [diagnostics, setDiagnostics] = createSignal(false)
+  const draft = () => state.candidateDrafts[candidate.candidateId] ?? { id: candidate.suggestedAgentId, name: candidate.name, executable: candidate.executable, args: [...candidate.args], provider: candidate.provider }
+  const validation = () => state.candidateValidation[candidate.candidateId]
+  const details = () => validation() ? candidateValidationDetails(validation()!) : null
+  const importedId = () => state.importedCandidateIds[candidate.candidateId] ?? state.resolveImportedAgentId(candidate)
+  const busy = () => state.provisioningCandidateId === candidate.candidateId
+  const alternatives = () => [{ candidateId: candidate.candidateId, executable: candidate.executable, args: candidate.args, startability: candidate.startability }, ...(candidate.alternatives ?? [])]
+  const invocation = () => alternatives().find(entry => entry.executable === draft().executable && JSON.stringify(entry.args) === JSON.stringify(draft().args))
+  const importMode = () => candidateImportMode(candidate, validation())
+  const step = () => importedId() ? 3 : busy() || validation()?.status === 'failed' || validation()?.status === 'ok' ? 2 : 1
+
+  return (
+    <div class="agent-runtime-card agent-candidate-detail" role="region" aria-label={`${candidate.name} 导入设置`} aria-busy={busy()}>
+      <ol class="agent-import-steps" aria-label="导入进度">
+        <For each={['确认入口', '验证并导入', '开始对话']}>{(label, index) => <li aria-current={step() === index() + 1 ? 'step' : undefined}><span>{index() + 1}</span>{label}</li>}</For>
+      </ol>
+      <Show when={!importedId()} fallback={
+        <div class="py-3">
+          <h4 class="m-0 text-[20px] font-semibold text-text">{draft().name} 已添加</h4>
+          <p class="m-0 mt-2 text-[13px] leading-relaxed text-text-dim">{validation()?.status === 'ok' ? '连接验证已通过。现在可以打开工作区，开始第一段对话。' : '配置已保存。使用时将连接该 Agent，连接结果以实际运行状态为准。'}</p>
+        </div>
+      }>
+        <div class="mb-4"><h4 class="m-0 text-[20px] font-semibold text-text">准备 {candidate.name}</h4><p class="m-0 mt-1 text-[13px] leading-relaxed text-text-dim">确认启动入口。验证成功后会保存配置，不会自动切换当前对话。</p></div>
+        <fieldset class="m-0 p-0 border-0 min-w-0 grid gap-4" disabled={busy() && state.provisioningPhase === 'saving'}>
+          <label class="agent-form-field">显示名称<input class={draftInput} value={draft().name} onInput={event => state.onUpdateCandidateDraft(candidate, { name: event.currentTarget.value })} aria-label={`${candidate.name} Agent name`} /></label>
+          <Show when={alternatives().length > 1} fallback={
+            <div class="agent-form-field"><span>启动入口</span><strong class="text-[13px] font-medium text-text" title={draft().executable}>{shortEntry(draft().executable)}</strong></div>
+          }>
+            <label class="agent-form-field">启动入口
+              <select class={draftInput} aria-label={`${candidate.name} 启动入口`} disabled={state.provisioningCandidateId !== null} value={invocation()?.candidateId ?? ''} onChange={event => {
+                const entry = alternatives().find(item => item.candidateId === event.currentTarget.value)
+                if (entry) state.onUpdateCandidateDraft(candidate, { executable: entry.executable, args: [...entry.args] })
+              }}>
+                <Show when={!invocation()}><option value="">自定义启动入口</option></Show>
+                <For each={alternatives()}>{(entry, index) => <option value={entry.candidateId}>{shortEntry(entry.executable)}{index() === 0 ? ' · 默认入口' : ''}{entry.startability === 'failed' ? ' · 启动异常' : ''}</option>}</For>
+              </select>
+            </label>
+          </Show>
+          <Show when={invocation()?.startability === 'failed' && !validation()}><p class="m-0 text-[13px] text-warning leading-relaxed" role="status">此入口未能启动。可尝试其他入口，或在高级配置中修正路径后验证。</p></Show>
+          <button type="button" class="agent-disclosure" aria-expanded={advanced()} onClick={() => setAdvanced(!advanced())}>高级配置<span aria-hidden="true">{advanced() ? '−' : '+'}</span></button>
+          <Show when={advanced()}>
+            <div class="grid gap-4">
+              <label class="agent-form-field">Agent 标识<input class={draftInput} value={draft().id} onInput={event => state.onUpdateCandidateDraft(candidate, { id: event.currentTarget.value })} aria-label={`${candidate.name} Agent id`} /></label>
+              <label class="agent-form-field">可执行文件<input class={draftInput} value={draft().executable} onInput={event => state.onUpdateCandidateDraft(candidate, { executable: event.currentTarget.value })} aria-label={`${candidate.name} executable`} /></label>
+              <div class="agent-form-field"><span>启动参数</span><ArgumentListEditor args={draft().args} label={candidate.name} onChange={args => state.onUpdateCandidateDraft(candidate, { args })} /></div>
+              <label class="agent-form-field">提供方<input class={draftInput} value={draft().provider} onInput={event => state.onUpdateCandidateDraft(candidate, { provider: event.currentTarget.value })} aria-label={`${candidate.name} provider`} /></label>
+              <InvocationPreview executable={draft().executable} args={draft().args} />
             </div>
           </Show>
+        </fieldset>
+      </Show>
+
+      <Show when={validation()?.status === 'failed' && !importedId()}>
+        <div class="agent-candidate-validation failed" role="status">
+          <strong>连接验证未通过</strong><span>{details()?.message || '请检查启动入口与参数后重试。'}</span>
+          <span>配置尚未导入，你的修改已保留。</span>
         </div>
-      }}</For>
-    </section>
+      </Show>
+      <Show when={state.candidateErrors[candidate.candidateId]}><p class="text-[13px] text-danger leading-relaxed" role="alert">{state.candidateErrors[candidate.candidateId]}</p></Show>
+      <div class="agent-import-actions">
+        <Show when={importedId()} fallback={
+          <button class={primaryButton} type="button" aria-busy={busy()} disabled={state.provisioningCandidateId !== null} onClick={() => state.onValidateAndImport(candidate)}>{busy() ? state.provisioningPhase === 'saving' ? '保存配置中…' : '验证连接中…' : validation()?.status === 'ok' ? '导入已验证配置' : validation()?.status === 'failed' ? '重新验证并导入' : '验证并导入'}</button>
+        }>
+          <button class={primaryButton} type="button" aria-busy={busy()} disabled={state.provisioningCandidateId !== null} onClick={() => state.onActivateImported(candidate)}>{busy() ? '连接中…' : '使用此 Agent'}</button>
+        </Show>
+        <Show when={busy() && state.provisioningPhase === 'testing'}><button class={actionButton} type="button" onClick={state.onCancelValidation}>取消验证</button><span class="text-[12px] text-text-dim">正在进行 ACP 握手，最长 15 秒</span></Show>
+      </div>
+      <button type="button" class="agent-disclosure mt-4" aria-expanded={diagnostics()} onClick={() => setDiagnostics(!diagnostics())}>{validation()?.status === 'failed' ? '查看失败详情与恢复选项' : '查看启动详情'}<span aria-hidden="true">{diagnostics() ? '−' : '+'}</span></button>
+      <Show when={diagnostics()}>
+        <div class="grid gap-2 mt-3 text-[12px] leading-relaxed text-text-dim">
+          <code class="break-all">{describeInvocation({ executable: draft().executable, args: draft().args }).display}</code>
+          <For each={candidate.evidence}>{evidence => <span>{evidence.kind}：{evidence.detail}</span>}</For>
+          <For each={candidate.warnings}>{warning => <span role="status">{warning}</span>}</For>
+          <Show when={details()}><span>{details()!.headline} · {details()!.duration}</span></Show>
+          <Show when={validation()?.status === 'failed'}>
+            <span>阶段：{details()?.stage} · 退出码：{details()?.exitCode}</span>
+            <pre class="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-all">{details()?.stderr}</pre>
+            <Show when={!importedId()}>
+            <Show when={importMode() === 'unverified'} fallback={<span>此候选需要成功验证后才能导入。</span>}>
+              <p class="m-0">已确认程序身份，但尚未确认 ACP 连接。可先保存配置，稍后修复启动问题。</p>
+              <button class={actionButton} type="button" disabled={state.provisioningCandidateId !== null} onClick={() => state.onImportUnverified(candidate)}>仍然导入（未验证）</button>
+            </Show>
+            </Show>
+          </Show>
+        </div>
+      </Show>
+    </div>
   )
 }
