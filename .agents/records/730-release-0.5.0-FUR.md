@@ -57,3 +57,9 @@ Release run 43368239953 的应用、检测器与 MCP 均编译成功，最后打
 验收边界：启动时旧皮肤 schema 按现行结构清洗产生 1 条警告；历史 Provider 错误已在只读备份中确认发生于 2026-10-29，含 HTTP401。另有本次远端 session/load 的 2 次 rpc_error（间隔约 2 秒），0 事件进入、投影未开始，不能声称会话恢复成功。未修改 Agent 凭据或发送测试 prompt。调试实例已正常关闭；生产以普通模式重新启动 PID 228164，进程响应正常、9222 监听数为 0。
 
 备份复核边界：SQLite 的 mode=ro/query_only WAL reader 仍更新了备份 `-shm` 的临时读锁信息；主库与 WAL 的修改时间未变，连接已关闭。1003 文件逐项一致证据属于部署前快照，不能表述为读取后的备份 SHM 仍逐字一致；该 SHM 为可重建的共享索引/锁元数据。后续审查应先复制完整数据库及 sidecar 到临时目录再打开。
+
+## 干净 CI 缓存的发行准备
+
+#732 已合并为 0d28a7a6，PR 与 main 的 8 项 CI 均成功，main 覆盖率采集已恢复正常。完整发行预演 43371090189 则发现离线 metadata 缺 `caseless 0.2.2`：它来自 workspace 的 pylon-markdown → comrak 链；GUI 构建和 WASM 缓存命中不能保证所有工作区源包已下载。该失败属于依赖准备缺失，未改动已发布资产或正在运行的生产程序。
+
+新增 `prepare:release` 作为 `release:portable` 的第一步：`cargo fetch --locked --target x86_64-pc-windows-msvc` 明确准备锁定工作区依赖，再真实调用离线 loader resolver，依赖或来源问题在耗时编译前失败。最终 pack 阶段不联网、不构建、不修改锁文件。没有添加只断言脚本文字的测试；沿用 52 项打包回归，并执行真实准备命令与干净 CI 前置验证。最终结果续写 #730。

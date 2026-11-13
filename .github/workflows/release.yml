@@ -157,6 +157,9 @@ jobs:
       - name: 安装依赖
         run: bun install --frozen-lockfile
 
+      - name: 准备并验证发行输入
+        run: bun run prepare:release
+
       # 打包脚本自测（发行前）：三处版本一致性 + docs/说明书/ 全量收集契约。
       # 零新依赖：下一步 pack_release.py 本来就要 python。
       - name: 打包脚本自测（scripts/tests）
