@@ -59,6 +59,8 @@
 
 加载器从 `cargo metadata --locked --offline --filter-platform x86_64-pc-windows-msvc` 返回的唯一 `webview2-com-sys` 源包中收取 `x64/WebView2Loader.dll`。打包阶段不构建、不联网、不更新锁文件；不依赖 Cargo 内部构建目录布局，也不复用 release/debug 的旧 DLL。Cargo 1.100 已改变该内部布局，因此缺少锁定源包时应明确失败。
 
+`release:portable` 先运行 `prepare:release`：按锁文件抓取 Windows x64 工作区依赖，再验证离线加载器解析可用，之后才开始完整编译。只编 GUI 或命中 WASM 缓存并不保证 Cargo 元数据所需的所有工作区源包都已下载；显式准备将这类缺失提前暴露，最终 `pack:portable` 仍保持离线收集边界。
+
 ZIP 同目录另生成：
 
 - `pylon-<version>-win64.zip.sha256`：ZIP 本身的 SHA-256；
