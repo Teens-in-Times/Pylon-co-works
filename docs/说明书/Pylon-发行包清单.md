@@ -9,7 +9,7 @@
 
 一个可交付的 win64 便携包必须同时包含：
 
-- Pylon 主程序及启动所需的 Tauri/WebView2 loader；
+- Pylon 主程序及随包保留的 WebView2 SDK loader（当前 MSVC 构建静态链接）；
 - Agent 检测器；
 - 自带的调试 MCP 服务器（`tools/webview2-mcp/`，2026-09-17 起随包分发；发行二进制**不内置**
   WebView2 调试端口——#330 起需按该目录 README 用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 临时开启）；
@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | `pylon.exe` | 必须 | Tauri GUI 主程序 |
 | `pylon-detect.exe` | 必须 | 本机 ACP Agent 探测器 |
-| `WebView2Loader.dll` | 必须 | Windows WebView2 启动依赖；缺失可能导致 `0xC0000135` |
+| `WebView2Loader.dll` | 必须 | 保留的 x64 WebView2 SDK 加载器；当前 MSVC 使用静态链接，DLL 不是其启动前置 |
 | `pylon-cli.exe` | 建议；存在时自动收集 | CLI 管理工具；当前脚本缺失时只警告 |
 | `tools/webview2-mcp/pylon-webview2-mcp.exe` | 必须 | 自带的调试 MCP 服务器（独立进程，走 WebView2 的 `--remote-debugging-port`）|
 | `tools/webview2-mcp/README.md` | 必须 | 接线方式，以及「加调试端口等于把窗口对同机任何进程开放」的代价说明 |
@@ -56,6 +56,8 @@
 
 `<version>` 必须同时来自 `package.json`、`src-tauri/tauri.conf.json` 和
 `src-tauri/Cargo.toml`，三处不一致时打包应停止。
+
+加载器从 `cargo metadata --locked --offline --filter-platform x86_64-pc-windows-msvc` 返回的唯一 `webview2-com-sys` 源包中收取 `x64/WebView2Loader.dll`。打包阶段不构建、不联网、不更新锁文件；不依赖 Cargo 内部构建目录布局，也不复用 release/debug 的旧 DLL。Cargo 1.100 已改变该内部布局，因此缺少锁定源包时应明确失败。
 
 ZIP 同目录另生成：
 

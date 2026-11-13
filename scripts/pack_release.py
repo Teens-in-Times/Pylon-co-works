@@ -5,7 +5,7 @@
       pylon.exe
       pylon-detect.exe         # 独立 Agent 检测程序
       pylon-cli.exe            # CLI 工具（若存在）
-      WebView2Loader.dll       # Tauri 启动必需（缺失 → 0xC0000135）
+      WebView2Loader.dll       # 随包保留的 WebView2 SDK 加载器（MSVC 使用静态链接）
       resources/...            # 来自 src-tauri/target/release/resources
       agents.yaml              # 零 Agent 配置模板（仓库侧 agents.template.yaml，包内改名）
       README.txt
@@ -541,31 +541,55 @@ def collect_mcp_tool() -> list[tuple[Path, str]]:
 
 
 def resolve_webview2_loader() -> Path:
-    """定位 WebView2Loader.dll（exe 启动必需，缺失 → 0xC0000135）。
+    """从锁定的 webview2-com-sys 源包收取 x64 SDK 加载器，不执行构建。
 
-    `tauri build --no-bundle` 不执行 bundling 阶段，因此该 DLL 不会被拷进
-    target/release/ 根；它只由 webview2-com-sys 的 build.rs 拷进 cargo OUT_DIR
-    （<target>/<profile>/build/webview2-com-sys-*/out/<arch>/）。先认发布目录，
-    再按上述布局回退——与下方 Hermes runtime 对 `--no-bundle` 的回退同一思路。
-
-    发行目标是 x86_64-pc-windows-msvc，故只接受 x64 架构的副本：用错架构的
-    DLL 会变成静默故障，不如显式报错。
+    Cargo 1.100 改变了内部 build-dir 布局，不能从 OUT_DIR 的历史路径推导
+    文件位置，也不能复用 release/debug 中其他版本的残留。metadata 提供当前
+    锁定依赖的 manifest；该源包的 x64 DLL 正是 build.rs 复制到 OUT_DIR 的文件。
+    MSVC 目前静态链接 WebView2LoaderStatic，仍保留发行包携带 DLL 的既有契约。
     """
-    direct = RELEASE_DIR / "WebView2Loader.dll"
-    if direct.is_file():
-        return direct
-    # 与顶部 RELEASE_DIR 同源：CARGO_TARGET_DIR 指向哪，OUT_DIR 回退就搜哪。
-    target_dir = _TARGET_ROOT
-    for profile in ("release", "debug"):
-        pattern = f"{profile}/build/webview2-com-sys-*/out/x64/WebView2Loader.dll"
-        for candidate in sorted(target_dir.glob(pattern)):
-            if candidate.is_file():
-                return candidate
-    raise PackError(
-        f"release WebView2Loader.dll 不存在: {direct}；cargo OUT_DIR 回退也未命中"
-        f"（{target_dir}/release/build/webview2-com-sys-*/out/x64/）。"
-        "请先跑 npx tauri build --no-bundle。"
-    )
+    try:
+        result = subprocess.run(
+            [
+                "cargo", "metadata", "--format-version=1", "--locked", "--offline",
+                "--filter-platform", "x86_64-pc-windows-msvc",
+            ],
+            cwd=SRC_TAURI_DIR,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as error:
+        raise PackError(f"无法运行 cargo metadata 定位 WebView2 SDK 加载器: {error}") from error
+    if result.returncode != 0:
+        raise PackError(
+            "cargo metadata 无法读取锁定的 WebView2 依赖（不会联网或更新锁文件）: "
+            f"{(result.stderr or result.stdout).strip()}"
+        )
+    try:
+        metadata = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise PackError("cargo metadata 未返回有效 JSON，无法定位 WebView2 SDK 加载器") from error
+    packages = metadata.get("packages") if isinstance(metadata, dict) else None
+    if not isinstance(packages, list):
+        raise PackError("cargo metadata 缺少 packages 列表，无法定位 WebView2 SDK 加载器")
+    matches = [
+        package for package in packages
+        if isinstance(package, dict) and package.get("name") == "webview2-com-sys"
+    ]
+    if len(matches) != 1:
+        raise PackError(f"锁定依赖中应恰有一个 webview2-com-sys，实际找到 {len(matches)} 个")
+    manifest_path = matches[0].get("manifest_path")
+    if not isinstance(manifest_path, str) or not Path(manifest_path).is_absolute():
+        raise PackError("webview2-com-sys metadata 缺少绝对 manifest_path")
+    manifest = Path(manifest_path)
+    if not manifest.is_file():
+        raise PackError(f"锁定的 webview2-com-sys 源包 manifest 不存在: {manifest}")
+    loader = manifest.parent / "x64" / "WebView2Loader.dll"
+    if not loader.is_file():
+        raise PackError(f"锁定的 webview2-com-sys 源包缺少 x64 SDK 加载器: {loader}")
+    return loader
 
 
 def require_docs_site() -> None:
@@ -602,8 +626,7 @@ def collect_source_files(version: str, with_runtime: bool = False) -> list[tuple
         (detector_path, DETECT_EXE_NAME),
     ]
 
-    # Tauri release 必带组件：WebView2Loader.dll（exe 启动必需，缺失 → 0xC0000135
-    # DLL 缺失）；pylon-cli.exe（标准组件，命令行管理界面）。
+    # 保留随包 SDK 加载器；当前 MSVC 构建使用静态链接，不将 DLL 描述为启动前置。
     loader_path = resolve_webview2_loader()
     files.append((loader_path, "WebView2Loader.dll"))
 

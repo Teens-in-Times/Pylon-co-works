@@ -325,6 +325,110 @@ class AgentsTemplatePackagingTests(unittest.TestCase):
         pack.scan_text_file(rel, template.read_text(encoding="utf-8"))
 
 
+class WebView2LoaderTests(unittest.TestCase):
+    """锁定源包决定 DLL 来源；构建缓存布局、旧包和其他架构均不能替代它。"""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="pylon-loader-pack-test-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.source = self.root / "cargo home 中文" / "webview2-com-sys-0.38.2"
+        self.source.mkdir(parents=True)
+        self.manifest = self.source / "Cargo.toml"
+        self.manifest.write_text('[package]\nname = "webview2-com-sys"\n', encoding="utf-8")
+        self.loader = self.source / "x64" / "WebView2Loader.dll"
+        self.loader.parent.mkdir()
+        self.loader.write_bytes(b"locked-x64-loader")
+        self.package = {
+            "name": "webview2-com-sys",
+            "version": "0.38.2",
+            "manifest_path": str(self.manifest),
+        }
+        patcher = mock.patch.object(pack.subprocess, "run")
+        self.run = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.set_metadata({"packages": [self.package]})
+        roots = mock.patch.multiple(
+            pack,
+            SRC_TAURI_DIR=self.root / "src-tauri",
+            _TARGET_ROOT=self.root / "target",
+            RELEASE_DIR=self.root / "target" / "release",
+        )
+        roots.start()
+        self.addCleanup(roots.stop)
+
+    def set_metadata(self, metadata: object) -> None:
+        self.run.return_value = subprocess.CompletedProcess(
+            ["cargo", "metadata"], 0, json.dumps(metadata), ""
+        )
+
+    def test_uses_locked_source_without_building_or_reading_internal_target_layout(self) -> None:
+        # 历史 release/debug 残留即使存在，也不能遮住当前锁定依赖。
+        for relative in [
+            "release/WebView2Loader.dll",
+            "release/build/webview2-com-sys-old/out/x64/WebView2Loader.dll",
+            "debug/build/webview2-com-sys-old/out/x64/WebView2Loader.dll",
+        ]:
+            stale = pack._TARGET_ROOT / relative
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_bytes(b"stale-loader")
+        self.assertEqual(pack.resolve_webview2_loader(), self.loader)
+        self.assertEqual(pack.resolve_webview2_loader().read_bytes(), b"locked-x64-loader")
+        command = self.run.call_args.args[0]
+        self.assertEqual(command[:2], ["cargo", "metadata"])
+        for flag in ["--format-version=1", "--locked", "--offline"]:
+            self.assertIn(flag, command)
+        self.assertEqual(command[command.index("--filter-platform") + 1], "x86_64-pc-windows-msvc")
+        self.assertEqual(self.run.call_args.kwargs["cwd"], pack.SRC_TAURI_DIR)
+
+    def test_missing_x64_does_not_use_another_architecture_or_old_release_copy(self) -> None:
+        self.loader.unlink()
+        x86 = self.source / "x86" / "WebView2Loader.dll"
+        x86.parent.mkdir()
+        x86.write_bytes(b"wrong-architecture")
+        pack.RELEASE_DIR.mkdir(parents=True)
+        (pack.RELEASE_DIR / "WebView2Loader.dll").write_bytes(b"old-release")
+        with self.assertRaisesRegex(pack.PackError, "缺少 x64 SDK 加载器"):
+            pack.resolve_webview2_loader()
+
+    def test_rejects_missing_and_ambiguous_dependency_instead_of_picking_a_cache_entry(self) -> None:
+        for packages in [[], [{**self.package, "name": "webview2-com-sys-lookalike"}],
+                         [self.package, {**self.package, "version": "0.37.0"}]]:
+            with self.subTest(packages=packages):
+                self.set_metadata({"packages": packages})
+                with self.assertRaisesRegex(pack.PackError, "应恰有一个 webview2-com-sys"):
+                    pack.resolve_webview2_loader()
+
+    def test_metadata_failure_preserves_error_and_does_not_fall_back(self) -> None:
+        pack.RELEASE_DIR.mkdir(parents=True)
+        (pack.RELEASE_DIR / "WebView2Loader.dll").write_bytes(b"old-release")
+        self.run.return_value = subprocess.CompletedProcess(
+            ["cargo", "metadata"], 101, "", "lock file needs to be updated"
+        )
+        with self.assertRaisesRegex(pack.PackError, "lock file needs to be updated"):
+            pack.resolve_webview2_loader()
+        self.run.assert_called_once()
+
+    def test_unavailable_cargo_is_a_pack_error(self) -> None:
+        self.run.side_effect = FileNotFoundError("cargo unavailable")
+        with self.assertRaisesRegex(pack.PackError, "无法运行 cargo metadata"):
+            pack.resolve_webview2_loader()
+
+    def test_rejects_invalid_metadata(self) -> None:
+        for stdout in ["not json", "[]", '{"packages": null}']:
+            with self.subTest(stdout=stdout):
+                self.run.return_value.stdout = stdout
+                with self.assertRaises(pack.PackError):
+                    pack.resolve_webview2_loader()
+
+    def test_rejects_relative_or_missing_source_manifest(self) -> None:
+        for manifest in [None, "relative/Cargo.toml", str(self.root / "missing/Cargo.toml")]:
+            with self.subTest(manifest=manifest):
+                self.set_metadata({"packages": [{**self.package, "manifest_path": manifest}]})
+                with self.assertRaises(pack.PackError):
+                    pack.resolve_webview2_loader()
+
+
 class DocsSitePackagingTests(unittest.TestCase):
     """离线文档站必须随发行包分发（#371）。
 
@@ -423,7 +527,8 @@ class DocsSitePackagingTests(unittest.TestCase):
         try:
             pack.MCP_RELEASE_DIR.mkdir(parents=True)
             (pack.MCP_RELEASE_DIR / pack.MCP_EXE_NAME).write_bytes(b"fake")
-            files = pack.collect_source_files("0.0.0")
+            with mock.patch.object(pack, "resolve_webview2_loader", return_value=release / "WebView2Loader.dll"):
+                files = pack.collect_source_files("0.0.0")
         finally:
             pack.DEV_SDK_DIR, pack.MCP_RELEASE_DIR = old_sdk, old_mcp
         rels = [rel for _source, rel in files]
