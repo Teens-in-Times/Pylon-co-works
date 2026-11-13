@@ -429,6 +429,113 @@ class WebView2LoaderTests(unittest.TestCase):
                     pack.resolve_webview2_loader()
 
 
+class SourceResourcePackagingTests(unittest.TestCase):
+    """发行资源从准备好的源树收集，不依赖 Tauri/Cargo 的中间副本。"""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="pylon-resource-pack-test-")
+        self.addCleanup(temporary.cleanup)
+        self.repo = Path(temporary.name)
+        self.resources = self.repo / "src-tauri" / "resources"
+        self.release = self.repo / "target" / "release"
+        self.sdk = self.repo / "dist-plugin-sdk" / "normal"
+        self.mcp = self.repo / "tools" / "webview2-mcp"
+        self.loader = self.repo / "locked-source" / "x64" / "WebView2Loader.dll"
+        roots = mock.patch.multiple(
+            pack,
+            REPO_DIR=self.repo,
+            SRC_TAURI_DIR=self.repo / "src-tauri",
+            RESOURCE_SOURCE_DIR=self.resources,
+            RELEASE_DIR=self.release,
+            DOCS_SITE_STAGED_DIR=self.resources / "docs-site",
+            DEV_SDK_DIR=self.sdk,
+            HERMES_RUNTIME_DIR=self.resources / "runtime",
+            HERMES_RUNTIME_TREE=self.resources / "runtime" / "git",
+            TEMPLATE_DIR=self.repo / "resources" / "release",
+            MCP_DIR=self.mcp,
+            MCP_RELEASE_DIR=self.mcp / "target" / "release",
+        )
+        roots.start()
+        self.addCleanup(roots.stop)
+        resolver = mock.patch.object(pack, "resolve_webview2_loader", return_value=self.loader)
+        resolver.start()
+        self.addCleanup(resolver.stop)
+        for name in ["pylon.exe", "pylon-detect.exe", "pylon-cli.exe"]:
+            self.write(self.release / name, b"current-executable")
+        self.write(self.loader, b"locked-loader")
+        self.write(pack.MCP_RELEASE_DIR / pack.MCP_EXE_NAME, b"current-mcp")
+        self.write(self.mcp / "README.md", b"MCP instructions")
+        self.write(self.resources / "fonts" / "current.ttf", b"source-font")
+        self.write(self.resources / "docs-site" / "index.html", b"current-docs")
+        # Tauri 的最小 SDK 不是发行 SDK；只允许 normal 分发包进入最终路径。
+        self.write(self.resources / "sdk" / "offline-only.js", b"minimal-sdk")
+        for name in pack.DEV_SDK_REQUIRED:
+            self.write(self.sdk / name, b"full-sdk")
+        for name in [pack.AGENTS_TEMPLATE_SOURCE_NAME, "README.txt", "tools/install-webview2.bat"]:
+            self.write(pack.TEMPLATE_DIR / name, b"release-template")
+        for name in ["README.md", "LICENSE", "NOTICE", "LICENSES/Apache-2.0.txt", "docs/说明书/guide.md"]:
+            self.write(self.repo / name, b"tracked-source")
+
+    @staticmethod
+    def write(path: Path, content: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    def runtime(self, root: Path, content: bytes) -> None:
+        for relative in ["bin/bash.exe", "usr/bin/true.exe", "usr/bin/cat.exe",
+                         "usr/bin/mktemp.exe", "usr/bin/mv.exe", "usr/bin/awk.exe",
+                         "usr/bin/grep.exe", "usr/bin/msys-2.0.dll"]:
+            self.write(root / relative, content)
+
+    def test_collects_complete_resources_without_target_resources_directory(self) -> None:
+        self.assertFalse((self.release / "resources").exists())
+        files = pack.collect_source_files("0.0.0")
+        by_path = {relative: source for source, relative in files}
+        self.assertEqual(len(by_path), len(files), "独立 collector 不得产生重复包路径")
+        self.assertEqual(by_path["resources/fonts/current.ttf"], self.resources / "fonts/current.ttf")
+        self.assertEqual(by_path["resources/docs-site/index.html"].read_bytes(), b"current-docs")
+        self.assertEqual(by_path["resources/sdk/pylon-plugin-sdk.js"], self.sdk / "pylon-plugin-sdk.js")
+        self.assertNotIn("resources/sdk/offline-only.js", by_path)
+        self.assertFalse(any(path.startswith("resources/runtime/") for path in by_path))
+
+    def test_source_wins_over_complete_stale_target_fonts_and_runtime(self) -> None:
+        stale = self.release / "resources"
+        self.write(stale / "fonts/current.ttf", b"old-font")
+        self.write(stale / "fonts/old-only.ttf", b"removed-font")
+        self.runtime(stale / "runtime/git", b"old-runtime")
+        self.write(stale / "runtime/git/bin/removed.exe", b"removed-runtime")
+        self.write(stale / "runtime/portable-git.json", b"old-metadata")
+        self.runtime(pack.HERMES_RUNTIME_TREE, b"current-runtime")
+        self.write(pack.HERMES_RUNTIME_DIR / "portable-git.json", b"current-metadata")
+        self.write(pack.HERMES_RUNTIME_DIR / "README.txt", b"runtime-instructions")
+        ordinary = pack.collect_source_files("0.0.0")
+        self.assertFalse(any(relative.startswith("resources/runtime/") for _, relative in ordinary))
+        files = pack.collect_source_files("0.0.0", with_runtime=True)
+        by_path = {relative: source for source, relative in files}
+        self.assertEqual(len(by_path), len(files))
+        self.assertEqual(by_path["resources/fonts/current.ttf"].read_bytes(), b"source-font")
+        self.assertNotIn("resources/fonts/old-only.ttf", by_path)
+        self.assertNotIn("resources/runtime/git/bin/removed.exe", by_path)
+        self.assertEqual(by_path["resources/runtime/portable-git.json"].read_bytes(), b"current-metadata")
+        self.assertEqual(by_path["resources/runtime/README.txt"].read_bytes(), b"runtime-instructions")
+        runtime_files = [(source, relative) for source, relative in files if relative.startswith("resources/runtime/git/")]
+        self.assertEqual(len(runtime_files), 8)
+        for source, relative in runtime_files:
+            self.assertTrue(source.is_relative_to(pack.HERMES_RUNTIME_TREE), relative)
+            self.assertEqual(source.read_bytes(), b"current-runtime")
+        (pack.HERMES_RUNTIME_TREE / "usr/bin/cat.exe").unlink()
+        with self.assertRaisesRegex(pack.PackError, "缺少完整的 Hermes PortableGit"):
+            pack.collect_source_files("0.0.0", with_runtime=True)
+
+    def test_missing_canonical_source_fails_even_with_target_resources(self) -> None:
+        self.write(self.release / "resources/fonts/old.ttf", b"old-font")
+        missing = self.repo / "missing-resource-source"
+        with mock.patch.object(pack, "RESOURCE_SOURCE_DIR", missing):
+            with self.assertRaises(pack.PackError) as raised:
+                pack.collect_source_files("0.0.0")
+        self.assertIn(str(missing), str(raised.exception))
+
+
 class DocsSitePackagingTests(unittest.TestCase):
     """离线文档站必须随发行包分发（#371）。
 
@@ -444,12 +551,15 @@ class DocsSitePackagingTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="pylon-docs-site-pack-test-"))
         self.old_release = pack.RELEASE_DIR
         self.old_staged = pack.DOCS_SITE_STAGED_DIR
+        self.old_resources = pack.RESOURCE_SOURCE_DIR
         pack.RELEASE_DIR = self.tmp / "target" / "release"
-        pack.DOCS_SITE_STAGED_DIR = self.tmp / "src-tauri" / "resources" / "docs-site"
+        pack.RESOURCE_SOURCE_DIR = self.tmp / "src-tauri" / "resources"
+        pack.DOCS_SITE_STAGED_DIR = pack.RESOURCE_SOURCE_DIR / "docs-site"
 
     def tearDown(self) -> None:
         pack.RELEASE_DIR = self.old_release
         pack.DOCS_SITE_STAGED_DIR = self.old_staged
+        pack.RESOURCE_SOURCE_DIR = self.old_resources
         import shutil
 
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -501,11 +611,12 @@ class DocsSitePackagingTests(unittest.TestCase):
         # collect_source_files 钉死：walk 跳过 target 的 docs-site、暂存源逐文件入包、
         # 其余资源（fonts 等）不受影响。重依赖（exe/loader/sdk/mcp）全用临时夹具。
         release = pack.RELEASE_DIR
-        (release / "resources" / "fonts").mkdir(parents=True)
+        release.mkdir(parents=True)
+        (pack.RESOURCE_SOURCE_DIR / "fonts").mkdir(parents=True)
         (release / "pylon.exe").write_bytes(b"fake")
         (release / "pylon-detect.exe").write_bytes(b"fake")
         (release / "WebView2Loader.dll").write_bytes(b"fake")
-        (release / "resources" / "fonts" / "inter.css").write_text("body{}", encoding="utf-8")
+        (pack.RESOURCE_SOURCE_DIR / "fonts" / "inter.css").write_text("body{}", encoding="utf-8")
         # target 里的 Tauri 增量拷贝：上一代的旧哈希 chunk + 过期 index.html
         stale = release / "resources" / "docs-site" / "assets"
         stale.mkdir(parents=True)
