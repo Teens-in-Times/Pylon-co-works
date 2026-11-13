@@ -31,3 +31,11 @@
 PR #731 首轮 CI 使用 Rust 1.100.0，本机为 1.99.0；前端静态、两组 Vitest 与 ACP shadow 通过，但新版 Clippy 报 4 处基线外诊断。直接移除 `gateway/instance.rs`、`agent_detection/evidence.rs`、`foundations/workspace.rs` 中生命周期已结束值的冗余 clone；`acp/process.rs` 将 Unix errno 快路保留在前，返回通用 ErrorKind 判定，保持各平台 busy 判断语义。未增加 allow、改基线或改变测试契约。两处 ownership 修复由子 agent 独立核对并实施，主线统一运行 fmt、workspace lib tests、Clippy 和 release 预演，最终结果续写 #730。
 
 本地第一轮 release 在隔离目录实机启动：1200×800、3 个布局表面检查通过、Tauri invoke 为 function；离线文档子窗口 ready=complete、10 个链接、无水平溢出；主窗口控制台 warning/error/exception 0。调试实例已经正常退出。正式 CI 资产会另做安装与启动验收。
+
+修复后本地 `bun run check:clippy`、`bun run check:rust` 与 release 全链均退出 0；Rust 1,747 passed / 4 ignored（含 11 项 fake-agent），ACP parity 通过，296 项打包清单匹配。首次直接调用 workspace lib 测试时新目标目录缺 fake-agent，保留失败日志后改走完整 check:rust 前置链；未修改测试。PR #731 最终 head d75ee328 的 8 项 CI 全绿并合并为 4864febe，v0.5.0-FUR 指向该提交。
+
+## 覆盖率开发依赖修复
+
+合并后 main 专属覆盖率作业 run 43367975153 暴露旧有依赖错配：PR #714 的 7ebbf3e6 仅将 coverage provider 升到 5.0.5，Vitest runner 仍为 4.1.11。采集器抛出 702 次 `coverageFilesDirectory is required`，该次 coverage 执行不完整、0% 结果无效；不能将它当作测试通过。
+
+将 `vitest` 与 `@vitest/coverage-v8` 精确对齐 4.1.11，锁文件只调整对应开发依赖；未改运行时代码、统计范围、阈值或发行 tag。`bun run test:coverage` 退出 0（target/730-coverage-fixed.log）：statements 82.74%（47496/57401），branches 74.58%（29157/39090），functions 83.39%（14577/17480），lines 86.99%（35107/40353），均高于既有 79/72/79/83 门槛。原施工文件域已完成并移除 L.md 条目；正式资产及本机生产启动证据继续回写 #730。
