@@ -63,3 +63,11 @@ Release run 43368239953 的应用、检测器与 MCP 均编译成功，最后打
 #732 已合并为 0d28a7a6，PR 与 main 的 8 项 CI 均成功，main 覆盖率采集已恢复正常。完整发行预演 43371090189 则发现离线 metadata 缺 `caseless 0.2.2`：它来自 workspace 的 pylon-markdown → comrak 链；GUI 构建和 WASM 缓存命中不能保证所有工作区源包已下载。该失败属于依赖准备缺失，未改动已发布资产或正在运行的生产程序。
 
 新增 `prepare:release` 作为 `release:portable` 的第一步：`cargo fetch --locked --target x86_64-pc-windows-msvc` 明确准备锁定工作区依赖，再真实调用离线 loader resolver，依赖或来源问题在耗时编译前失败。最终 pack 阶段不联网、不构建、不修改锁文件。没有添加只断言脚本文字的测试；沿用 52 项打包回归，并执行真实准备命令与干净 CI 前置验证。最终结果续写 #730。
+
+## 发行资源来源收敛
+
+#733 的 PR 与 main 共 8 项 CI 均成功，发行预演 43374045977 的锁定依赖准备也通过。最终收集阶段进一步发现 `--no-bundle` 的干净环境没有 `target/release/resources`，旧打包器仍把它作为必需输入。普通资源改从 `src-tauri/resources` 收取；SDK、离线文档和可选 runtime 保持各自明确来源，遍历普通资源时跳过三个独立域。runtime 不再优先复用完整但可能过期的 target 树，缺少完整源树时明确失败。
+
+提取 `collect_resource_files` 供最终打包和 `verify:release-assets` 共用，SDK/文档生成后、Rust 编译前真实验证资源输入；不添加脚本文字断言。新增 3 项行为回归，覆盖无 target 资源目录、旧副本不得遮盖或混入、缺源失败；旧文档 fixture 随新来源契约调整。`bun run test:pack` 55/55 通过，子 agent 独立审查未发现新增缺陷。真实资源集合 274 项，与原 manifest 的资源路径完全一致；隔离 QA 目录重新打包及内容审计成功，296 项 manifest/ZIP 大小与哈希一致（target/730-canonical-pack.log）。未修改公开资产、tag 或当前生产实例；完整干净 CI 预演结果回写 #730。
+
+本次资源收敛后 Clippy 复验退出 0，基线外新增诊断 0，17 文件 / 55 处 await 清单一致、裸 allow 0（target/730-canonical-clippy.log）。

@@ -6,7 +6,7 @@
       pylon-detect.exe         # 独立 Agent 检测程序
       pylon-cli.exe            # CLI 工具（若存在）
       WebView2Loader.dll       # 随包保留的 WebView2 SDK 加载器（MSVC 使用静态链接）
-      resources/...            # 来自 src-tauri/target/release/resources
+      resources/...            # 来自仓库资源源目录及本轮生成的 SDK/离线文档
       agents.yaml              # 零 Agent 配置模板（仓库侧 agents.template.yaml，包内改名）
       README.txt
       LICENSE                  # 仓库许可原文（AGPL-3.0-only）
@@ -69,6 +69,7 @@ SRC_TAURI_DIR = REPO_DIR / "src-tauri"
 _TARGET_ROOT = Path(os.environ.get("CARGO_TARGET_DIR", SRC_TAURI_DIR / "target"))
 RELEASE_DIR = _TARGET_ROOT / "release"
 TEMPLATE_DIR = REPO_DIR / "resources" / "release"
+RESOURCE_SOURCE_DIR = SRC_TAURI_DIR / "resources"
 HERMES_RUNTIME_DIR = SRC_TAURI_DIR / "resources" / "runtime"
 HERMES_RUNTIME_TREE = HERMES_RUNTIME_DIR / "git"
 # 离线文档站（#371）的暂存源：stage-docs-site.mjs 每轮 rm+重铺保证新鲜。
@@ -609,6 +610,41 @@ def require_docs_site() -> None:
         )
 
 
+def collect_resource_files(with_runtime: bool = False) -> list[tuple[Path, str]]:
+    """收集明确的资源源文件，不依赖 Tauri/Cargo 的中间拷贝布局。"""
+    require_docs_site()
+    resources_dir = RESOURCE_SOURCE_DIR
+    if not resources_dir.is_dir():
+        raise PackError(f"发行资源源目录不存在: {resources_dir}")
+    # 插件开发 SDK：完整离线分发包取自 dist-plugin-sdk/normal（2026-09-01 用户
+    # 决定，不再使用 Tauri 拷贝的最小 runtime 子集——插件开发者需要 testing.js
+    # 与 types/ 全套类型声明）。
+    files = collect_dev_sdk()
+    for root, dirs, names in os.walk(resources_dir):
+        if Path(root) == resources_dir:
+            dirs[:] = [name for name in dirs if name not in {"sdk", "docs-site", "runtime"}]
+        for name in names:
+            full = Path(root) / name
+            rel = "resources/" + full.relative_to(resources_dir).as_posix()
+            files.append((full, rel))
+    files.extend(collect_docs_site())
+
+    # Hermes PortableGit runtime：默认排除（2026-08-31 用户决定——bash 已在标准路径
+    # C:\Program Files\Git，发行包不再内置完整运行时；--with-runtime 可恢复）。
+    if with_runtime:
+        if not hermes_runtime_is_complete(HERMES_RUNTIME_TREE):
+            raise PackError(
+                "缺少完整的 Hermes PortableGit 运行时（resources/runtime/git）。"
+                "请先运行 npm run prepare:hermes-runtime，再重新构建/打包。"
+            )
+        for runtime_rel in ["resources/runtime/portable-git.json", "resources/runtime/README.txt"]:
+            source = HERMES_RUNTIME_DIR / Path(runtime_rel).name
+            if source.is_file():
+                files.append((source, runtime_rel))
+        append_tree_files(files, HERMES_RUNTIME_TREE, "resources/runtime/git")
+    return files
+
+
 def collect_source_files(version: str, with_runtime: bool = False) -> list[tuple[Path, str]]:
     """返回 [(源文件绝对路径, 包内相对路径（不含顶层目录）), ...]"""
     exe_path = RELEASE_DIR / EXE_NAME
@@ -624,79 +660,15 @@ def collect_source_files(version: str, with_runtime: bool = False) -> list[tuple
     files: list[tuple[Path, str]] = [
         (exe_path, EXE_NAME),
         (detector_path, DETECT_EXE_NAME),
+        (resolve_webview2_loader(), "WebView2Loader.dll"),
     ]
-
-    # 保留随包 SDK 加载器；当前 MSVC 构建使用静态链接，不将 DLL 描述为启动前置。
-    loader_path = resolve_webview2_loader()
-    files.append((loader_path, "WebView2Loader.dll"))
-
     cli_path = RELEASE_DIR / "pylon-cli.exe"
     if cli_path.is_file():
         files.append((cli_path, "pylon-cli.exe"))
     else:
         print("warn: 未找到 pylon-cli.exe，跳过该组件（不影响 GUI 启动）")
-
     files.extend(collect_mcp_tool())
-    require_docs_site()
-
-    resources_dir = RELEASE_DIR / "resources"
-    if not resources_dir.is_dir():
-        raise PackError(
-            f"release resources 目录不存在: {resources_dir}。"
-            "插件开发 SDK 是发行包必需资源。"
-        )
-    # 插件开发 SDK：完整离线分发包取自 dist-plugin-sdk/normal（2026-09-01 用户
-    # 决定，不再使用 Tauri 拷贝的最小 runtime 子集——插件开发者需要 testing.js
-    # 与 types/ 全套类型声明）。
-    files.extend(collect_dev_sdk())
-    for root, _dirs, names in os.walk(resources_dir):
-        for name in names:
-            full = Path(root) / name
-            rel = full.relative_to(RELEASE_DIR).as_posix()
-            if rel.startswith("resources/sdk/"):
-                continue  # SDK 由 dist-plugin-sdk 全量提供，跳过 Tauri 最小集
-            if rel.startswith("resources/docs-site/"):
-                continue  # 文档站由暂存源提供（collect_docs_site，#471），跳过增量拷贝的残留代际
-            files.append((full, rel))
-    files.extend(collect_docs_site())
-
-    # Hermes PortableGit runtime：默认排除（2026-08-31 用户决定——bash 已在标准路径
-    # C:\Program Files\Git，发行包不再内置完整运行时；--with-runtime 可恢复）。
-    if not with_runtime:
-        files = [
-            (source, rel)
-            for source, rel in files
-            if not rel.startswith("resources/runtime/")
-        ]
-
-    if with_runtime:
-        # The Tauri resource copier normally places the runtime under
-        # target/release/resources.  Keep a repository fallback for `--no-bundle`
-        # layouts where that copy is skipped, while still requiring a complete
-        # tree so a release can never silently omit Hermes' Bash dependency.
-        packaged_runtime = RELEASE_DIR / "resources" / "runtime" / "git"
-        runtime_source = packaged_runtime if hermes_runtime_is_complete(packaged_runtime) else HERMES_RUNTIME_TREE
-        if not hermes_runtime_is_complete(runtime_source):
-            raise PackError(
-                "缺少完整的 Hermes PortableGit 运行时（resources/runtime/git）。"
-                "请先运行 npm run prepare:hermes-runtime，再重新构建/打包。"
-            )
-        existing_paths = {rel for _src, rel in files}
-        for runtime_rel in ["resources/runtime/portable-git.json", "resources/runtime/README.txt"]:
-            source = HERMES_RUNTIME_DIR / Path(runtime_rel).name
-            if runtime_rel not in existing_paths and source.is_file():
-                files.append((source, runtime_rel))
-                existing_paths.add(runtime_rel)
-        # Add the binary tree only when Tauri did not already copy a *complete*
-        # tree.  A partial target/release/resources copy must not shadow the
-        # repository fallback.
-        if not hermes_runtime_is_complete(packaged_runtime):
-            files = [
-                (source, rel)
-                for source, rel in files
-                if not rel.startswith("resources/runtime/git/")
-            ]
-            append_tree_files(files, runtime_source, "resources/runtime/git")
+    files.extend(collect_resource_files(with_runtime))
 
     for source_name, packaged_name in [
         (AGENTS_TEMPLATE_SOURCE_NAME, AGENTS_TEMPLATE_PACKAGED_NAME),

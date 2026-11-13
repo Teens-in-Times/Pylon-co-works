@@ -36,7 +36,7 @@
 | `pylon-cli.exe` | 建议；存在时自动收集 | CLI 管理工具；当前脚本缺失时只警告 |
 | `tools/webview2-mcp/pylon-webview2-mcp.exe` | 必须 | 自带的调试 MCP 服务器（独立进程，走 WebView2 的 `--remote-debugging-port`）|
 | `tools/webview2-mcp/README.md` | 必须 | 接线方式，以及「加调试端口等于把窗口对同机任何进程开放」的代价说明 |
-| `resources/fonts/*` | 按构建资源实际生成 | 内置字体与呈现资源 |
+| `resources/fonts/*` | 从 `src-tauri/resources/fonts/` 收集 | 内置字体与呈现资源；不依赖 target 下的构建副本 |
 | `resources/runtime/git/**` | 可选（`--with-runtime`，Hermes） | 完整 PortableGit；至少应能找到 `bin/bash.exe`、`usr/bin/msys-2.0.dll` 及 `true/cat/mktemp/mv/awk/grep.exe`。默认打包会剔除整个 `resources/runtime/` |
 | `resources/runtime/portable-git.json` | 可选（`--with-runtime`） | PortableGit 版本、来源和 SHA-256 元数据 |
 | `resources/runtime/README.txt` | 可选（`--with-runtime`） | 运行时用途、许可和准备方式说明 |
@@ -60,6 +60,8 @@
 加载器从 `cargo metadata --locked --offline --filter-platform x86_64-pc-windows-msvc` 返回的唯一 `webview2-com-sys` 源包中收取 `x64/WebView2Loader.dll`。打包阶段不构建、不联网、不更新锁文件；不依赖 Cargo 内部构建目录布局，也不复用 release/debug 的旧 DLL。Cargo 1.100 已改变该内部布局，因此缺少锁定源包时应明确失败。
 
 `release:portable` 先运行 `prepare:release`：按锁文件抓取 Windows x64 工作区依赖，再验证离线加载器解析可用，之后才开始完整编译。只编 GUI 或命中 WASM 缓存并不保证 Cargo 元数据所需的所有工作区源包都已下载；显式准备将这类缺失提前暴露，最终 `pack:portable` 仍保持离线收集边界。
+
+资源收集不要求 `target/release/resources/` 存在：普通资源来自 `src-tauri/resources/`，SDK、离线文档及可选 runtime 分别从上述指定来源收取，跳过它们在普通资源目录中的副本。`--with-runtime` 也只接受源目录的完整运行时，旧 target 副本不能遮盖缺失或过期源。SDK 与离线文档生成后，`verify:release-assets` 调用同一资源收集器，在 Rust 编译前验证资源来源；最终打包仍执行完整内容、ZIP 及 manifest 审计。
 
 ZIP 同目录另生成：
 
@@ -94,10 +96,10 @@ bun run release:portable
 
 `release:portable` 依次完成：
 
-1. 构建前端（`build:wasm` + `tsc -b` + vite build）；
+1. 准备锁定的 Windows x64 工作区依赖并验证 loader 来源（`prepare:release`），然后构建前端（`build:wasm` + `tsc -b` + vite build）；
 2. 生成正常版与离线版 SDK（打包器从正常版 `dist-plugin-sdk/normal` 全量收取进包；离线版仅作构建期 64 KiB 守卫产物，Tauri 打包的最小集被显式跳过）；
 3. 构建离线文档站并暂存（`docs:build:offline`：以 `PYLON_DOCS_OFFLINE=1` 跑 vitepress build，守卫 index.html 存在、无大字体分块、无 Pages 前缀，产物拷入 `src-tauri/resources/docs-site/`——打包器直接取该暂存源入包（#471），须在打包步之前完成）；
-4. 构建 Tauri release（不生成安装器；`beforeBuildCommand` 会再执行一次 `bun run build`）；
+4. 验证资源来源（`verify:release-assets`），然后构建 Tauri release（不生成安装器；`beforeBuildCommand` 会再执行一次 `bun run build`）；
 5. 构建 `pylon-detect.exe`；
 6. 构建 `tools/webview2-mcp` 的 release 二进制（`cargo build --manifest-path tools/webview2-mcp/Cargo.toml --release`）；
 7. 收集文件、审计、压缩并核对 manifest。打包器会在缺少该 exe 或它的 README、或缺 `resources/docs-site/index.html` 时直接失败——这些能力缺了要到用户真正需要时才暴露，所以按构建期错误处理。默认剔除 `resources/runtime/`（PortableGit）；离线单文件 SDK 的 64 KiB 守卫与 testing/宿主闭包拒绝在 `build:plugin-sdk` 构建期执行，`dist-plugin-sdk/normal` 缺 `pylon-plugin-sdk.js`/`testing.js`/schema 时打包失败。
