@@ -19,3 +19,4 @@
 - [AlchemistCxC] #666 pylon-acp 逐帧深拷贝消除：文件域 `src-tauri/pylon-acp/src/engine/{mod,outbound}.rs`、`src-tauri/pylon-acp/src/protocol.rs` 及其测试；本 spec 与对应 record。避让 #602/#607/#613。
 - [AlchemistCxC] #664 event_repo 读路径 IO 放大：文件域 `src-tauri/pylon-session/src/event_repo/{repo,tests}.rs`、`src-tauri/pylon-session/src/msg_repo/{mod,migrations,tests}.rs`、`src-tauri/pylon-session/src/del01_schema_audit.rs`；本 spec 与对应 record。避让 #602/#607/#613。
 - [Miyaki Kumo] #702~#707 后端审查修复批次（隔离工作树 `G:/Project/prism-team-workdir/prism-backend-review`，分支 `fix/backend-review-702-707`）：文件域 `src-tauri/src/{lib.rs,runtime.rs,permission.rs,lifecycle/mcp.rs,session/**}`、`src-tauri/pylon-acp/src/engine/inbound.rs`、`src-tauri/pet` 无涉；ADR-0039、`docs/说明书` 对应表述、本 record。避让 #602（ci.yml/pylon-foundations/test_utils 不碰）、#593/#600、共享树 #699/#708（前端）。
+- [Codex] #730 发行收尾：Cargo 1.100 更改构建目录布局导致 loader 收集失败；workspace-explorer 负责 scripts/pack_release.py 与对应打包回归测试，主线负责 CI、发行资产和生产替换。沿用 #732，不移动既有 tag，保留用户配置与数据。
