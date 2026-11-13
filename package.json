@@ -82,7 +82,7 @@
     "@testing-library/jest-dom": "^7.0.0",
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "4.1.11",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4.3.5",
