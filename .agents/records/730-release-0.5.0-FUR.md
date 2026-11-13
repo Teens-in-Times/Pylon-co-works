@@ -25,3 +25,9 @@
 ## 测试处置与边界
 
 没有增加、删除或放宽测试。公开发行走 main 归属守卫和 tag CI；本地包是预演，生产优先使用正式上传资产。无其他在途代码改动，.peri/ 保持原状。开发规格目标已在此承接。
+
+## 发行 CI 工具链差异修复
+
+PR #731 首轮 CI 使用 Rust 1.100.0，本机为 1.99.0；前端静态、两组 Vitest 与 ACP shadow 通过，但新版 Clippy 报 4 处基线外诊断。直接移除 `gateway/instance.rs`、`agent_detection/evidence.rs`、`foundations/workspace.rs` 中生命周期已结束值的冗余 clone；`acp/process.rs` 将 Unix errno 快路保留在前，返回通用 ErrorKind 判定，保持各平台 busy 判断语义。未增加 allow、改基线或改变测试契约。两处 ownership 修复由子 agent 独立核对并实施，主线统一运行 fmt、workspace lib tests、Clippy 和 release 预演，最终结果续写 #730。
+
+本地第一轮 release 在隔离目录实机启动：1200×800、3 个布局表面检查通过、Tauri invoke 为 function；离线文档子窗口 ready=complete、10 个链接、无水平溢出；主窗口控制台 warning/error/exception 0。调试实例已经正常退出。正式 CI 资产会另做安装与启动验收。

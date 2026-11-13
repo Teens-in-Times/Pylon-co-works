@@ -219,7 +219,7 @@ pub(crate) fn merge_candidates_by_identity(ranked: Vec<RankedCandidate>) -> Vec<
                 ),
             });
             if winner.0.already_imported_agent_id.is_none() {
-                winner.0.already_imported_agent_id = variant.0.already_imported_agent_id.clone();
+                winner.0.already_imported_agent_id = variant.0.already_imported_agent_id;
             }
         }
         merged.push(winner);

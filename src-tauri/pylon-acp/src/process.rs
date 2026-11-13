@@ -77,16 +77,13 @@ const ETXTBSY: i32 = 26;
 
 /// 这个 `io::Error` 是否表示「可执行文件被写者占住」。
 fn is_exec_busy(error: &std::io::Error) -> bool {
-    if error.kind() == std::io::ErrorKind::ExecutableFileBusy {
-        return true;
-    }
     #[cfg(unix)]
     {
         if error.raw_os_error() == Some(ETXTBSY) {
             return true;
         }
     }
-    false
+    error.kind() == std::io::ErrorKind::ExecutableFileBusy
 }
 
 /// 在预算内对 `ETXTBSY` 做指数退避重试；**非 busy 错误一次都不重试**。

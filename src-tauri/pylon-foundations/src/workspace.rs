@@ -732,7 +732,7 @@ fn walk_search(
         let metadata =
             fs::symlink_metadata(item.path()).map_err(|e| WorkspaceError::Io(e.to_string()))?;
         let relative = if dir_relative.is_empty() {
-            name.clone()
+            name
         } else {
             format!("{dir_relative}/{name}")
         };
