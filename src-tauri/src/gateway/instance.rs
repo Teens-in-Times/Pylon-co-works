@@ -452,7 +452,7 @@ impl GatewayInstanceService {
         for dto in self.list().await {
             if dto.enabled && dto.auto_start {
                 let service = self.clone();
-                let id = dto.id.clone();
+                let id = dto.id;
                 tokio::spawn(async move {
                     match service.start(&id).await {
                         Ok(_) => tracing::info!("gateway 实例 {id} 已自动启动"),
