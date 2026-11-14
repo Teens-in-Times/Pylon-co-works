@@ -149,14 +149,14 @@ describe('SolidLifecycleCard (C13)', () => {
     expect(error.container.querySelector('.system-error-card')).toBeTruthy()
     error.getByRole('button', { name: '在错误中心查看' }).click()
     expect(opened).toHaveBeenCalledOnce()
-    error.getByRole('button', { name: '隐藏' }).click()
+    error.getByRole('button', { name: '隐藏错误' }).click()
     expect(error.container.querySelector('.system-error-card')).toBeNull()
   })
 
   it('错误事实更换后重新显示此前隐藏的卡片', () => {
     const [currentError, setCurrentError] = createSignal({ userSummary: 'first failure', recoverability: 'none' as const })
     const error = render(() => <SolidSystemErrorCard error={currentError()} dismissible />)
-    error.getByRole('button', { name: '隐藏' }).click()
+    error.getByRole('button', { name: '隐藏错误' }).click()
     expect(error.container.querySelector('.system-error-card')).toBeNull()
     setCurrentError({ userSummary: 'second failure', recoverability: 'none' })
     expect(error.container.querySelector('.system-error-card')).toHaveTextContent('second failure')

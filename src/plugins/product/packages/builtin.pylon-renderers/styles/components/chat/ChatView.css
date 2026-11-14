@@ -128,8 +128,20 @@
    （与 CommonMark 解析一致）；assistant 上下文两条路径均为 pre-wrap，不受影响。 */
 .term-reasoning-line { color:var(--text-dim); font-style:italic; font-size:0.93em; line-height:1.6; white-space:pre-wrap; }
 
-.term-file-card { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:10px; width:min(100%,960px); margin-block:8px; padding:12px; border:var(--line-width-1) solid var(--border); border-radius:4px; }
-.app[data-interface-mode="terminal-like"] .term-file-card { gap:8px; padding:8px; border-radius:2px; }
+.term-file-card {
+  display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start;
+  gap:var(--ui-space-2); width:min(100%,960px); margin-block:var(--ui-space-2);
+  padding:var(--ui-space-3); border:var(--line-width-1) solid var(--file-card-border,var(--border));
+  background:var(--file-card-background,transparent); border-radius:4px;
+}
+.app[data-interface-mode="modern-gui"] .term-file-card {
+  background:var(--file-card-background,var(--surface-raised));
+  border-color:var(--file-card-border,var(--stroke-subtle));
+}
+.app[data-interface-mode="terminal-like"] .term-file-card {
+  padding:var(--ui-space-2) var(--ui-space-1); border-radius:0;
+  border:0; border-block-start:var(--line-width-1) solid var(--file-card-border,var(--stroke-subtle));
+}
 .term-file-card[data-group-layout="grid"] { grid-template-columns:auto minmax(0,1fr) auto; }
 .term-file-card[data-group-layout="stack"] .term-file-actions { grid-column:2; }
 .term-file-icon { display:inline-grid; place-items:center; flex:none; color:var(--file-muted-foreground,var(--text-dim)); }
@@ -137,12 +149,12 @@
 .term-file-card[data-file-type-palette="neutral"] .term-file-icon { color:var(--text-dim); filter:grayscale(1); }
 .term-file-meta { display:flex; flex-direction:column; min-width:0; gap:var(--ui-space-1); }
 .term-file-name { font-weight:600; overflow-wrap:anywhere; }
-.term-file-path,.term-file-meta-line,.term-file-range { color:var(--file-muted-foreground,var(--text-dim)); overflow-wrap:anywhere; }
+.term-file-path,.term-file-meta-line,.term-file-range { color:var(--file-muted-foreground,var(--text-dim)); font-size:var(--font-size-xs); overflow-wrap:anywhere; }
 .term-file-actions { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
-.term-file-action { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:4px 9px; border:1px solid var(--border); border-radius:2px; background:transparent; color:inherit; font:inherit; font-size:12px; line-height:1.4; cursor:pointer; }
-.term-file-action:hover:not(:disabled) { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,transparent); }
+.term-file-action { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:4px 8px; border:0; border-radius:2px; background:transparent; color:var(--file-muted-foreground,var(--text-dim)); font:inherit; font-size:var(--font-size-xs); line-height:1.4; cursor:pointer; }
+.term-file-action:hover:not(:disabled) { color:var(--text); background:var(--bg-hover); }
 .term-file-action:disabled { opacity:.45; cursor:not-allowed; }
-.term-file-preview { margin:4px 0 0; padding:8px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:color-mix(in srgb,var(--bg-panel) 72%,transparent); border-radius:2px; }
+.term-file-preview { margin:4px 0 0; padding-block:4px; padding-inline-start:var(--ui-space-2); overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; border-inline-start:1px solid var(--file-card-border,var(--stroke-subtle)); }
 .term-file-card .term-file-preview-markdown { white-space:normal; font:inherit; line-height:1.65; }
 .term-file-card .term-file-preview-markdown :is(.term-h1,.term-h2,.term-h3,.term-h4,.term-h5,.term-h6) { margin:8px 0 4px; padding:0; border:0; font-size:1em; line-height:1.5; }
 .app .term-file-card .term-file-preview-markdown .term-p { margin:0 0 8px; }
@@ -1179,8 +1191,15 @@ ol:has(> .term-li) > .term-li::before { content:none; }
 .lifecycle-recovery,
 .lifecycle-history { display: grid; gap: var(--ui-space-1); }
 .lifecycle-label,
-.system-error-card > strong,
-.system-notice-card > strong { font-weight: 600; }
+.system-feedback-header > strong { font-weight: 600; }
+.system-feedback-header { display:flex; align-items:start; justify-content:space-between; gap:var(--ui-space-2); }
+.system-feedback-dismiss { display:grid; place-items:center; flex:none; width:28px; height:28px; color:var(--text-dim); background:transparent; border:0; border-radius:2px; cursor:pointer; }
+.system-feedback-dismiss:hover { color:var(--text); background:var(--bg-hover); }
+.system-feedback-dismiss:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.app[data-interface-mode="modern-gui"] :is(.system-error-card,.system-notice-card) { border-radius:4px; }
+.app[data-interface-mode="terminal-like"] :is(.system-error-card,.system-notice-card) {
+  border-block:0; border-inline-end:0;
+}
 .lifecycle-delay,
 .lifecycle-reason,
 .lifecycle-files,
@@ -1225,16 +1244,16 @@ ol:has(> .term-li) > .term-li::before { content:none; }
 }
 .lifecycle-actions button:hover { border-color: var(--lifecycle-severity-color, var(--accent)); background: var(--bg-hover); }
 .system-error-card-actions { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); }
-.system-error-card-actions button {
+.system-error-card-actions > button {
   min-height: var(--ui-control-compact);
-  padding: 0 var(--ui-space-3);
-  border: var(--line-width-1) solid var(--border);
-  border-radius: 0;
-  color: inherit;
+  padding: 0 var(--ui-space-2);
+  border: 0;
+  border-radius: 2px;
+  color: var(--lifecycle-muted-foreground, var(--text-dim));
   background: transparent;
   cursor: pointer;
 }
-.system-error-card-actions button:hover { border-color: var(--lifecycle-severity-color, var(--accent)); background: var(--bg-hover); }
+.system-error-card-actions > button:hover { color:var(--text); background:var(--bg-hover); }
 :is(.lifecycle-card,.system-error-card,.system-notice-card)[data-density="compact"] {
   gap: var(--ui-space-1);
   padding: var(--ui-space-2);

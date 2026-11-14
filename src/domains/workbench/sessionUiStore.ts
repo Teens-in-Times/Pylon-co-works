@@ -2,6 +2,8 @@ export type SessionUiKey =
   | 'draft'
   | 'attachments'
   | 'input-error'
+  | 'dismissed-binding-error'
+  | 'dismissed-diagnostic-events'
   | 'queued-messages'
   | 'search-open'
   | 'search-query'

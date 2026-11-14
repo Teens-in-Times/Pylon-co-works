@@ -25,7 +25,7 @@ describe('reasoning row geometry contract', () => {
     expect(region).toContain('width:100%')
     expect(region).toContain('min-width:0')
 
-    const body = css.match(/\.term-reasoning-body\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
+    const body = Array.from(css.matchAll(/^\.term-reasoning-body\s*\{([^}]*)\}/gm), match => match[1]).join('\n')
     expect(body).toContain('box-sizing:border-box')
     expect(body).toContain('width:100%')
     expect(body).toContain('max-width:100%')
