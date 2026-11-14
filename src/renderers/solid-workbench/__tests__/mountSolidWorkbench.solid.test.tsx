@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@solidjs/testing-library'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountSolidWorkbench, mountSolidWorkbenchFromHostPort } from '../mountSolidWorkbench.solid.tsx'
+import { normalizeWorkbenchMountInput } from '../workbenchContracts.ts'
 import { createPreviewWorkbenchServices } from '../preview/previewWorkbenchServices.ts'
 import { createWorkbenchEnvelope, type WorkbenchEventEnvelope } from '../../../domains/workbench/events/workbenchEventSchema.ts'
 import { createWorkbenchDocument, projectWorkbench, reduceWorkbenchEvent } from '../../../domains/workbench/workbenchProjector.ts'
@@ -1820,28 +1821,27 @@ describe('mountSolidWorkbench', () => {
     expect(hint.className).toBe('input-binding-status')
   })
 
-  it('restore_error 提示带 --error 变体', async () => {
+  it('绑定恢复错误可隐藏，后续失败仍显示', async () => {
     const host = document.createElement('div')
     document.body.append(host)
     hosts.push(host)
     const services = createPreviewWorkbenchServices()
     servicesList.push(services)
-    mountSolidWorkbench({
-      host,
-      input: {
-        sheetId: 'sheet-a', sessionId: 'preview-session', preview: true, reducedMotion: true,
-        bindingHint: { text: '会话绑定恢复失败：激活会话在 identity 中不存在，无法恢复绑定', error: true },
-      },
-      services,
-    })
+    const input = {
+      sheetId: 'sheet-a', sessionId: 'preview-session', preview: true, reducedMotion: true,
+      bindingHint: { text: '会话绑定恢复失败：连接断开', error: true },
+    }
+    const lifecycle = mountSolidWorkbench({ host, input, services })
+    expect(await screen.findByRole('alert')).toHaveTextContent('会话绑定恢复失败：连接断开')
+    fireEvent.click(screen.getByRole('button', { name: '关闭输入错误' }))
+    expect(screen.queryByRole('alert')).toBeNull()
 
-    const hint = await waitFor(() => {
-      const element = host.querySelector<HTMLElement>('.input-binding-status--error')
-      expect(element).not.toBeNull()
-      return element!
-    })
-    expect(hint).toHaveTextContent('会话绑定恢复失败')
-    expect(hint.className).toBe('input-binding-status input-binding-status--error')
+    const restored = { ...input, bindingHint: { text: '正在恢复会话绑定', error: false } }
+    lifecycle.update(restored)
+    expect(await screen.findByRole('status', { name: '' })).toHaveTextContent('正在恢复会话绑定')
+    lifecycle.update(input)
+    expect(await screen.findByRole('alert')).toHaveTextContent('会话绑定恢复失败：连接断开')
+    lifecycle.destroy()
   })
 
   it('宿主不提供 bindingHint 时不渲染绑定状态浮层（legacy 夹具零影响）', async () => {
@@ -2640,6 +2640,55 @@ function overlapArea(a: DOMRect, b: DOMRect): number {
     await waitFor(() => expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1))
     expect(host.querySelector('.system-error-card')).toHaveTextContent('连接超时')
     expect(host.querySelector('.system-notice-card')).toBeNull()
+  })
+
+  it.each(['fallback', 'slot'])('隐藏错误后重挂载仍隐藏同一事件（%s）', async surface => {
+    const { host, services, lifecycle } = mountPreview()
+    lifecycle.destroy()
+    const slot = createBuiltinSolidContentSlot()
+    const slotEntry = {
+      ownerPluginId: 'builtin.pylon-renderers', ownerRuntimeInstanceId: 'runtime',
+      contributionId: slot.id, layer: 'feature', priority: slot.priority, value: slot,
+    } as RegistryEntry<RendererSlotContribution>
+    const suite = { id: 'builtin.solid' } as RendererSuiteContribution
+    const activation: RendererActivationSnapshot | undefined = surface === 'slot' ? {
+      revision: 1, kinds: new Map(), diagnostics: [],
+      slots: new Map([['system.error', [slotEntry]], ['system.notice', [slotEntry]]]),
+      suite: { ...slotEntry, contributionId: suite.id, value: suite },
+    } : undefined
+    const input = { sheetId: 'sheet-a', sessionId: 'preview-session', sessionSource: 'local:preview-source', preview: true }
+    const hostPort = createWorkbenchHostPort({
+      ...services, suiteId: 'builtin.solid', sheetId: input.sheetId,
+      sessionId: input.sessionId, sessionOwnerKey: 'owner-preview',
+    })
+    const mount = () => activation
+      ? mountSolidWorkbenchFromHostPort({ host, input: normalizeWorkbenchMountInput(input), hostPort, activation })
+      : mountSolidWorkbench({ host, input, services })
+    const event = (sequence: number, code: string, message: string) => createWorkbenchEnvelope({
+      sessionId: input.sessionSource, sequence, recordedAt: '2026-08-25T00:00:01.000Z',
+      source: { provider: 'peri', sourceId: `error-${sequence}` },
+      provenance: { origin: 'local-observed', trust: 'authoritative' },
+      event: { type: 'diagnostic.notice', level: 'error', code, message },
+    })
+    const errors = [event(1, 'transport.timeout', '连接超时'), event(2, 'provider.error', '请求失败')]
+    const projected = projectWorkbench(errors).document
+    services.runtime.replaceDocument(projected, { ownerKey: 'owner-preview', generation: 1 })
+    const first = mount()
+    await screen.findByRole('alert', { name: '系统错误：连接超时' })
+    await screen.findByRole('alert', { name: '系统通知：请求失败' })
+    for (const button of screen.getAllByRole('button', { name: '隐藏错误' })) fireEvent.click(button)
+    await waitFor(() => expect(screen.queryAllByRole('alert')).toHaveLength(0))
+    expect(services.runtime.getSnapshot().document?.diagnostics).toHaveLength(2)
+    first.destroy()
+
+    const next = mount()
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    services.runtime.replaceDocument(projectWorkbench([
+      ...errors, event(3, 'transport.timeout', '连接超时'),
+    ]).document, { ownerKey: 'owner-preview', generation: 1 })
+    expect(await screen.findByRole('alert', { name: '系统错误：连接超时' })).toBeInTheDocument()
+    expect(screen.queryAllByRole('alert')).toHaveLength(1)
+    next.destroy()
   })
 
   it('C04 canonical unknown tool uses the typed tool.generic base Slot and updates without remount', async () => {

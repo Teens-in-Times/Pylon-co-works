@@ -294,8 +294,8 @@ function cardStyle(appearance: FileReferenceAppearance | undefined): JSX.CSSProp
   return {
     '--file-muted-foreground': appearance?.mutedForeground ?? 'var(--text-dim)',
     color: appearance?.foreground ?? 'var(--text)',
-    'background-color': appearance?.background ?? 'transparent',
-    'border-color': appearance?.borderColor ?? 'var(--border)',
+    '--file-card-background': appearance?.background,
+    '--file-card-border': appearance?.borderColor,
     'font-size': `${numberAppearance(appearance?.fontSize, 13)}px`,
     'max-width': `${numberAppearance(appearance?.maxWidth, 960)}px`,
   }

@@ -2,6 +2,7 @@
 import { Show, createEffect, createSignal } from 'solid-js'
 import type { LifecycleState, NormalizedError } from '../../../domains/workbench/lifecycle/lifecycleModel.ts'
 import { explainErrorCode } from '../../../app/errorCodeExplanations.ts'
+import { LucideIcon } from '../../../components/LucideIcon.solid.tsx'
 import { ToolObjectInspector } from './tool/ToolObjectInspector.solid.tsx'
 
 export interface SolidLifecycleAppearance {
@@ -162,6 +163,7 @@ export function SolidSystemErrorCard(props: {
   onRecover?: (strategy: 'reload-plugin' | 'reimport') => void
   /** Display-only dismissal; the canonical system error remains in the document. */
   dismissible?: boolean
+  onDismiss?: () => void
   onOpenDiagnostics?: () => void
 }) {
   const appearance = () => ({ ...DEFAULT_LIFECYCLE_APPEARANCE, ...props.appearance })
@@ -194,17 +196,20 @@ export function SolidSystemErrorCard(props: {
           '--lifecycle-muted-foreground': appearance().mutedForeground,
         }}
       >
-        <strong>{props.error.userSummary}</strong>
+        <header class="system-feedback-header">
+          <strong>{props.error.userSummary}</strong>
+          <Show when={props.dismissible}>
+            <DismissErrorButton onClick={() => {
+              if (props.onDismiss) props.onDismiss()
+              else setHidden(true)
+            }} />
+          </Show>
+        </header>
         <ErrorDetails error={props.error} appearance={appearance()} />
         <RecoveryActions error={props.error} onRetry={props.onRetry} onRecover={props.onRecover} />
-        <Show when={props.dismissible === true || props.onOpenDiagnostics}>
+        <Show when={props.onOpenDiagnostics}>
           <div class="system-error-card-actions">
-            <Show when={props.onOpenDiagnostics}>
-              <button type="button" onClick={() => props.onOpenDiagnostics?.()}>在错误中心查看</button>
-            </Show>
-            <Show when={props.dismissible === true}>
-              <button type="button" onClick={() => setHidden(true)}>隐藏</button>
-            </Show>
+            <button type="button" onClick={() => props.onOpenDiagnostics?.()}>在错误中心查看</button>
           </div>
         </Show>
       </section>
@@ -216,6 +221,7 @@ export function SolidSystemNoticeCard(props: {
   notice: { readonly code: string; readonly message: string; readonly eventId: string; readonly sequence: number; readonly level: 'info' | 'warning' | 'error'; readonly data?: unknown }
   reducedMotion?: boolean
   appearance?: Partial<SolidLifecycleAppearance>
+  onDismiss?: () => void
 }) {
   const appearance = () => ({ ...DEFAULT_LIFECYCLE_APPEARANCE, ...props.appearance })
   const severityColor = () => props.notice.level === 'error'
@@ -241,7 +247,12 @@ export function SolidSystemNoticeCard(props: {
         '--lifecycle-muted-foreground': appearance().mutedForeground,
       }}
     >
-      <strong>{props.notice.message}</strong>
+      <header class="system-feedback-header">
+        <strong>{props.notice.message}</strong>
+        <Show when={props.onDismiss}>
+          <DismissErrorButton onClick={() => props.onDismiss?.()} />
+        </Show>
+      </header>
       <code>{props.notice.code}</code>
       <Show when={appearance().showEventIds}><small class="lifecycle-identifiers">{props.notice.eventId}</small></Show>
       <Show when={details()}>
@@ -252,6 +263,12 @@ export function SolidSystemNoticeCard(props: {
       </Show>
     </section>
   )
+}
+
+function DismissErrorButton(props: { onClick: () => void }) {
+  return <button type="button" class="system-feedback-dismiss" aria-label="隐藏错误" title="隐藏错误" onClick={props.onClick}>
+    <LucideIcon name="X" size={15} />
+  </button>
 }
 
 function noticeDetails(value: unknown): Record<string, unknown> | undefined {
