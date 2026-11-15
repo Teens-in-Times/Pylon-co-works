@@ -322,7 +322,9 @@ function SheetKindMark(props: { kind: string; modern: boolean }) {
             : props.kind === 'browser' ? 'Globe2'
               : props.kind === 'runtime' ? 'Activity'
                 : props.kind === 'gateway' ? 'Network'
-                  : 'Puzzle'
+                  : props.kind === 'docs' ? 'BookOpen'
+                    : props.kind === 'settings' ? 'Settings'
+                      : 'Puzzle'
   return (
     <Show when={props.modern} fallback={<span class="sheet-tab-kind-mark" aria-hidden="true" />}>
       <span class="sheet-tab-kind-mark sheet-tab-kind-icon" aria-hidden="true"><LucideIcon name={iconName()} size={14} strokeWidth={1.8} /></span>

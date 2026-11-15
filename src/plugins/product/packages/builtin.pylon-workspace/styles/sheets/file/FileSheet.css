@@ -832,8 +832,7 @@
 .file-tree-kind { border: 0; background: transparent; }
 .file-tree-folder .file-tree-kind { border: 0; }
 .file-type-icon { flex: 0 0 auto; color: var(--text-dim); }
-/* 文件类型图标品牌色：第三方语言标识色，非主题语义字段（issue #281——禁裸字面量，
- * 色值白名单锁定在本块，由 FileSheet.css.test 契约钉住）。 */
+/* 文件类型图标使用第三方语言标识色，集中声明在文件工作台。 */
 .file-sheet {
   --file-type-ts: #3178c6;
   --file-type-js: #c5a900;
@@ -991,7 +990,15 @@
 }
 .file-working-diff { padding: 4px 10px 0; }
 .file-status-dirty { color: var(--editor-modified-mark, var(--warning)); font-weight: 700; }
-.app[data-interface-mode="modern-gui"] .file-activity-button,.app[data-interface-mode="modern-gui"] .file-tree-row,.app[data-interface-mode="modern-gui"] .file-tab,.app[data-interface-mode="modern-gui"] .file-tab-close{border-radius:2px}
+.app[data-interface-mode="modern-gui"] :is(.file-activity-button,.file-tree-row,.file-tab,.file-tab-close) { border-radius:var(--ui-radius-sm); }
+.app[data-interface-mode="modern-gui"] .file-tab-bar { gap:var(--ui-space-1); padding-block:var(--ui-space-1); border-color:var(--stroke-subtle); }
+.app[data-interface-mode="modern-gui"] .file-tab { min-height:32px; }
+.app[data-interface-mode="modern-gui"] .file-tab.active { background:var(--state-selected-bg); border-color:transparent; }
+.app[data-interface-mode="modern-gui"] .file-tab.active::before { display:none; }
+.app[data-interface-mode="modern-gui"] .file-tree-row.active { border-color:transparent; box-shadow:none; }
+.app[data-interface-mode="terminal-like"] .file-tab-bar { min-height:34px; padding-top:2px; border-color:var(--stroke-subtle); }
+.app[data-interface-mode="terminal-like"] .file-tab { min-height:30px; }
+.app[data-interface-mode="terminal-like"] .file-tree-row { min-height:25px; border-radius:0; }
 .app[data-interface-mode="modern-gui"] .file-editor{margin:0;overflow:hidden;border:0;border-radius:0;background:var(--surface-canvas)}
 
 /*

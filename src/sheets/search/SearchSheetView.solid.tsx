@@ -25,10 +25,10 @@ const SIDEBAR_ACTION = 'search-sidebar-action grid grid-cols-[18px_minmax(0,1fr)
 const SIDEBAR_SUMMARY = 'grid gap-1 mt-auto pt-4 px-3 border-t border-stroke-subtle text-text-dim'
 const SUMMARY_STRONG = 'text-text font-semibold text-[16px]'
 const SUMMARY_SPAN = 'text-[12px]'
-const MAIN = 'flex-1 min-w-0 max-w-[1120px] mx-auto py-[var(--ui-space-6)] px-[clamp(var(--ui-space-5),4vw,var(--ui-space-7))] overflow-y-auto max-[720px]:py-[var(--ui-space-5)] max-[720px]:px-4'
+const MAIN = 'search-sheet-main flex-1 min-w-0 max-w-[1120px] mx-auto py-[var(--ui-space-6)] px-[clamp(var(--ui-space-5),4vw,var(--ui-space-7))] overflow-y-auto max-[720px]:py-[var(--ui-space-5)] max-[720px]:px-4'
 const MAIN_TITLE = 'mt-1 mb-2 text-text text-[26px] font-semibold tracking-[-.025em]'
 const DESCRIPTION = 'm-0 mb-6 text-text-dim text-[13px] leading-[1.5] [overflow-wrap:anywhere]'
-const INPUT = 'search-sheet-input block w-[min(100%,640px)] h-[var(--ui-control-emphasis)] mb-4 px-4 border border-border rounded-none text-text bg-bg-input font-[family-name:var(--font)] text-[13px] outline-none transition-[border-color,box-shadow,background-color] duration-[120ms] hover:border-border-focus focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent placeholder:text-text-placeholder'
+const INPUT = 'search-sheet-input w-full min-w-0 border-0 bg-transparent text-text text-[13px] outline-none placeholder:text-text-placeholder'
 const HINT = 'w-[min(100%,640px)] m-0 mb-4 px-4 py-3 border-0 rounded-none text-text-dim text-[12px] leading-[1.5]'
 const EMPTY = 'search-empty-state sheet-empty-state w-[min(100%,960px)] mt-4 flex flex-col items-start gap-2 py-6 px-0 border-t border-stroke-subtle rounded-none text-text-dim bg-transparent text-left'
 const EMPTY_STRONG = 'text-text text-[14px]'
@@ -131,22 +131,25 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
       <main class={MAIN} aria-busy={loading()}>
         <h2 class={MAIN_TITLE}>跨会话搜索</h2>
         <p class={DESCRIPTION}>查找已保存在本机的消息，在会话中查看和切换匹配项。</p>
-        <input
-          ref={element => { inputElement = element }}
-          class={INPUT}
-          type="search"
-          placeholder="搜索全部本地会话消息…"
-          value={query()}
-          onInput={event => setQuery(event.currentTarget.value)}
-          aria-label="跨会话搜索"
-        />
+        <label class="search-sheet-query mb-4 flex h-[var(--ui-control-emphasis)] w-[min(100%,640px)] items-center gap-2 border border-stroke-subtle bg-bg-input px-3 focus-within:border-accent">
+          <LucideIcon name="Search" size={16} class="shrink-0 text-text-dim" />
+          <input
+            ref={element => { inputElement = element }}
+            class={INPUT}
+            type="search"
+            placeholder="搜索全部本地会话消息…"
+            value={query()}
+            onInput={event => setQuery(event.currentTarget.value)}
+            aria-label="跨会话搜索"
+          />
+        </label>
         <Show when={loading()}><p class={HINT} role="status">搜索中…</p></Show>
         <Show when={searchError()}><div class={HINT} role="status"><p class="search-error-reference">搜索失败，详情见右下角错误中心</p><button type="button" class="mt-2 cursor-pointer border border-border px-3 py-1 text-text hover:bg-bg-hover" onClick={() => setRetry(value => value + 1)}>重试搜索</button></div></Show>
         <Show when={truncated()}><p class={HINT} role="status">结果过多已截断（上限 {50} 条）</p></Show>
         <ul class={RESULTS}>
           <For each={results()}>{result => (
             <li class={RESULTS_LI}>
-              <button type="button" class={ROW} onClick={() => void openResult(result)}>
+              <button type="button" class={`search-sheet-result ${ROW}`} onClick={() => void openResult(result)}>
                 <span class={ROW_PATH}>{sessions().find(session => session.id === result.sessionId)?.name || result.sessionId}</span>
                 <span class={ROW_TEXT}>{result.snippet}</span>
               </button>

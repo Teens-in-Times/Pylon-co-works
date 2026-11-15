@@ -11,7 +11,7 @@ import { createFrameTask } from '../frameTask.ts'
 import { createCopyFeedback } from '../../../utils/copyFeedback.ts'
 import { formatMessageClock } from '../../../domains/chat/messageTime.ts'
 import { LucideIcon } from '../../../components/LucideIcon.solid.tsx'
-import { Check, Copy } from 'lucide'
+import { Check, Copy, UserRound } from 'lucide'
 
 /** 头像缩写：取显示名的首个字符（`Array.from` 按码点切，避免拆开 emoji/代理对）。 */
 export function avatarInitials(name: string): string {
@@ -214,7 +214,11 @@ function UserLine(props: {
 
   return (
     <div class="term-user">
-      <span class="term-user-avatar" aria-hidden="true" style={colorStyle()}>{avatarInitials(name())}</span>
+      <span class="term-user-avatar" aria-hidden="true" style={colorStyle()}>
+        <Show when={name() === '你'} fallback={avatarInitials(name())}>
+          <LucideIcon name="UserRound" node={UserRound} size={14} />
+        </Show>
+      </span>
       <div class="term-user-meta">
         <span class="term-user-prefix" style={colorStyle()}>{props.appearance.userPrefix || '❯'}</span>
         <span class="term-user-name" style={colorStyle()}>{name()}</span>

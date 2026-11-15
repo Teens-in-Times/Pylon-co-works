@@ -5,7 +5,7 @@
 .app[data-interface-mode="modern-gui"] .term {
   --modern-avatar-size:24px;
   --modern-avatar-gap:12px;
-  --modern-row-gap:28px;
+  --modern-row-gap:24px;
   --modern-inline-gap:8px;
 }
 .app[data-interface-mode="modern-gui"] :is(.term-row-user,.term-row-assistant,.term-row-reasoning) {
@@ -88,18 +88,18 @@
 .app[data-interface-mode="modern-gui"] .term-tool {
   padding:0; margin:0 0 0 36px; border:0; border-left:1px solid var(--stroke-subtle); border-radius:0; background:transparent; overflow:hidden;
 }
-.app[data-interface-mode="modern-gui"] .term-tool-head { min-height:34px; padding:5px 10px; gap:8px; align-items:center; font-size:12px; }
+.app[data-interface-mode="modern-gui"] .term-tool-head { min-height:30px; padding:4px 10px; gap:8px; align-items:center; font-size:12px; }
 .app[data-interface-mode="modern-gui"] .term-tool-head:hover { opacity:1; background:var(--surface-raised); }
 .app[data-interface-mode="modern-gui"] .term-tool-name { max-width:45%; flex:0 1 auto; font-weight:600; color:var(--text); }
 .app[data-interface-mode="modern-gui"] .term-tool-summary { color:var(--text-dim); }
-.app[data-interface-mode="modern-gui"] .term-tool-state-label { margin-left:auto; padding:0; border-radius:0; background:transparent; font-size:11px; white-space:nowrap; }
+.app[data-interface-mode="modern-gui"] .term-tool-state-label { flex-shrink:0; margin-inline-start:0; padding:0; border-radius:0; background:transparent; font-size:11px; white-space:nowrap; }
 .app[data-interface-mode="modern-gui"] .term-tool-duration { flex-shrink:0; font-size:11px; color:var(--text-dim); white-space:nowrap; }
 .app[data-interface-mode="modern-gui"] .term-tool-head[aria-expanded]::after {
-  content:''; flex:0 0 5px; width:5px; height:5px; margin:0 2px 0 4px;
+  content:''; flex:0 0 5px; width:5px; height:5px; margin:0 2px 0 auto;
   border-right:1px solid currentColor; border-bottom:1px solid currentColor; transform:rotate(-45deg); opacity:.55;
 }
 .app[data-interface-mode="modern-gui"] .term-tool-head[aria-expanded="true"]::after { transform:rotate(45deg); }
-.app[data-interface-mode="modern-gui"] .term-tool[data-status="ok"] .term-tool-state-label { color:var(--tool-ok,var(--success)); }
+.app[data-interface-mode="modern-gui"] .term-tool[data-status="ok"] .term-tool-state-label { color:var(--text-dim); }
 .app[data-interface-mode="modern-gui"] .term-tool[data-status="err"] .term-tool-state-label { color:var(--tool-err,var(--danger)); }
 .app[data-interface-mode="modern-gui"] .term-tool[data-status="run"] .term-tool-state-label { color:var(--tool-run,var(--accent)); }
 .app[data-interface-mode="modern-gui"] .term-tool-body { margin:0; padding:8px 12px 12px; border:0; background:var(--surface-raised); }

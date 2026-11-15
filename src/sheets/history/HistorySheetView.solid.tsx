@@ -27,7 +27,7 @@ const NAV_BTN = `${NAV_BTN_INVARIANT} border border-transparent border-l-[3px] b
 const NAV_BTN_ACTIVE = `${NAV_BTN_INVARIANT} border border-border border-l-[3px] border-l-accent bg-[color-mix(in_srgb,var(--accent)_10%,var(--bg-active))] text-text font-[650] enabled:hover:bg-bg-hover`
 const NAV_BTN_DISABLED_EXTRA = 'opacity-40 cursor-not-allowed'
 const SIDEBAR_FOOT = 'mt-auto pt-4 px-3 pb-0 border-t border-stroke-subtle text-text-dim text-[12px]'
-const MAIN = 'flex-1 min-w-0 max-w-[1120px] mx-auto py-[var(--ui-space-6)] px-[clamp(var(--ui-space-5),4vw,var(--ui-space-7))] overflow-y-auto max-[720px]:py-[var(--ui-space-5)] max-[720px]:px-4'
+const MAIN = 'history-sheet-main flex-1 min-w-0 max-w-[1120px] mx-auto py-[var(--ui-space-6)] px-[clamp(var(--ui-space-5),4vw,var(--ui-space-7))] overflow-y-auto max-[720px]:py-[var(--ui-space-5)] max-[720px]:px-4'
 const MAIN_TITLE = 'mt-1 mb-2 text-text text-[26px] font-semibold tracking-[-.025em]'
 const TREE_ERROR = 'm-1 mb-4 p-2 border rounded-[var(--ui-radius-sm)] text-[12px] text-[var(--state-danger)] bg-[var(--state-danger-surface)] border-[color-mix(in_srgb,var(--state-danger)_34%,var(--stroke-default))]'
 const HINT = 'text-[12px] text-text-dim'
@@ -183,7 +183,7 @@ export default function HistorySheetView(props: HistorySheetViewProps) {
         <h2 class={MAIN_TITLE}>存档会话（{paged().total}）</h2>
         <p class="m-0 mb-6 text-[13px] leading-relaxed text-text-dim">回看已保存的对话，或将记录导出到本地。</p>
         <div class="mb-5 flex items-center gap-3">
-          <label class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[3px] border border-stroke-subtle bg-transparent px-3 focus-within:border-accent">
+          <label class="history-sheet-query flex h-9 min-w-0 flex-1 items-center gap-2 border border-stroke-subtle bg-bg-input px-3 focus-within:border-accent">
             <LucideIcon name="Search" size={15} class="shrink-0 text-text-dim" />
             <input type="search" aria-label="筛选存档" placeholder="按名称或来源筛选…" value={query()} onInput={event => { setQuery(event.currentTarget.value); setPage(1) }} class="w-full min-w-0 border-0 bg-transparent text-[13px] text-text outline-none" />
           </label>
