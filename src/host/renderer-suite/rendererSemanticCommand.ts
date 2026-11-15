@@ -22,6 +22,7 @@ export function canExecuteRendererSemanticCommand(commandType: string, capabilit
     case 'session.config.update': return capabilities.has('sessionConfig')
     // Host-level navigation; the DOM bridge is host-owned, not a renderer capability.
     case 'diagnostics.open':
+    case 'diagnostics.dismiss':
     case 'assist.accept':
     case 'assist.reject': return true
     default: return false
@@ -57,6 +58,19 @@ export async function executeRendererSemanticCommand(input: {
   }
 
   if (!sessionId) { reject('renderer_action_context_missing', 'Renderer action 缺少活动 Session'); return }
+
+  if (command.type === 'diagnostics.dismiss') {
+    const eventId = command.targetId
+    const document = host.document.getSnapshot()
+    if (eventId && document?.sessionId === (mountInput.sessionSource ?? sessionId) && (
+      document.systemErrors.some(error => error.eventId === eventId) ||
+      document.diagnostics.some(diagnostic => diagnostic.eventId === eventId && diagnostic.level === 'error')
+    )) {
+      host.sessionUi.update<readonly string[]>('dismissed-diagnostic-events', [], ids =>
+        ids.includes(eventId) ? ids : [...ids, eventId])
+    }
+    return
+  }
 
   if (command.type === 'assist.accept') {
     const text = record?.text

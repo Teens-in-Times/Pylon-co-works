@@ -13,7 +13,24 @@
 
 .app[data-interface-mode="modern-gui"] .search-sidebar-scope,
 .app[data-interface-mode="modern-gui"] .search-sidebar-action,
-.app[data-interface-mode="modern-gui"] .search-sheet-input { border-radius: 4px; }
+.app[data-interface-mode="modern-gui"] :is(.search-sheet-query,.history-sheet-query) { border-radius:var(--ui-radius-sm); }
+:is(.search-sheet-query,.history-sheet-query):focus-within { border-color:var(--accent); }
+:is(.search-sheet-query,.history-sheet-query) input:focus-visible { outline:none; box-shadow:none; }
+.app[data-interface-mode="modern-gui"] .history-sidebar nav button[aria-current="page"] {
+  background:var(--state-selected-bg); border-color:transparent;
+}
+.app[data-interface-mode="modern-gui"] :is(.search-sheet-result,.history-row) { min-height:54px; }
+.app[data-interface-mode="terminal-like"] :is(.search-sheet-main,.history-sheet-main) {
+  padding-block:var(--ui-space-5); padding-inline:clamp(16px,3vw,40px);
+}
+.app[data-interface-mode="terminal-like"] :is(.search-sheet-main,.history-sheet-main) > h2 { font-size:22px; }
+.app[data-interface-mode="terminal-like"] :is(.search-sheet-result,.history-row) {
+  min-height:42px; padding-block:var(--ui-space-2); padding-inline:var(--ui-space-2);
+}
+.app[data-interface-mode="terminal-like"] :is(.search-sheet-query,.history-sheet-query) { height:32px; }
+@media (min-width:721px) {
+  .app[data-interface-mode="terminal-like"] .search-sheet-result > span { -webkit-line-clamp:1; }
+}
 .app[data-interface-mode="modern-gui"] .search-result-row {
   margin-bottom: 0;
   border: 0;
@@ -29,14 +46,17 @@
    browser-error 需压过 file-tree-error 的外边距，故升为后代选择器（0,2,0）。 */
 .browser-main .browser-error { position: relative; flex: 0 0 auto; margin: 0; }
 
-/* Modern GUI 只改变材质，不改变浏览器视图的主区比例。 */
-.app[data-interface-mode="modern-gui"] .browser-toolbar {
-  border: 1px solid var(--border);
-  border-radius: 0;
-  margin: 0;
-  background: color-mix(in srgb, var(--surface-panel) 74%, transparent);
-  box-shadow: none;
+.app[data-interface-mode="modern-gui"] :is(.browser-toolbar,.docs-toolbar) {
+  border:0; border-bottom:1px solid var(--stroke-subtle);
+  background:var(--surface-panel);
 }
+.app[data-interface-mode="modern-gui"] .docs-toolbar { min-height:44px; padding-inline:var(--ui-space-3); }
+.app[data-interface-mode="modern-gui"] :is(.docs-status,.browser-status-inline) { border-color:transparent; background:var(--surface-raised); }
+.app[data-interface-mode="modern-gui"] .browser-address-wrap { border-color:var(--stroke-subtle); }
+.app[data-interface-mode="modern-gui"] .browser-address-wrap:focus-within { border-color:var(--accent); }
+.app[data-interface-mode="terminal-like"] :is(.browser-toolbar,.docs-toolbar) { min-height:36px; padding-block:2px; border-color:var(--stroke-subtle); }
+.app[data-interface-mode="terminal-like"] :is(.browser-address-wrap,.browser-status-inline) { border-radius:0; }
+.app[data-interface-mode="terminal-like"] .docs-title { font-family:var(--mono); }
 .app[data-interface-mode="modern-gui"] .browser-tab-strip { border-radius: 0; margin-inline: 0; }
 .app[data-interface-mode="modern-gui"] .browser-viewport { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
 
@@ -58,3 +78,8 @@
 .app[data-interface-mode="modern-gui"] .runtime-clear { border-radius: 4px; }
 .app[data-interface-mode="modern-gui"] .runtime-diagnostics,
 .app[data-interface-mode="modern-gui"] .runtime-markers { border-radius: 0; }
+.app[data-interface-mode="modern-gui"] .runtime-main > header { background:var(--surface-panel); }
+.app[data-interface-mode="modern-gui"] .runtime-main .runtime-diagnostics { padding-inline:var(--ui-space-6); }
+.app[data-interface-mode="terminal-like"] .runtime-main > header { padding:var(--ui-space-3) var(--ui-space-4); }
+.app[data-interface-mode="terminal-like"] .runtime-main > header h1 { font-size:20px; }
+.app[data-interface-mode="terminal-like"] .runtime-log-row { min-height:32px; }

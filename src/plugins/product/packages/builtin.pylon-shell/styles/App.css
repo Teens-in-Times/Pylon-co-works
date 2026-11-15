@@ -1,5 +1,5 @@
 .app {
-  --titlebar-h: 44px; /* 标题栏高度（terminal-like 44px；modern-gui 覆盖为 58px）。Settings 等全屏覆盖层用此值避让标题栏 */
+  --titlebar-h: 44px; /* 经典终端 44px，现代 GUI 48px。覆盖层用此值避让标题栏。 */
   display:flex; flex-direction:column; height:100%; position:relative; z-index:1;
   background:color-mix(in srgb,var(--surface-canvas) 42%,transparent);
 }
@@ -692,10 +692,11 @@
 .app[data-interface-mode="modern-gui"] .sheet-tab-strip { align-items:center; gap:2px; padding:0; --sheet-tab-min-width:112px; --sheet-tab-agent-min-width:132px; }
 .app[data-interface-mode="modern-gui"] .sheet-tab {
   width:172px; flex:1 1 172px; min-width:var(--sheet-tab-min-width); max-width:220px; height:36px;
-  border:0; border-radius:var(--ui-radius-xs); color:var(--text-dim); background:transparent;
+  border:0; border-radius:var(--ui-radius-sm); color:var(--text-dim); background:transparent;
 }
 .app[data-interface-mode="modern-gui"] .sheet-tab:hover { background:var(--state-hover-bg); color:var(--text); }
-.app[data-interface-mode="modern-gui"] .sheet-tab.active { background:var(--surface-panel); color:var(--text); box-shadow:inset 0 -2px var(--accent); }
+.app[data-interface-mode="modern-gui"] .sheet-tab.active { background:var(--state-selected-bg); color:var(--text); box-shadow:none; }
+.app[data-interface-mode="modern-gui"] .sheet-tab.active .sheet-tab-title { font-weight:600; }
 .app[data-interface-mode="modern-gui"] .sheet-tab-focus { align-self:center; height:34px; padding:0 10px; border-radius:0; font-size:13px; }
 .app[data-interface-mode="modern-gui"] .sheet-tab-kind-mark.sheet-tab-kind-icon {
   width:18px; height:18px; flex-basis:18px; display:grid; place-items:center; border:0; border-radius:0;
@@ -708,6 +709,12 @@
 .app[data-interface-mode="modern-gui"] .sheet-launcher-list [cmdk-item] { min-height:52px; border-color:transparent; background:transparent; }
 .app[data-interface-mode="modern-gui"] .sheet-launcher-list [cmdk-item][data-selected="true"] { background:var(--state-selected-bg); border-color:var(--accent-edge); box-shadow:none; }
 .app[data-interface-mode="modern-gui"] .sheet-launcher-icon { color:var(--text-dim); }
+.app[data-interface-mode="modern-gui"] .workspace-titlebar .workspace-menu-chrome {
+  --workspace-menu-item-height:32px;
+  padding:var(--ui-space-2); border-color:var(--stroke-subtle); border-radius:var(--ui-radius-md);
+}
+.app[data-interface-mode="modern-gui"] .workspace-titlebar .workspace-menu-chrome button { border-radius:var(--ui-radius-sm); }
+.app[data-interface-mode="modern-gui"] .workspace-titlebar .workspace-menu-chrome button[data-selected="true"] { box-shadow:none; }
 
 /* 设置 sheet 是普通布局 sheet：标题栏不因设置打开而锁任何交互（关闭走页签，
    #195 已回收覆盖层时代的「设置打开态」交互锁，不得回潮——契约见 workspaceTitlebar.css.test）。 */
@@ -789,6 +796,7 @@
 }
 .app[data-interface-mode="terminal-like"] .sheet-tab-focus {
   padding:0 var(--ui-control-compact) 0 var(--ui-space-3);
+  font-family:var(--mono);
 }
 .app[data-interface-mode="terminal-like"] .sheet-tab-close {
   position:absolute;

@@ -473,7 +473,8 @@ export function SolidControlCenter() {
   const emptyComposer = createMemo(() => !input().sessionId ? {
     onSubmit: createEmptySession,
     submitting,
-    after: <Show when={submitError()}>{message => <div class="solid-agent-empty-error" role="alert">{message()}</div>}</Show>,
+    error: submitError,
+    dismissError: () => setSubmitError(''),
   } : undefined)
 
   /**

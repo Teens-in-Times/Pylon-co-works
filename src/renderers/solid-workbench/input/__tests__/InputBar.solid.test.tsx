@@ -284,6 +284,16 @@ describe('SolidInputBar', () => {
     resolveSend?.({ status: 'rejected', error: '网络暂时不可用' })
     await waitFor(() => expect(textarea.value).toBe('立即离开输入框'))
     expect(screen.getByRole('alert')).toHaveTextContent('网络暂时不可用')
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭输入错误' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(textarea).toHaveValue('立即离开输入框')
+    expect(textarea).toHaveFocus()
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(services.commands.calls).toHaveLength(2))
+    resolveSend?.({ status: 'rejected', error: '网络暂时不可用' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('网络暂时不可用')
   })
 
   it('发送失败时不以旧消息覆盖等待期间输入的新草稿', async () => {

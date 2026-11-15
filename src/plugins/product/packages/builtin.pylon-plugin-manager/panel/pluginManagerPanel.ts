@@ -40,17 +40,17 @@ const BOOTSTRAP_STATE_LABELS: Readonly<Record<PluginBootstrapOverview['state'], 
 // 红线：同属性 utility 不跨常量组合（utilities 层内同 specificity，胜负
 // 取决于生成顺序），每个按钮变体必须自足完整，不做「基串 + 修饰」拼接。
 const PANEL = 'flex flex-col gap-4 text-base leading-[1.6] text-content-text'
-const OVERVIEW = 'flex flex-wrap gap-4 rounded-sm bg-surface-panel px-3 py-2.5'
-const GROUP = 'flex flex-col gap-3 border-t border-border py-4'
+const OVERVIEW = 'flex flex-wrap gap-x-4 gap-y-1 rounded-sm bg-surface-panel px-3 py-2.5 [.app[data-interface-mode=terminal-like]_&]:rounded-none [.app[data-interface-mode=terminal-like]_&]:border-b [.app[data-interface-mode=terminal-like]_&]:border-stroke-subtle [.app[data-interface-mode=terminal-like]_&]:bg-transparent [.app[data-interface-mode=terminal-like]_&]:font-mono'
+const GROUP = 'flex flex-col gap-3 border-t border-stroke-subtle py-4 [.app[data-interface-mode=terminal-like]_&]:py-3'
 const GROUP_TITLE = 'text-base font-semibold text-content-text'
-const LIST = 'flex flex-col gap-1.5'
-const ROW = 'flex flex-wrap items-center gap-2.5 rounded-sm px-2 py-1.5 hover:bg-hover-bg'
+const LIST = 'flex flex-col'
+const ROW = 'flex min-w-0 flex-wrap items-center gap-2.5 border-b border-stroke-subtle px-2 py-2 last:border-b-0 hover:bg-hover-bg [.app[data-interface-mode=terminal-like]_&]:py-1.5'
 const ROW_TITLE = 'min-w-0 break-words font-semibold'
 const MUTED_MONO = 'min-w-0 break-all font-mono text-sm text-content-muted'
 const MUTED_TEXT = 'text-sm text-content-muted'
 const CONSENT_TEXT = 'text-content-muted'
 const ACTIONS = 'ml-auto flex flex-wrap gap-2'
-const BTN_INVARIANT = 'appearance-none cursor-pointer rounded-sm border bg-transparent px-2.5 py-0.75 text-sm enabled:hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+const BTN_INVARIANT = 'min-h-7 appearance-none cursor-pointer rounded-sm border bg-transparent px-2.5 py-0.75 text-sm enabled:hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [.app[data-interface-mode=terminal-like]_&]:rounded-none'
 const BTN = `${BTN_INVARIANT} border-border text-content-text`
 const BTN_PRIMARY = `${BTN_INVARIANT} border-accent text-accent`
 const BTN_DANGER = `${BTN_INVARIANT} border-border text-danger`

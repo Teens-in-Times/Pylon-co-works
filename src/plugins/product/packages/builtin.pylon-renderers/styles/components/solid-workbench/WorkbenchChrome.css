@@ -378,6 +378,27 @@
 .solid-extension-actions button { min-height:30px; padding:0 var(--ui-space-2); color:var(--text); background:var(--bg-input); border:1px solid var(--border); cursor:pointer; }
 .solid-extension-actions button:hover { color:var(--accent); border-color:var(--accent); }
 .solid-extension-card[data-reduced-motion='true'] { animation: none; transition: none; }
+.app[data-interface-mode="modern-gui"] .solid-extension-card:not(.solid-hook-card) {
+  background:var(--surface-raised);
+  border-block-color:var(--stroke-subtle);
+  border-inline-end-color:var(--stroke-subtle);
+  border-radius:4px;
+}
+.app[data-interface-mode="terminal-like"] .solid-extension-card:not(.solid-hook-card) {
+  padding:var(--ui-space-2) var(--ui-space-1);
+  background:transparent;
+  border-block-end:0; border-inline-end:0;
+  border-block-start-color:var(--stroke-subtle);
+  border-inline-start-width:1px;
+}
+.app:is([data-interface-mode="modern-gui"],[data-interface-mode="terminal-like"]) .solid-extension-card:not(.solid-hook-card) {
+  .solid-extension-icon { width:24px; height:24px; flex-basis:24px; border:0; background:transparent; }
+  .solid-extension-uri { padding:0; color:var(--text-dim); font-size:var(--font-size-xs); background:transparent; border:0; }
+  .solid-extension-preview { border:0; border-inline-start:1px solid var(--stroke-subtle); padding-block:4px; padding-inline-start:var(--ui-space-2); }
+  .solid-extension-actions button { min-height:28px; color:var(--text-dim); background:transparent; border:0; border-radius:2px; }
+  .solid-extension-actions button:hover { color:var(--text); background:var(--bg-hover); }
+  .solid-extension-actions button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .solid-extension-card { animation: none !important; transition: none !important; }
 }
@@ -553,7 +574,6 @@
 }
 .solid-workbench-empty-brand .agent-empty-eyebrow { margin-bottom: var(--ui-space-1); }
 .solid-workbench-empty-brand .agent-empty-title { font-size: clamp(20px, 2.4vw, 28px); }
-.solid-agent-empty-error { color: var(--danger, #dc6372); font: var(--font-size-sm) var(--font); }
 
 /* ── Solid control-center selectors ──
    Keep these menus in the same square, dense visual language as the terminal

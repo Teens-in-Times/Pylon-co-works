@@ -513,24 +513,24 @@
   background:var(--surface-panel); box-shadow:none;
 }
 .app[data-interface-mode="modern-gui"] .sidebar::before { border-radius:inherit; }
-.app[data-interface-mode="modern-gui"] .sidebar-modules { gap:16px; padding:12px 0; }
+.app[data-interface-mode="modern-gui"] .sidebar-modules { gap:var(--ui-space-3); padding:var(--ui-space-3) 0; }
 .app[data-interface-mode="modern-gui"] .sidebar-block { margin:0 8px; border:0; border-radius:0; overflow:hidden; }
 .app[data-interface-mode="modern-gui"] .sidebar-block-head { min-height:32px; padding:6px 8px; border-radius:0; background:transparent; font-size:12px; }
 .app[data-interface-mode="modern-gui"] .sidebar-block-action { border-radius:var(--ui-radius-xs); }
-.app[data-interface-mode="modern-gui"] .session-list { padding:0 8px 8px; }
-.app[data-interface-mode="modern-gui"] .session-item { min-height:34px; margin:1px 0; padding:4px 6px; border-radius:3px; }
+.app[data-interface-mode="modern-gui"] .session-list { padding:0 var(--ui-space-1) var(--ui-space-2); }
+.app[data-interface-mode="modern-gui"] .session-item { min-height:32px; margin:1px 0; padding:4px 8px; border-radius:var(--ui-radius-sm); }
 .app[data-interface-mode="modern-gui"] .session-item:hover { transform:none; }
-.app[data-interface-mode="modern-gui"] .session-item.active { background:var(--accent-soft); box-shadow:none; }
-.app[data-interface-mode="modern-gui"] .session-item.active::before { left:0; top:6px; bottom:6px; width:3px; border-radius:0; }
+.app[data-interface-mode="modern-gui"] .session-item.active { background:var(--state-selected-bg); box-shadow:none; }
+.app[data-interface-mode="modern-gui"] .session-item.active::before { display:none; }
 .app[data-interface-mode="modern-gui"] .session-item.active .session-name { font-weight:650; color:var(--text); }
 .app[data-interface-mode="modern-gui"] .session-dot:not([data-running="true"]) { visibility:hidden; }
 .app[data-interface-mode="modern-gui"] .session-pin,
 .app[data-interface-mode="modern-gui"] .profile-edit,
 .app[data-interface-mode="modern-gui"] .sidebar-action { border-radius:var(--ui-radius-xs); }
-.app[data-interface-mode="modern-gui"] .profile-bar { margin:0 12px 8px; padding:12px 0; border:0; border-bottom:1px solid var(--stroke-subtle); border-radius:0; background:transparent; }
+.app[data-interface-mode="modern-gui"] .profile-bar { margin:0 12px; padding:8px 0; border:0; border-top:1px solid var(--stroke-subtle); border-radius:0; background:transparent; }
 .app[data-interface-mode="modern-gui"] .profile-avatar { border-radius:var(--ui-radius-sm); }
-.app[data-interface-mode="modern-gui"] .cwd-group { margin-bottom:8px; border-radius:0; }
-.app[data-interface-mode="modern-gui"] .cwd-group-head { min-height:36px; }
+.app[data-interface-mode="modern-gui"] .cwd-group { margin-bottom:var(--ui-space-1); border-radius:0; }
+.app[data-interface-mode="modern-gui"] .cwd-group-head { min-height:32px; }
 .app[data-interface-mode="modern-gui"] .cwd-group-toggle { border-radius:var(--ui-radius-xs); }
 .app[data-interface-mode="modern-gui"] .cwd-new,
 .app[data-interface-mode="modern-gui"] .cwd-settings-section,

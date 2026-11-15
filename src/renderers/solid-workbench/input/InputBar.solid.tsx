@@ -23,24 +23,21 @@ export interface QueuedWorkbenchMessage {
   attachments?: readonly WorkbenchAttachment[]
 }
 
+interface EmptyComposer {
+  before?: JSX.Element
+  onSubmit: (text: string, attachments: readonly WorkbenchAttachment[]) => Promise<boolean>
+  submitting?: Accessor<boolean>
+  submitLabel?: Accessor<string>
+  error?: Accessor<string>
+  dismissError?: () => void
+}
+
 export interface SolidInputBarProps {
   disabled?: boolean
   /** Optional LLM provider; requests are debounced, cancellable and rate limited. */
   predictionProvider?: InputPredictionProvider
   /** Empty-state configuration. The input DOM stays mounted while a session is created. */
-  empty?: {
-    before?: JSX.Element
-    after?: JSX.Element
-    onSubmit: (text: string, attachments: readonly WorkbenchAttachment[]) => Promise<boolean>
-    submitting?: Accessor<boolean>
-    submitLabel?: Accessor<string>
-  } | (() => {
-    before?: JSX.Element
-    after?: JSX.Element
-    onSubmit: (text: string, attachments: readonly WorkbenchAttachment[]) => Promise<boolean>
-    submitting?: Accessor<boolean>
-    submitLabel?: Accessor<string>
-  } | undefined)
+  empty?: EmptyComposer | Accessor<EmptyComposer | undefined>
 }
 
 export function SolidInputBar(props: SolidInputBarProps) {
@@ -54,6 +51,9 @@ export function SolidInputBar(props: SolidInputBarProps) {
   const [historyIndex, setHistoryIndex] = createSessionUiSignal(workbench.sessionUi, sessionId, 'input-history-index', -1)
   const [attachments, setAttachments] = createSessionUiSignal<readonly WorkbenchAttachment[]>(workbench.sessionUi, sessionId, 'attachments', [])
   const [sendError, setSendError] = createSessionUiSignal(workbench.sessionUi, sessionId, 'input-error', '')
+  const [dismissedBindingError, setDismissedBindingError] = createSessionUiSignal(
+    workbench.sessionUi, sessionId, 'dismissed-binding-error', '',
+  )
   const [queueSendingSessions, setQueueSendingSessions] = createSignal<ReadonlySet<string>>(new Set())
   const [pickingAttachments, setPickingAttachments] = createSignal(false)
   const paletteId = `commands-${createUniqueId()}`
@@ -69,6 +69,24 @@ export function SolidInputBar(props: SolidInputBarProps) {
   let autoQueueArmed = false
   const emptyState = () => typeof props.empty === 'function' ? props.empty() : props.empty
   const isDisabled = () => Boolean(props.disabled || emptyState()?.submitting?.())
+  const bindingHint = () => workbench.input().bindingHint
+  const bindingError = () => {
+    const hint = bindingHint()
+    return hint?.error ? hint.text : ''
+  }
+  const errorMessage = () => sendError() || emptyState()?.error?.()
+    || (bindingError() === dismissedBindingError() ? '' : bindingError())
+  const dismissError = () => {
+    if (sendError()) setSendError('')
+    else if (emptyState()?.error?.()) emptyState()?.dismissError?.()
+    else setDismissedBindingError(bindingError())
+    if (!isDisabled()) textarea?.focus()
+  }
+
+  createEffect(() => {
+    const previous = dismissedBindingError()
+    if (previous && previous !== bindingError()) setDismissedBindingError('')
+  })
 
   const resizeInput = () => {
     if (!textarea || disposed) return
@@ -221,7 +239,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
     // to its session namespace. Restore keyboard focus only if the user is
     // still on that same session and the input is usable.
     queueMicrotask(() => {
-      if (id === sessionId() && !isDisabled()) textarea?.focus()
+      if (id === sessionId() && sendError() && !isDisabled()) textarea?.focus()
     })
   })
 
@@ -575,9 +593,16 @@ export function SolidInputBar(props: SolidInputBarProps) {
       {/* Empty state is intentionally quiet: the control-center itself already
           communicates the affordance, so keyboard-hint chrome would make the
           centered composer look like a second instruction panel. */}
-      <Show when={sendError()}>{error => <div class="input-error" role="alert">{error()}</div>}</Show>
-      <Show when={workbench.input().bindingHint}>{hint => (
-        <div class={`input-binding-status${hint().error ? ' input-binding-status--error' : ''}`} role="status">{hint().text}</div>
+      <Show when={errorMessage()}>{error => (
+        <div class="input-error">
+          <span class="input-error-message" role="alert">{error()}</span>
+          <button type="button" class="input-error-dismiss" aria-label="关闭输入错误" title="关闭输入错误" onClick={dismissError}>
+            <LucideIcon name="X" size={15} />
+          </button>
+        </div>
+      )}</Show>
+      <Show when={!errorMessage() && !bindingHint()?.error && bindingHint()}>{hint => (
+        <div class="input-binding-status" role="status">{hint().text}</div>
       )}</Show>
       <Show when={!emptyState() && palette.rows().length > 0}>
         <div id={paletteId} class="command-palette" role="listbox" aria-label="命令建议">
@@ -729,7 +754,6 @@ export function SolidInputBar(props: SolidInputBarProps) {
           </Show>
         </button>
       </div>
-      <Show when={emptyState()?.after}>{content => <div class="input-empty-after">{content()}</div>}</Show>
     </div>
   )
 }

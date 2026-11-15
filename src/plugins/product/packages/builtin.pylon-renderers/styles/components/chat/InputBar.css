@@ -1,22 +1,32 @@
 .input-bar { position:relative; width:100%; height:100%; }
 /* 错误浮层：绝对定位，不占布局流（否则出现/消失会把 CLI 输入栏上下推移） */
 .input-error {
-  position:absolute; bottom:100%; left:0; right:0; margin-bottom:6px;
-  color:var(--danger); font-size:13px; padding:6px 10px;
-  background:var(--state-danger-surface); border:1px solid var(--danger-edge);
-  border-radius: 0; backdrop-filter:blur(8px); z-index:11; overflow-wrap:anywhere;
+  position:absolute; bottom:100%; inset-inline:0; margin-bottom:var(--ui-space-2);
+  display:flex; align-items:start; gap:var(--ui-space-2); z-index:11;
+  color:var(--text); font-size:var(--font-size-sm);
+  padding:var(--ui-space-1) var(--ui-space-2) var(--ui-space-1) var(--ui-space-3);
+  background:var(--state-danger-surface);
+  border:1px solid var(--danger-edge); border-inline-start:2px solid var(--danger);
+  border-radius:4px;
 }
-/* OWNER-03：Binding 状态浮层——与错误浮层同布局位（不占流），信息语义中性色；
-   restore_error 用 --error 变体（恢复失败也是错误，必须醒目） */
+.input-error-message {
+  flex:1; min-width:0; padding-block:var(--ui-space-1); line-height:1.5;
+  max-height:min(30vh, 180px); overflow:auto; overflow-wrap:anywhere;
+}
+.input-error-dismiss {
+  display:grid; place-items:center; flex:none; width:28px; height:28px;
+  color:var(--text-dim); background:transparent; border:0; border-radius:2px; cursor:pointer;
+}
+.input-error-dismiss:hover { color:var(--text); background:var(--bg-hover); }
+.input-error-dismiss:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.app[data-interface-mode="terminal-like"] .input-error { border-radius:0; }
+/* OWNER-03：普通绑定状态与错误提示使用同一位置。 */
 .input-binding-status {
   position:absolute; bottom:100%; left:0; right:0; margin-bottom:6px;
   color:var(--text-dim); font-size:13px; padding:6px 10px;
   background:color-mix(in srgb, var(--bg-panel) 92%, var(--accent) 8%);
   border:1px solid var(--border); border-radius: 0; backdrop-filter:blur(8px); z-index:11;
   display:flex; flex-wrap:wrap; align-items:center; gap:var(--ui-space-2); overflow-wrap:anywhere;
-}
-.input-binding-status--error {
-  color:var(--danger); background:var(--state-danger-surface); border:1px solid var(--danger-edge);
 }
 /* Binding feedback is supplied by the workbench host. */
 .command-palette { position:absolute; bottom:100%; left:0; right:0; background:var(--command-bg,#fff); color:var(--text); border:1px solid var(--border); border-radius: 0; margin-bottom:8px; overflow-x:hidden; overflow-y:auto; max-height:min(52vh,480px); backdrop-filter:blur(12px); box-shadow:0 4px 16px rgba(0,0,0,0.18); z-index:10; }

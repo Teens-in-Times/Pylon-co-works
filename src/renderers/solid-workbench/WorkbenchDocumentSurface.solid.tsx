@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { For, Show } from 'solid-js'
+import { For, Show, createMemo } from 'solid-js'
 import type { WorkbenchDocument } from '../../domains/workbench/workbenchProjector.ts'
 import { SolidLifecycleCard, SolidSystemErrorCard, SolidSystemNoticeCard } from './chat/LifecycleCard.solid.tsx'
 import { SolidSessionSurfaceCard } from './chat/content/SessionSurfaceCard.solid.tsx'
@@ -10,6 +10,9 @@ import { interactionRenderKind, lifecycleRenderKind, visibleDiagnostics } from '
 import { isControlCenterConfigOption } from './input/workbenchOptionCatalog.ts'
 import { WorkbenchContentSlot } from './WorkbenchContentSlot.solid.tsx'
 import type { AssistSnapshot } from '../../domains/workbench/session/sessionSurface.ts'
+import { createSessionUiSignal } from './adapters/sessionUiSignal.solid.tsx'
+
+const NO_DISMISSED_EVENTS: readonly string[] = []
 
 export function WorkbenchDocumentSurface(props: {
   document: WorkbenchDocument | undefined
@@ -18,6 +21,14 @@ export function WorkbenchDocumentSurface(props: {
   sessionId: string | null
   reducedMotion: boolean
 }) {
+  const [dismissedEvents, setDismissedEvents] = createSessionUiSignal(
+    props.context.sessionUi, () => props.sessionId, 'dismissed-diagnostic-events', NO_DISMISSED_EVENTS,
+  )
+  const dismissed = createMemo(() => new Set(dismissedEvents()))
+  const dismiss = (eventId: string) => setDismissedEvents(ids => ids.includes(eventId) ? ids : [...ids, eventId])
+  const notices = createMemo(() => props.document
+    ? visibleDiagnostics(props.document).filter(notice => !dismissed().has(notice.eventId))
+    : [])
   /**
    * `session.started` carries the ACP negotiation catalogue.  Those model /
    * mode / reasoning entries are consumed by the control-center selectors and
@@ -71,7 +82,7 @@ export function WorkbenchDocumentSurface(props: {
               />}
             />}
           </Show>
-          <For each={document().systemErrors}>{(error, index) => (
+          <For each={document().systemErrors.filter(error => !error.eventId || !dismissed().has(error.eventId))}>{(error, index) => (
             <WorkbenchContentSlot
               nodeId={`${props.sessionId ?? 'none'}:system-error:${error.eventId ?? error.code ?? index()}`}
               kind="system.error"
@@ -87,6 +98,7 @@ export function WorkbenchDocumentSurface(props: {
                   ? strategy => { void props.commands.recover(props.sessionId!, strategy) }
                   : undefined}
                 onOpenDiagnostics={() => { void fallbackRenderCommands(props.context).execute({ type: 'diagnostics.open' }) }}
+                onDismiss={error.eventId ? () => dismiss(error.eventId!) : undefined}
                 dismissible
               />}
             />
@@ -169,15 +181,16 @@ export function WorkbenchDocumentSurface(props: {
               />
             </div>
           </Show>
-          <Show when={visibleDiagnostics(document()).length > 0}>
+          <Show when={notices().length > 0}>
             <div class="solid-workbench-diagnostics" aria-label="诊断">
-              <For each={visibleDiagnostics(document())}>{diagnostic => (
+              <For each={notices()}>{diagnostic => (
                 <WorkbenchContentSlot
                   nodeId={`${props.sessionId ?? 'none'}:notice:${diagnostic.eventId}`}
                   kind="system.notice"
                   payload={diagnostic}
                   context={props.context}
-                  fallback={<SolidSystemNoticeCard notice={diagnostic} reducedMotion={props.reducedMotion} />}
+                  fallback={<SolidSystemNoticeCard notice={diagnostic} reducedMotion={props.reducedMotion}
+                    onDismiss={diagnostic.level === 'error' ? () => dismiss(diagnostic.eventId) : undefined} />}
                 />
               )}</For>
             </div>

@@ -64,6 +64,7 @@ export function BuiltinSolidContentSlot(props: ToolBodyHostProps & {
   const execute = (type: string, payloadValue: unknown) => {
     void props.commands.execute(payloadValue === undefined ? { type } : { type, payload: payloadValue })
   }
+  const dismissDiagnostic = (targetId: string) => { void props.commands.execute({ type: 'diagnostics.dismiss', targetId }) }
   const numberSetting = (key: string, fallback: number) => typeof props.appearance[key] === 'number'
     ? props.appearance[key] as number
     : fallback
@@ -109,6 +110,10 @@ export function BuiltinSolidContentSlot(props: ToolBodyHostProps & {
     if (!kindSources || typeof kindSources !== 'object' || Array.isArray(kindSources)) return false
     const source = (kindSources as Record<string, unknown>)[key]
     return source === 'profile' || source === 'user-override' || source === 'session-preview'
+  }
+  const fileCardColor = (key: 'background' | 'borderColor', defaultValue: string) => {
+    const color = props.appearance[key]
+    return typeof color === 'string' && (color !== defaultValue || explicitKindSetting(key)) ? color : undefined
   }
   const explicitProseTypographySetting = (key: string) => {
     const renderSettings = props.appearance.renderSettings
@@ -220,8 +225,8 @@ export function BuiltinSolidContentSlot(props: ToolBodyHostProps & {
         }} appearance={{
           foreground: stringSetting('foreground', 'var(--text)'),
           mutedForeground: stringSetting('mutedForeground', 'var(--text-dim)'),
-          background: stringSetting('background', 'transparent'),
-          borderColor: stringSetting('borderColor', 'var(--border)'),
+          background: fileCardColor('background', 'transparent'),
+          borderColor: fileCardColor('borderColor', 'var(--border)'),
           fontSize: numberSetting('fontSize', 13),
           iconSize: numberSetting('iconSize', 18),
           maxWidth: numberSetting('maxWidth', 960),
@@ -434,6 +439,7 @@ export function BuiltinSolidContentSlot(props: ToolBodyHostProps & {
             onRetry={can('message.retry') ? () => execute('message.retry', undefined) : undefined}
             onRecover={can('session.recover') ? strategy => execute('session.recover', { strategy }) : undefined}
             onOpenDiagnostics={() => execute('diagnostics.open', undefined)}
+            onDismiss={error().eventId && can('diagnostics.dismiss') ? () => dismissDiagnostic(error().eventId!) : undefined}
             dismissible
           />}
         </Show>
@@ -447,6 +453,7 @@ export function BuiltinSolidContentSlot(props: ToolBodyHostProps & {
             notice={notice()}
             reducedMotion={props.appearance.reducedMotion === true}
             appearance={lifecycleAppearance(props.appearance, stringSetting, booleanSetting)}
+            onDismiss={notice().level === 'error' && can('diagnostics.dismiss') ? () => dismissDiagnostic(notice().eventId) : undefined}
           />}
         </Show>
       </Match>

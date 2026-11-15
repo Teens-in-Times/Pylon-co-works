@@ -232,8 +232,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
       {/* #154：左列几何（宽度/竖直分割线/折叠可见性）归布局层的 .sidebar；本类只管内容样式。 */}
       <aside class="sidebar overview-sidebar" aria-label="Overview 分区">
         <div class="overview-sidebar-head">
-          <span>工作台</span>
-          <strong>工作台导航</strong>
+          <strong>工作台</strong>
         </div>
         <nav>
           <button type="button" onClick={() => navigateTo('overview-home')}><LucideIcon name="LayoutDashboard" size={15} /><span>概览</span></button>
@@ -297,9 +296,9 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
           </section>
           <Show when={agents().length > 0} fallback={
             <ol class="overview-start-steps" id="overview-agents" aria-label="开始工作步骤">
-              <li><span>01</span><div><strong>连接 Agent</strong><p>选择已安装的 Agent，完成连接配置。</p></div></li>
-              <li><span>02</span><div><strong>选择工作目录</strong><p>让 Agent 在项目上下文中工作。</p></div></li>
-              <li><span>03</span><div><strong>开始对话</strong><p>会话和工作区会自动保留在这里。</p></div></li>
+              <li><strong>连接 Agent</strong><p>选择已安装的 Agent，完成连接配置。</p></li>
+              <li><strong>选择工作目录</strong><p>让 Agent 在项目上下文中工作。</p></li>
+              <li><strong>开始对话</strong><p>会话和工作区会自动保留在这里。</p></li>
             </ol>
           }>
             <section class="overview-section overview-agent-section" id="overview-agents">
