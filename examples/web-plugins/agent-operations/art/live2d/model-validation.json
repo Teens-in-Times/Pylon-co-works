@@ -1,0 +1,185 @@
+{
+  "format": "Cubism 5.3 moc3",
+  "drawables": [
+    "Mouth",
+    "BrowR",
+    "BrowL",
+    "EyeR",
+    "EyeL",
+    "Head",
+    "Body",
+    "EyeRClosed",
+    "EyeLClosed",
+    "MouthFrown",
+    "MouthSmile",
+    "MouthOpen"
+  ],
+  "samples": [
+    {
+      "value": 1,
+      "opacity": {
+        "Mouth": 1,
+        "BrowR": 1,
+        "BrowL": 1,
+        "EyeR": 1,
+        "EyeL": 1,
+        "Head": 1,
+        "Body": 1,
+        "EyeRClosed": 0,
+        "EyeLClosed": 0,
+        "MouthFrown": 0,
+        "MouthSmile": 0,
+        "MouthOpen": 0
+      }
+    },
+    {
+      "value": 0.75,
+      "opacity": {
+        "Mouth": 1,
+        "BrowR": 1,
+        "BrowL": 1,
+        "EyeR": 1,
+        "EyeL": 1,
+        "Head": 1,
+        "Body": 1,
+        "EyeRClosed": 0,
+        "EyeLClosed": 0,
+        "MouthFrown": 0,
+        "MouthSmile": 0,
+        "MouthOpen": 0
+      }
+    },
+    {
+      "value": 0.5,
+      "opacity": {
+        "Mouth": 1,
+        "BrowR": 1,
+        "BrowL": 1,
+        "EyeR": 1,
+        "EyeL": 1,
+        "Head": 1,
+        "Body": 1,
+        "EyeRClosed": 0,
+        "EyeLClosed": 0,
+        "MouthFrown": 0,
+        "MouthSmile": 0,
+        "MouthOpen": 0
+      }
+    },
+    {
+      "value": 0.25,
+      "opacity": {
+        "Mouth": 1,
+        "BrowR": 1,
+        "BrowL": 1,
+        "EyeR": 1,
+        "EyeL": 1,
+        "Head": 1,
+        "Body": 1,
+        "EyeRClosed": 0,
+        "EyeLClosed": 0,
+        "MouthFrown": 0,
+        "MouthSmile": 0,
+        "MouthOpen": 0
+      }
+    },
+    {
+      "value": 0.1,
+      "opacity": {
+        "Mouth": 1,
+        "BrowR": 1,
+        "BrowL": 1,
+        "EyeR": 1,
+        "EyeL": 1,
+        "Head": 1,
+        "Body": 1,
+        "EyeRClosed": 0,
+        "EyeLClosed": 0,
+        "MouthFrown": 0,
+        "MouthSmile": 0,
+        "MouthOpen": 0
+      }
+    },
+    {
+      "value": 0,
+      "opacity": {
+        "Mouth": 1,
+        "BrowR": 1,
+        "BrowL": 1,
+        "EyeR": 0,
+        "EyeL": 0,
+        "Head": 1,
+        "Body": 1,
+        "EyeRClosed": 1,
+        "EyeLClosed": 1,
+        "MouthFrown": 0,
+        "MouthSmile": 0,
+        "MouthOpen": 0
+      }
+    },
+    {
+      "value": 1,
+      "opacity": {
+        "Mouth": 1,
+        "BrowR": 1,
+        "BrowL": 1,
+        "EyeR": 1,
+        "EyeL": 1,
+        "Head": 1,
+        "Body": 1,
+        "EyeRClosed": 0,
+        "EyeLClosed": 0,
+        "MouthFrown": 0,
+        "MouthSmile": 0,
+        "MouthOpen": 0
+      }
+    }
+  ],
+  "mouthSamples": [
+    {
+      "value": -1,
+      "neutral": 0,
+      "smile": 0,
+      "frown": 1
+    },
+    {
+      "value": -0.7,
+      "neutral": 0.30000001192092896,
+      "smile": 0,
+      "frown": 0.699999988079071
+    },
+    {
+      "value": 0,
+      "neutral": 1,
+      "smile": 0,
+      "frown": 0
+    },
+    {
+      "value": 0.65,
+      "neutral": 0.3500000238418579,
+      "smile": 0.6499999761581421,
+      "frown": 0
+    },
+    {
+      "value": 1,
+      "neutral": 0,
+      "smile": 1,
+      "frown": 0
+    },
+    {
+      "value": 0,
+      "neutral": 1,
+      "smile": 0,
+      "frown": 0
+    }
+  ],
+  "checks": {
+    "finiteGeometry": true,
+    "independentEyes": true,
+    "exactNeutralRestore": true,
+    "opaqueIntermediateEyes": true,
+    "independentMouth": true,
+    "triangulatedMouth": true
+  },
+  "status": "Original-pixel blink and mouth expressions working; neck tilt verified separately by check-head-motion.mjs; intermediate blink polish, head X/Y, hair, body and clothing rigging incomplete"
+}

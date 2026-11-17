@@ -1,0 +1,773 @@
+{
+  "checks": {
+    "actualCoreExport": true,
+    "openingDeforms": true,
+    "neutralRestores": true,
+    "otherFacePartsFixed": true,
+    "closedMouthHiddenWhenOpen": true,
+    "expressionWidths": true
+  },
+  "widths": [
+    20.63653564453125,
+    29.46978759765625,
+    38.383331298828125
+  ],
+  "samples": [
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": -1,
+      "value": 0,
+      "height": 0.960968017578125,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": -1,
+      "value": 0.1,
+      "height": 4.303012847900391,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0,
+        0,
+        0.8999999761581421
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": -1,
+      "value": 0.25,
+      "height": 9.316078186035156,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0,
+        0,
+        0.75
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": -1,
+      "value": 0.5,
+      "height": 17.671188354492188,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0,
+        0,
+        0.5
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": -1,
+      "value": 0.75,
+      "height": 26.02629852294922,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0,
+        0,
+        0.25
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": -1,
+      "value": 1,
+      "height": 34.38140869140625,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 0,
+      "value": 0,
+      "height": 0.960968017578125,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 0,
+      "value": 0.1,
+      "height": 4.303012847900391,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0.8999999761581421,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 0,
+      "value": 0.25,
+      "height": 9.316078186035156,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0.75,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 0,
+      "value": 0.5,
+      "height": 17.671188354492188,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0.5,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 0,
+      "value": 0.75,
+      "height": 26.02629852294922,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0.25,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 0,
+      "value": 1,
+      "height": 34.38140869140625,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 1,
+      "value": 0,
+      "height": 0.960968017578125,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 1,
+      "value": 0.1,
+      "height": 4.303012847900391,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0,
+        0.8999999761581421,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 1,
+      "value": 0.25,
+      "height": 9.316078186035156,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0,
+        0.75,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 1,
+      "value": 0.5,
+      "height": 17.671188354492188,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0,
+        0.5,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 1,
+      "value": 0.75,
+      "height": 26.02629852294922,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0,
+        0.25,
+        0
+      ]
+    },
+    {
+      "angle": 0,
+      "eye": 1,
+      "brow": 0,
+      "form": 1,
+      "value": 1,
+      "height": 34.38140869140625,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": -1,
+      "value": 0,
+      "height": 0.9609668876242097,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": -1,
+      "value": 0.1,
+      "height": 4.303009107773576,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0,
+        0,
+        0.8999999761581421
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": -1,
+      "value": 0.25,
+      "height": 9.31607599181337,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0,
+        0,
+        0.75
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": -1,
+      "value": 0.5,
+      "height": 17.671188998489292,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0,
+        0,
+        0.5
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": -1,
+      "value": 0.75,
+      "height": 26.0263020051652,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0,
+        0,
+        0.25
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": -1,
+      "value": 1,
+      "height": 34.38140732309127,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 0,
+      "value": 0,
+      "height": 0.9609668876242097,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 0,
+      "value": 0.1,
+      "height": 4.303012894036655,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0.8999999761581421,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 0,
+      "value": 0.25,
+      "height": 9.316079778076457,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0.75,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 0,
+      "value": 0.5,
+      "height": 17.67118911471296,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0.5,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 0,
+      "value": 0.75,
+      "height": 26.02629443263902,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0.25,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 0,
+      "value": 1,
+      "height": 34.38140732309128,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 1,
+      "value": 0,
+      "height": 0.9609668876242097,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 1,
+      "value": 0.1,
+      "height": 4.303012894036655,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0,
+        0.8999999761581421,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 1,
+      "value": 0.25,
+      "height": 9.316079778076457,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0,
+        0.75,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 1,
+      "value": 0.5,
+      "height": 17.671189114712945,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0,
+        0.5,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 1,
+      "value": 0.75,
+      "height": 26.026298218902113,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0,
+        0.25,
+        0
+      ]
+    },
+    {
+      "angle": -30,
+      "eye": 0.5,
+      "brow": 1,
+      "form": 1,
+      "value": 1,
+      "height": 34.38140732309128,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": -1,
+      "value": 0,
+      "height": 0.9609670038478768,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": -1,
+      "value": 0.1,
+      "height": 4.303012894036662,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0,
+        0,
+        0.8999999761581421
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": -1,
+      "value": 0.25,
+      "height": 9.31607610803703,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0,
+        0,
+        0.75
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": -1,
+      "value": 0.5,
+      "height": 17.671188998489285,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0,
+        0,
+        0.5
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": -1,
+      "value": 0.75,
+      "height": 26.026298218902113,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0,
+        0,
+        0.25
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": -1,
+      "value": 1,
+      "height": 34.38140732309128,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 0,
+      "value": 0,
+      "height": 0.9609670038478768,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 0,
+      "value": 0.1,
+      "height": 4.303009107773569,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0.8999999761581421,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 0,
+      "value": 0.25,
+      "height": 9.316079894300124,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0.75,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 0,
+      "value": 0.5,
+      "height": 17.671188998489285,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0.5,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 0,
+      "value": 0.75,
+      "height": 26.026294432639027,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0.25,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 0,
+      "value": 1,
+      "height": 34.38140732309128,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 1,
+      "value": 0,
+      "height": 0.9609670038478768,
+      "interiorOpacity": 0,
+      "closedOpacity": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 1,
+      "value": 0.1,
+      "height": 4.303009107773569,
+      "interiorOpacity": 0.10000000149011612,
+      "closedOpacity": [
+        0,
+        0.8999999761581421,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 1,
+      "value": 0.25,
+      "height": 9.316076108037038,
+      "interiorOpacity": 0.25,
+      "closedOpacity": [
+        0,
+        0.75,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 1,
+      "value": 0.5,
+      "height": 17.671188998489292,
+      "interiorOpacity": 0.5,
+      "closedOpacity": [
+        0,
+        0.5,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 1,
+      "value": 0.75,
+      "height": 26.02629821890212,
+      "interiorOpacity": 0.75,
+      "closedOpacity": [
+        0,
+        0.25,
+        0
+      ]
+    },
+    {
+      "angle": 30,
+      "eye": 0,
+      "brow": -1,
+      "form": 1,
+      "value": 1,
+      "height": 34.38140726497946,
+      "interiorOpacity": 1,
+      "closedOpacity": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

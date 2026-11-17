@@ -1,0 +1,310 @@
+{
+  "checks": {
+    "independentBrows": true,
+    "otherGeometryFixed": true,
+    "opacityPreserved": true,
+    "neutralRestoresExactly": true
+  },
+  "samples": [
+    {
+      "side": "L",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": -1,
+      "dx": 0,
+      "dy": -6.456695556640625,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "L",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": -0.5,
+      "dx": 0,
+      "dy": -3.2283477783203125,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "L",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": 0.5,
+      "dx": 0,
+      "dy": 3.2283477783203125,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "L",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": 1,
+      "dx": 0,
+      "dy": 6.456695556640625,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "L",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": 0,
+      "dx": 0,
+      "dy": 0,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": -1,
+      "dx": 0,
+      "dy": -6.456695556640625,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": -0.5,
+      "dx": 0,
+      "dy": -3.2283477783203125,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": 0.5,
+      "dx": 0,
+      "dy": 3.2283477783203125,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": 1,
+      "dx": 0,
+      "dy": 6.456695556640625,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": 0,
+      "eye": 1,
+      "mouth": 0,
+      "value": 0,
+      "dx": 0,
+      "dy": 0,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "L",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": -1,
+      "dx": 0.7868728637695312,
+      "dy": -6.4085693359375,
+      "maxResidualPixels": 0.0000152587890625
+    },
+    {
+      "side": "L",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": -0.5,
+      "dx": 0.39344024658203125,
+      "dy": -3.20428466796875,
+      "maxResidualPixels": 0.00000762939453125
+    },
+    {
+      "side": "L",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 0.5,
+      "dx": -0.39344024658203125,
+      "dy": 3.2042694091796875,
+      "maxResidualPixels": 0.000017059844799040144
+    },
+    {
+      "side": "L",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 1,
+      "dx": -0.7868728637695312,
+      "dy": 6.4085540771484375,
+      "maxResidualPixels": 0.000017059844799040144
+    },
+    {
+      "side": "L",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 0,
+      "dx": 0,
+      "dy": 0,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": -1,
+      "dx": 0.7868728637695312,
+      "dy": -6.4085693359375,
+      "maxResidualPixels": 0.0000152587890625
+    },
+    {
+      "side": "R",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": -0.5,
+      "dx": 0.3934364318847656,
+      "dy": -3.20428466796875,
+      "maxResidualPixels": 0.0000152587890625
+    },
+    {
+      "side": "R",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 0.5,
+      "dx": -0.3934364318847656,
+      "dy": 3.20428466796875,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 1,
+      "dx": -0.7868747711181641,
+      "dy": 6.4085693359375,
+      "maxResidualPixels": 0.0000019073486328125
+    },
+    {
+      "side": "R",
+      "angle": -30,
+      "eye": 0.5,
+      "mouth": 1,
+      "value": 0,
+      "dx": 0,
+      "dy": 0,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "L",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": -1,
+      "dx": -0.7868728637695312,
+      "dy": -6.4085693359375,
+      "maxResidualPixels": 0.000003814697265625
+    },
+    {
+      "side": "L",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": -0.5,
+      "dx": -0.39344024658203125,
+      "dy": -3.20428466796875,
+      "maxResidualPixels": 0.00000762939453125
+    },
+    {
+      "side": "L",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": 0.5,
+      "dx": 0.39344024658203125,
+      "dy": 3.2042694091796875,
+      "maxResidualPixels": 0.000017059844799040144
+    },
+    {
+      "side": "L",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": 1,
+      "dx": 0.7868728637695312,
+      "dy": 6.4085540771484375,
+      "maxResidualPixels": 0.0000152587890625
+    },
+    {
+      "side": "L",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": 0,
+      "dx": 0,
+      "dy": 0,
+      "maxResidualPixels": 0
+    },
+    {
+      "side": "R",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": -1,
+      "dx": -0.7868728637695312,
+      "dy": -6.4085693359375,
+      "maxResidualPixels": 0.0000152587890625
+    },
+    {
+      "side": "R",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": -0.5,
+      "dx": -0.3934364318847656,
+      "dy": -3.20428466796875,
+      "maxResidualPixels": 0.000003814697265625
+    },
+    {
+      "side": "R",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": 0.5,
+      "dx": 0.3934364318847656,
+      "dy": 3.20428466796875,
+      "maxResidualPixels": 0.0000152587890625
+    },
+    {
+      "side": "R",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": 1,
+      "dx": 0.7868728637695312,
+      "dy": 6.4085693359375,
+      "maxResidualPixels": 0.0000152587890625
+    },
+    {
+      "side": "R",
+      "angle": 30,
+      "eye": 0,
+      "mouth": -1,
+      "value": 0,
+      "dx": 0,
+      "dy": 0,
+      "maxResidualPixels": 0
+    }
+  ]
+}
