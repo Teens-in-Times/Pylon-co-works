@@ -34,8 +34,7 @@ async function searchAndClick(query: string, ctx: SheetContext): Promise<void> {
   const sheet: SheetRecord = { id: 'search', kind: 'search', title: '搜索', createdAt: 0, lastFocusedAt: 0 }
   render(() => <SearchSheetView sheet={sheet} ctx={ctx} />)
   fireEvent.input(screen.getByLabelText('跨会话搜索'), { target: { value: query } })
-  await screen.findByText(/需要定位的消息 hello world/)
-  fireEvent.click(screen.getByRole('button', { name: /需要定位的消息 hello world/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /会话一.*hello world/ }))
 }
 
 describe('搜索结果导航', () => {

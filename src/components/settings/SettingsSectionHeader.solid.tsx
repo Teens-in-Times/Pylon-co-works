@@ -30,10 +30,6 @@ interface SettingsSectionHeaderProps {
  * 页面自有/未登记 section 显示「设置页」徽标（PAGE_OWNED_SECTIONS + isPageOwnedSection 派生）。
  * 密度档三选（拍板 D3-A 全局一档）：basic 只显 tier:'basic'；standard 非 advanced；all 全量。
  *
- * #515 W1：Solid 实体；下拉经 ui/Select 的 Solid 实体直连。DOM/aria 契约：
- * div.settings-section-header > .settings-owner-badge[data-owner]（aria-hidden 菱形 +
- * .settings-owner-id 名牌，页面自有/未登记 section 按「设置页」徽标处理）+
- * 密度档 .settings-density-select（Select）。
  */
 export default function SettingsSectionHeader(props: SettingsSectionHeaderProps) {
   // ⚠️ Solid 组件体只跑一次：owner/pageOwned 是 props 派生值，必须收成 accessor——
@@ -45,15 +41,13 @@ export default function SettingsSectionHeader(props: SettingsSectionHeaderProps)
 
   return (
     <div class="settings-section-header">
-      <span class="settings-owner-badge" data-testid="settings-owner-badge"
+      <div class="settings-owner-badge" data-testid="settings-owner-badge"
         data-owner={pageOwned() ? undefined : owner()}>
-        <span class="settings-owner-diamond" aria-hidden="true">◇</span>
-        {' '}
-        <strong>{SETTINGS_SECTION_LABELS[props.section]}</strong>
+        <h2>{SETTINGS_SECTION_LABELS[props.section]}</h2>
         {pageOwned()
           ? <em class="settings-owner-id settings-owner-page">设置页</em>
-          : <em class="settings-owner-id">· {SECTION_OWNER_LABELS[owner()!] ?? owner()}</em>}
-      </span>
+          : <em class="settings-owner-id">{SECTION_OWNER_LABELS[owner()!] ?? owner()}</em>}
+      </div>
       {/* F3 边界修复：密度档只对含字段的组件 section 有意义，pageOwned 动作面板不显示 */}
       <Show when={!pageOwned()}>
         <label class="settings-density-label">

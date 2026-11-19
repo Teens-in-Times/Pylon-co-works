@@ -6,6 +6,7 @@ import { useIdentityStore } from '../../domains/identity/identityStore'
 import { useWorkspaceStore } from '../../domains/workspace/workspaceStore'
 import { createFileSheetState, fileSheetReducer, fileTabKey, fileTabViewType, parseFileTabs, serializeFileTabs, type FileTabRecord } from './fileSheetState.ts'
 import FileSheetSidebarSolid from './FileSheetSidebar.solid.tsx'
+import { WorkbenchIcon } from './fileIcons.solid.tsx'
 import FileTabBarSolid from './FileTabBar.solid.tsx'
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes'
 import { workspaceTargetFromSession, workspaceTargetKey } from '../../domains/workspace/workspaceTarget.ts'
@@ -411,6 +412,7 @@ export default function FileSheetView(props: FileSheetViewProps) {
       when={activeTab() && viewRenderer()}
       fallback={
         <div class="file-tab-empty"><div class="file-empty-card">
+          <span class="file-empty-mark" aria-hidden="true"><WorkbenchIcon name="FileText" size={24} /></span>
           <strong>{activeTab() ? '没有可用的文件视图 renderer' : '打开一个文件开始阅读'}</strong>
           <Show when={!activeTab()}><p>从左侧文件树选择文件，查看代码、文档与 Git 差异。</p></Show>
         </div></div>

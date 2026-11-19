@@ -1,5 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
+import { Dynamic } from 'solid-js/web'
 import { appClients } from '../app/appClients.ts'
 import { runtimeEventClient } from '../infrastructure/tauri/runtimeEventClient.ts'
 import { useRuntimeStore } from '../domains/runtime/runtimeStore'
@@ -192,8 +193,9 @@ export default function RuntimeSheetView(props: RuntimeSheetViewProps) {
         <ul class="runtime-log-list list-none m-0 p-0 overflow-y-auto flex-1 bg-transparent">
           <For each={renderedEntries()}>{entry => (
             <li class="border-b border-stroke-subtle">
-              <button
-                type="button"
+              <Dynamic
+                component={hasLogDetail(entry) ? 'button' : 'div'}
+                type={hasLogDetail(entry) ? 'button' : undefined}
                 class={`runtime-log-row runtime-log-${entry.level} flex gap-[var(--ui-space-2)] items-baseline min-h-[38px] w-full text-left px-[var(--ui-space-3)] py-[5px] text-[12px] leading-[1.55] font-[family-name:var(--mono)] text-text bg-transparent border-none cursor-pointer outline-none transition-[background] duration-100 ease-[ease] hover:bg-bg-hover aria-expanded:bg-bg-active aria-expanded:shadow-[inset_3px_0_0_var(--accent)] focus-visible:shadow-[inset_3px_0_0_var(--accent)] focus-visible:bg-bg-hover max-[760px]:flex-wrap ${entry.level === 'error' ? 'text-[var(--danger,#e5484d)]' : entry.level === 'warn' ? 'text-[var(--state-warning,#fbbf24)]' : entry.level === 'debug' || entry.level === 'trace' ? 'text-text-dim' : ''}`}
                 aria-expanded={hasLogDetail(entry) ? expandedId() === entry.id : undefined}
                 onClick={() => { if (hasLogDetail(entry)) setExpandedId(expandedId() === entry.id ? null : entry.id) }}
@@ -202,12 +204,12 @@ export default function RuntimeSheetView(props: RuntimeSheetViewProps) {
                 <span class="runtime-log-level w-[4em] basis-[4em] shrink grow-0 font-bold uppercase">{entry.level}</span>
                 {/* #116 子项 3：缺 whitespace-nowrap 时 agent-stderr 会在连字符处断成
                     两行（单元格 19→37px、整行 30→37px），与含下划线不可断行的
-                    prism_desktop_lib 同一列两种表现。同文件 runtime-log-chip 已有该 utiliy。 */}
+                    prism_desktop_lib 同一列两种表现。同文件 runtime-log-chip 已有该 utility。 */}
                 <span class="runtime-log-source w-[6em] basis-[6em] shrink grow-0 overflow-hidden text-ellipsis whitespace-nowrap">{entry.source || '—'}</span>
                 <span class="runtime-log-time text-text-dim w-[8em] basis-[8em] shrink grow-0">{formatTime(entry.timestamp)}</span>
                 <Show when={entry.category}><span class="runtime-log-chip flex-none max-w-[9em] overflow-hidden text-ellipsis whitespace-nowrap px-[6px] font-[family-name:var(--mono)] text-[10px] leading-[18px] text-text-dim border border-border rounded-none bg-[color-mix(in_srgb,var(--bg-input)_70%,transparent)]">{entry.category}</span></Show>
                 <span class="runtime-log-message flex-1 min-w-0 [word-break:break-word] max-[760px]:basis-full max-[760px]:[overflow-wrap:anywhere]">{entry.message}</span>
-              </button>
+              </Dynamic>
               <Show when={expandedId() === entry.id && hasLogDetail(entry)}>
                 <div class="runtime-log-detail mt-[var(--ui-space-1)] mx-[var(--ui-space-3)] mb-[var(--ui-space-2)] py-[var(--ui-space-2)] px-[var(--ui-space-3)] text-[11px] bg-bg-input border border-border rounded-none text-text-dim max-[760px]:[overflow-wrap:anywhere]">
                   <Show when={entry.category || entry.code || entry.recoverable !== undefined || entry.userActionRequired !== undefined || entry.rawAvailable !== undefined}>

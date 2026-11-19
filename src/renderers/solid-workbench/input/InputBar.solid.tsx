@@ -14,7 +14,14 @@ import { createInputPredictionController } from './createInputPredictionControll
 import type { InputPredictionProvider } from '../../../infrastructure/prediction/inputPredictionProvider.ts'
 import { attachmentsFromPaths, attachmentNameForPath, subscribeAttachmentDrop } from '../../../infrastructure/tauri/attachmentPicker.ts'
 import { getFontContributionRegistry } from '../../../plugin-runtime/runtimeServices.ts'
+import { ArrowUp, ListPlus, Paperclip } from 'lucide'
 import { LucideIcon } from '../../../components/LucideIcon.solid.tsx'
+
+const SUBMIT_ACTIONS = {
+  send: { label: '提交消息', title: '发送 · Enter', icon: 'ArrowUp', node: ArrowUp },
+  queue: { label: '加入发送队列', title: '加入发送队列', icon: 'ListPlus', node: ListPlus },
+  stop: { label: '停止当前生成', title: '停止当前生成', icon: 'Square', node: undefined },
+} as const
 
 export interface QueuedWorkbenchMessage {
   id: number
@@ -104,8 +111,14 @@ export function SolidInputBar(props: SolidInputBarProps) {
     textarea.style.height = 'auto'
     const contentHeight = Math.max(textarea.scrollHeight, staticHeight)
     const nextHeight = Math.min(maxHeight, Math.max(staticHeight, contentHeight))
-    slot.style.height = flowLayout ? 'auto' : `${nextHeight}px`
-    const extraHeight = nextHeight - staticHeight
+    // Classic uses a fixed slot. Reserve one scrollable attachment row while
+    // the editor keeps its own three-times-static-height limit.
+    const attachmentHeight = attachments().length
+      ? Number.parseFloat(styles.getPropertyValue('--cc-attachment-strip-height')) || 0
+      : 0
+    const slotHeight = nextHeight + attachmentHeight
+    slot.style.height = flowLayout ? 'auto' : `${slotHeight}px`
+    const extraHeight = slotHeight - staticHeight
     if (!flowLayout && extraHeight > 0) controlCenter?.style.setProperty('--cc-input-extra-height', `${extraHeight}px`)
     else controlCenter?.style.removeProperty('--cc-input-extra-height')
     textarea.style.height = flowLayout ? `${nextHeight}px` : '100%'
@@ -126,6 +139,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
     void inputLineHeight
     void inputFontFamily
     void currentDraft
+    void attachments().length
     queueMicrotask(resizeInput)
   })
   onMount(() => queueMicrotask(resizeInput))
@@ -137,7 +151,8 @@ export function SolidInputBar(props: SolidInputBarProps) {
     let previousFlow = ''
     const observer = new ResizeObserver(() => {
       const width = slot.getBoundingClientRect().width
-      const flow = getComputedStyle(slot).getPropertyValue('--cc-input-flow')
+      const styles = getComputedStyle(slot)
+      const flow = styles.getPropertyValue('--cc-input-flow') + styles.getPropertyValue('--cc-attachment-strip-height')
       if (width === previousWidth && flow === previousFlow) return
       previousWidth = width
       previousFlow = flow
@@ -584,6 +599,12 @@ export function SolidInputBar(props: SolidInputBarProps) {
     applySuggestion(suggestion, parseSlashCommand(draft())?.args)
   }
 
+  const submitAction = () => {
+    if (!runtime().generating) return 'send'
+    return draft().trim() ? 'queue' : 'stop'
+  }
+  const action = () => SUBMIT_ACTIONS[submitAction()]
+
   return (
     <div
       ref={inputBar}
@@ -681,6 +702,7 @@ export function SolidInputBar(props: SolidInputBarProps) {
         <div class="input-attachments" aria-label="已添加附件">
           <For each={attachments()}>{item => (
             <span class="input-attachment" data-attachment-id={item.id}>
+              <LucideIcon name="FileText" size={13} />
               <span class="input-attachment-name" title={item.path}>{item.name ?? attachmentNameForPath(item.path)}</span>
               <button
                 type="button"
@@ -733,25 +755,17 @@ export function SolidInputBar(props: SolidInputBarProps) {
           aria-busy={pickingAttachments()}
           onClick={() => void attachFiles()}
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              d="M10.6 4.4 5.9 9.1a1.9 1.9 0 0 0 2.7 2.7l5-5a3.2 3.2 0 0 0-4.5-4.5l-5.3 5.3a4.5 4.5 0 0 0 6.4 6.4l4-4"
-            />
-          </svg>
+          <LucideIcon name="Paperclip" node={Paperclip} size={16} strokeWidth={1.7} />
         </button>
         <button type="button" class="input-submit-btn"
           disabled={isDisabled() || (!runtime().generating && !draft().trim())}
-          aria-label={runtime().generating ? draft().trim() ? '加入发送队列' : '停止当前生成' : '提交消息'}
-          title={runtime().generating ? draft().trim() ? '加入发送队列' : '停止当前生成' : '发送 · Enter'}
-          data-action={runtime().generating && !draft().trim() ? 'stop' : 'send'}
-          onClick={() => void (runtime().generating && !draft().trim() ? cancel() : send())}>
-          <Show when={runtime().generating && !draft().trim()} fallback={<LucideIcon name="Send" size={16} strokeWidth={1.8} />}>
-            <LucideIcon name="Square" size={16} strokeWidth={1.8} />
-          </Show>
+          aria-label={action().label}
+          title={action().title}
+          data-action={submitAction()}
+          onClick={() => void (submitAction() === 'stop' ? cancel() : send())}>
+          <Show when={action()} keyed>{current => (
+            <LucideIcon name={current.icon} node={current.node} size={17} strokeWidth={2} />
+          )}</Show>
         </button>
       </div>
     </div>

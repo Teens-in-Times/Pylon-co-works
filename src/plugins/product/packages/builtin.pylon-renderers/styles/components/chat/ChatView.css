@@ -135,12 +135,41 @@
   background:var(--file-card-background,transparent); border-radius:4px;
 }
 .app[data-interface-mode="modern-gui"] .term-file-card {
+  padding:14px 16px;
+  gap:6px 10px;
+  border-radius:10px;
   background:var(--file-card-background,var(--surface-raised));
   border-color:var(--file-card-border,var(--stroke-subtle));
 }
+.app[data-interface-mode="modern-gui"] .term-file-icon {
+  min-width:28px; min-height:28px; border-radius:7px; background:var(--surface-sunken);
+}
+.app[data-interface-mode="modern-gui"] .term-file-name { font-weight:650; }
+.app[data-interface-mode="modern-gui"] .term-file-actions { gap:4px; }
+.app[data-interface-mode="modern-gui"] .term-file-action:not(:disabled) {
+  color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,transparent);
+}
+.app[data-interface-mode="modern-gui"] .term-file-action:hover:not(:disabled) {
+  background:var(--state-selected-bg);
+}
+.app[data-interface-mode="modern-gui"] .term-file-preview {
+  padding:8px 12px; border:0; border-radius:5px; background:var(--surface-sunken);
+}
 .app[data-interface-mode="terminal-like"] .term-file-card {
-  padding:var(--ui-space-2) var(--ui-space-1); border-radius:0;
+  gap:2px 8px; padding:var(--ui-space-2) var(--ui-space-1); border-radius:0;
   border:0; border-block-start:var(--line-width-1) solid var(--file-card-border,var(--stroke-subtle));
+}
+.app[data-interface-mode="terminal-like"] .term-file-meta {
+  flex-flow:row wrap; align-items:baseline; gap:2px 10px;
+}
+.app[data-interface-mode="terminal-like"] .term-file-meta > :is(.term-file-name,.term-file-preview) {
+  flex-basis:100%; min-width:0;
+}
+.app[data-interface-mode="terminal-like"] .term-file-action {
+  min-height:24px; padding:2px 5px;
+}
+.app[data-interface-mode="terminal-like"] .term-file-path {
+  font-family:var(--mono);
 }
 .term-file-card[data-group-layout="grid"] { grid-template-columns:auto minmax(0,1fr) auto; }
 .term-file-card[data-group-layout="stack"] .term-file-actions { grid-column:2; }
@@ -154,6 +183,7 @@
 .term-file-action { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:4px 8px; border:0; border-radius:2px; background:transparent; color:var(--file-muted-foreground,var(--text-dim)); font:inherit; font-size:var(--font-size-xs); line-height:1.4; cursor:pointer; }
 .term-file-action:hover:not(:disabled) { color:var(--text); background:var(--bg-hover); }
 .term-file-action:disabled { opacity:.45; cursor:not-allowed; }
+.term-file-action:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .term-file-preview { margin:4px 0 0; padding-block:4px; padding-inline-start:var(--ui-space-2); overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; border-inline-start:1px solid var(--file-card-border,var(--stroke-subtle)); }
 .term-file-card .term-file-preview-markdown { white-space:normal; font:inherit; line-height:1.65; }
 .term-file-card .term-file-preview-markdown :is(.term-h1,.term-h2,.term-h3,.term-h4,.term-h5,.term-h6) { margin:8px 0 4px; padding:0; border:0; font-size:1em; line-height:1.5; }
@@ -2343,11 +2373,6 @@ ol:has(> .term-li) > .term-li::before { content:none; }
   font-family:var(--msg-font,var(--chat-font,var(--mono)));
 }
 .term-spinner-row { align-items:baseline; margin-left:0; transform:none; }
-.term-assistant.has-dot > .term-assistant-body {
-  flex:1 1 auto;
-  width:auto;
-  max-width:100%;
-}
 /* Keep the content column width-bearing in every message layout. A zero flex
    basis combined with a shrink-to-fit row collapses the body to the marker's
    min-content width, producing the characteristic few-characters-per-line

@@ -197,7 +197,13 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
     props.ctx.openSheet({ kind: 'agent', title: owner.name, agentId: owner.id })
   }
 
-  const navigateTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  let overviewMain: HTMLElement | undefined
+  const navigateTo = (id: string) => {
+    const section = overviewMain?.querySelector<HTMLElement>(`#${id}`)
+    if (!section) return
+    section.focus({ preventScroll: true })
+    section.scrollIntoView({ block: 'start' })
+  }
 
   // 指挥台（TacticalCommandDeck.solid 直连）的 props 工厂：effect 追踪本 memo，任一依赖变化即原位重渲。
   const deckProps = createMemo<TacticalCommandDeckProps>(() => ({
@@ -239,11 +245,13 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
           <button type="button" onClick={() => navigateTo('overview-agents')}><LucideIcon name="Bot" size={15} /><span>Agent</span><small>{agents().length}</small></button>
           <button type="button" onClick={() => navigateTo('overview-recent')}><LucideIcon name="MessageSquare" size={15} /><span>最近会话</span><small>{localRecent().length + persistedRecent().length}</small></button>
           <button type="button" onClick={() => navigateTo('overview-workspaces')}><LucideIcon name="Folder" size={15} /><span>工作区</span><small>{workspaces().length}</small></button>
-          <button type="button" onClick={() => navigateTo('overview-advanced')}><LucideIcon name="Settings2" size={15} /><span>高级配置</span></button>
+          <Show when={agents().length > 0}>
+            <button type="button" onClick={() => navigateTo('overview-advanced')}><LucideIcon name="Settings2" size={15} /><span>高级配置</span></button>
+          </Show>
         </nav>
         <div class="overview-sidebar-foot"><LucideIcon name="Activity" size={14} />{connectedCount()} 个 Agent 在线</div>
       </aside>
-      <main class="overview-main">
+      <main class="overview-main" ref={element => { overviewMain = element }}>
         <div class="overview-shell">
           <Show when={commandDeck()}>
             <Show when={tacticalPanel() === 'home'} fallback={
@@ -256,7 +264,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
               <TacticalCommandDeck {...deckProps()} />
             </Show>
           </Show>
-          <section class="overview-hero" id="overview-home" aria-labelledby="overview-title">
+          <section class="overview-hero" id="overview-home" tabIndex={-1} aria-labelledby="overview-title">
             <div class="overview-hero-brand">
               <div class="overview-mark-stage">
                 <PylonMark size={34} className="overview-brand-mark" title="Pylon" />
@@ -277,8 +285,8 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
                     </Show>
                   }>
                     {latest => (
-                      <button type="button" class="overview-primary-action" onClick={() => void openKnownSession(latest())}>
-                        继续「{latest().name}」 <LucideIcon name="ArrowUpRight" size={15} />
+                      <button type="button" class="overview-primary-action" title={latest().name} onClick={() => void openKnownSession(latest())}>
+                        <span class="min-w-0 truncate">继续「{latest().name}」</span> <LucideIcon name="ArrowUpRight" size={15} />
                       </button>
                     )}
                   </Show>
@@ -289,19 +297,21 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
               </div>
             </div>
             <Show when={agents().length > 0}>
-              <p class="overview-pulse" aria-label={`${connectedCount()} 个 Agent 已连接，${workspaces().length} 个工作区`}>
-                <span>{connectedCount()} 个 Agent 在线</span><span>{workspaces().length} 个工作区</span><span>{sessions().length} 个会话</span>
-              </p>
+              <dl class="overview-pulse" aria-label="工作台统计">
+                <div><dt>在线 Agent</dt><dd>{connectedCount()}</dd></div>
+                <div><dt>工作区</dt><dd>{workspaces().length}</dd></div>
+                <div><dt>会话</dt><dd>{sessions().length}</dd></div>
+              </dl>
             </Show>
           </section>
           <Show when={agents().length > 0} fallback={
-            <ol class="overview-start-steps" id="overview-agents" aria-label="开始工作步骤">
+            <ol class="overview-start-steps" id="overview-agents" tabIndex={-1} aria-label="开始工作步骤">
               <li><strong>连接 Agent</strong><p>选择已安装的 Agent，完成连接配置。</p></li>
               <li><strong>选择工作目录</strong><p>让 Agent 在项目上下文中工作。</p></li>
               <li><strong>开始对话</strong><p>会话和工作区会自动保留在这里。</p></li>
             </ol>
           }>
-            <section class="overview-section overview-agent-section" id="overview-agents">
+            <section class="overview-section overview-agent-section" id="overview-agents" tabIndex={-1}>
               <div class="overview-section-heading"><h2>选择 Agent</h2><span class="overview-section-meta">{agents().length} 个可选</span></div>
               <div class="overview-agent-grid">
                 <For each={agents()}>{agent => {
@@ -333,7 +343,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
           </Show>
 
           <div class="overview-content-grid">
-            <section class="overview-section overview-recent-section" id="overview-recent">
+            <section class="overview-section overview-recent-section" id="overview-recent" tabIndex={-1}>
               <div class="overview-section-heading">
                 <div>
                   <h2>最近会话</h2>
@@ -368,7 +378,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
               </Show>
             </section>
 
-            <section class="overview-section overview-workspace-section" id="overview-workspaces">
+            <section class="overview-section overview-workspace-section" id="overview-workspaces" tabIndex={-1}>
               <div class="overview-section-heading">
                 <div>
                   <h2>工作区</h2>
@@ -407,7 +417,7 @@ export default function OverviewSheetView(props: OverviewSheetViewProps) {
             </section>
           </div>
 
-          <Show when={agents().length > 0}><section class="overview-config-strip" id="overview-advanced">
+          <Show when={agents().length > 0}><section class="overview-config-strip" id="overview-advanced" tabIndex={-1}>
             <div>
               <span class="overview-section-eyebrow">高级</span>
               <strong>当前 Agent：{activeAgentEntry()?.name ?? activeAgent()}</strong>

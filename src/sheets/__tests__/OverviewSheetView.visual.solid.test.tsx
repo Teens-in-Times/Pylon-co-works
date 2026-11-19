@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
-// #515：自 OverviewSheetView.visual.test.tsx 迁移（断言集与用例逐一保留，渲染改走
-// Solid 实体；fireEvent/screen 等查询语义不变）。
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library'
+import { cleanup, fireEvent, render, screen, within } from '@solidjs/testing-library'
 import OverviewSheetView from '../OverviewSheetView.solid.tsx'
 import { useIdentityStore } from '../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../domains/runtime/runtimeStore.ts'
@@ -74,7 +72,9 @@ describe('Overview visual workbench', () => {
     window.addEventListener('pylon:open-settings', listener)
     render(() => <OverviewSheetView sheet={sheet} ctx={{} as SheetContext} />)
     expect(screen.getByRole('heading', { name: '开始你的工作' })).toBeInTheDocument()
-    expect(screen.getByRole('list', { name: '开始工作步骤' }).children).toHaveLength(3)
+    const steps = within(screen.getByRole('list', { name: '开始工作步骤' }))
+    expect(steps.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: '高级配置' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '选择 Agent' })).toBeNull()
     expect(screen.queryByRole('button', { name: '新建 Agent' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Agent 设置' })).toBeNull()
@@ -83,8 +83,15 @@ describe('Overview visual workbench', () => {
     window.removeEventListener('pylon:open-settings', listener)
   })
 
-  // 改写点登记：指挥台是 Solid 直连（TacticalCommandDeck.solid），交互一律经 findBy
-  // 等待渲染落 DOM；断言集与 React 版逐条一致，不缩减。
+  it('moves keyboard focus to the section chosen in the overview navigation', () => {
+    render(() => <OverviewSheetView sheet={sheet} ctx={{} as SheetContext} />)
+    const section = screen.getByRole('heading', { name: '最近会话' }).closest('section')!
+    section.scrollIntoView = vi.fn()
+    fireEvent.click(screen.getByRole('button', { name: /最近会话/ }))
+    expect(section).toHaveFocus()
+    expect(section.scrollIntoView).toHaveBeenCalledOnce()
+  })
+
   it('战术导航进入现有分区、返回，并通过 Sheet host 打开诊断', async () => {
     useInterfaceModeStore.setState({ interfaceMode: 'tactical-blue' })
     const ctx = { openSheet: vi.fn(), selectSession: vi.fn() } as unknown as SheetContext
@@ -202,7 +209,7 @@ describe('Overview visual workbench', () => {
     expect(useIdentityStore.getState().activeAgent).toBe('peri')
   })
 
-  it('选择 Agent 失败：保持 overview、错误以 alert 展示、卡片恢复可再选', async () => {
+  it('选择 Agent 失败：保持 overview、显示错误中心提示、卡片恢复可再选', async () => {
     fakeInvoke.register('switch_agent', () => { throw new Error('switch refused') })
     const ctx = { openSheet: vi.fn(), selectSession: vi.fn() } as unknown as SheetContext
     render(() => <OverviewSheetView sheet={sheet} ctx={ctx} />)

@@ -86,13 +86,14 @@ export const SETTINGS_DOMAIN_SHORT_LABELS: Readonly<Record<SettingsDomainId, str
 
 /** Compact menu copy shared by the titlebar menu and the active Settings domain context. */
 export const SETTINGS_DOMAIN_MENU_META: Readonly<Record<SettingsDomainId, {
+  readonly icon: string
   readonly glyph: string
   readonly description: string
 }>> = {
-  appearance: { glyph: '◈', description: '主题、消息与字体' },
-  workspace: { glyph: '▦', description: '窗口、历史与工作区行为' },
-  'agents-connections': { glyph: '✦', description: 'Agent、连接与输入能力' },
-  plugins: { glyph: '◇', description: '插件安装与贡献设置' },
+  appearance: { glyph: '◈', icon: 'Palette', description: '主题、消息与字体' },
+  workspace: { glyph: '▦', icon: 'LayoutDashboard', description: '窗口、历史与工作区行为' },
+  'agents-connections': { glyph: '✦', icon: 'Bot', description: 'Agent、连接与输入能力' },
+  plugins: { glyph: '◇', icon: 'Puzzle', description: '插件安装与贡献设置' },
 }
 
 export const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, string> = {

@@ -5,7 +5,7 @@ import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge
 import { useIdentityStore } from '../../domains/identity/identityStore'
 import { reportRuntimeError, resolveRuntimeErrors } from '../../app/runtimeError.ts'
 import { createStandardSwitchAgent, openOwnedSessionTransaction } from '../../application/transactions/openOwnedSessionTransaction'
-import PylonMark from '../../components/PylonMark.solid.tsx'
+import { HighlightedText } from '../../components/HighlightedText.solid.tsx'
 import { sessionUiStore } from '../../domains/workbench/sessionUiStore.ts'
 import { searchAllMessages, type SearchHitUi } from '../../domains/search/searchService'
 import type { SheetContext, SheetRecord } from '../../workspace-sheets/sheetTypes'
@@ -131,7 +131,7 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
       <main class={MAIN} aria-busy={loading()}>
         <h2 class={MAIN_TITLE}>跨会话搜索</h2>
         <p class={DESCRIPTION}>查找已保存在本机的消息，在会话中查看和切换匹配项。</p>
-        <label class="search-sheet-query mb-4 flex h-[var(--ui-control-emphasis)] w-[min(100%,640px)] items-center gap-2 border border-stroke-subtle bg-bg-input px-3 focus-within:border-accent">
+        <label class="search-sheet-query mb-4 flex h-[var(--ui-control-emphasis)] w-[min(100%,960px)] items-center gap-2 border border-stroke-subtle bg-bg-input px-3 focus-within:border-accent">
           <LucideIcon name="Search" size={16} class="shrink-0 text-text-dim" />
           <input
             ref={element => { inputElement = element }}
@@ -146,26 +146,28 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
         <Show when={loading()}><p class={HINT} role="status">搜索中…</p></Show>
         <Show when={searchError()}><div class={HINT} role="status"><p class="search-error-reference">搜索失败，详情见右下角错误中心</p><button type="button" class="mt-2 cursor-pointer border border-border px-3 py-1 text-text hover:bg-bg-hover" onClick={() => setRetry(value => value + 1)}>重试搜索</button></div></Show>
         <Show when={truncated()}><p class={HINT} role="status">结果过多已截断（上限 {50} 条）</p></Show>
-        <ul class={RESULTS}>
-          <For each={results()}>{result => (
-            <li class={RESULTS_LI}>
-              <button type="button" class={`search-sheet-result ${ROW}`} onClick={() => void openResult(result)}>
-                <span class={ROW_PATH}>{sessions().find(session => session.id === result.sessionId)?.name || result.sessionId}</span>
-                <span class={ROW_TEXT}>{result.snippet}</span>
-              </button>
-            </li>
-          )}</For>
-        </ul>
+        <Show when={results().length > 0}>
+          <ul class={RESULTS}>
+            <For each={results()}>{result => (
+              <li class={RESULTS_LI}>
+                <button type="button" class={`search-sheet-result ${ROW}`} onClick={() => void openResult(result)}>
+                  <span class={ROW_PATH}>{sessions().find(session => session.id === result.sessionId)?.name || result.sessionId}</span>
+                  <span class={ROW_TEXT}><HighlightedText text={result.snippet} query={query()} /></span>
+                </button>
+              </li>
+            )}</For>
+          </ul>
+        </Show>
         <Show when={query().trim() && results().length === 0 && !searchError() && !loading()}>
           <div class={EMPTY} role="status">
-            <div class={EMPTY_MARK}><PylonMark size={30} title="Pylon 搜索" /></div>
+            <div class={EMPTY_MARK}><LucideIcon name="Search" size={22} /></div>
             <strong class={EMPTY_STRONG}>没有匹配结果</strong>
             <span class={EMPTY_SPAN}>试试更短的关键词，或用会话中出现过的其他表述。</span>
           </div>
         </Show>
         <Show when={!query().trim()}>
           <div class={EMPTY} role="status">
-            <div class={EMPTY_MARK}><PylonMark size={30} title="Pylon 搜索" /></div>
+            <div class={EMPTY_MARK}><LucideIcon name="Search" size={22} /></div>
             <strong class={EMPTY_STRONG}>搜索本地会话消息</strong>
             <span class={EMPTY_SPAN}>输入关键词后，打开对应会话继续查看匹配内容。</span>
           </div>

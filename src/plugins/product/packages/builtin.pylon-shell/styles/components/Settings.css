@@ -61,7 +61,8 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
 }
 .settings-sheet-nav-domain:hover { background:var(--state-hover-bg); color:var(--text); }
 .settings-sheet-nav-domain.active { background:var(--state-selected-bg); color:var(--text); border-color:var(--state-selected-stroke); }
-.settings-sheet-nav-domain-glyph { color:var(--accent); font:var(--font-size-md)/1 var(--mono); }
+.settings-sheet-nav-domain-glyph { display:grid; flex:none; place-items:center; width:28px; height:28px; border-radius:var(--ui-radius-sm); color:var(--text-dim); }
+.settings-sheet-nav-domain.active .settings-sheet-nav-domain-glyph { color:var(--accent); }
 .settings-sheet-nav-domain-text { display:flex; flex-direction:column; min-width:0; }
 .settings-sheet-nav-domain-text strong { font-size:var(--font-size-base); font-weight:650; }
 .settings-sheet-nav-domain-text small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--font-size-2xs); color:var(--text-dim); }
@@ -259,7 +260,13 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
   background:color-mix(in srgb,var(--bg-panel) 82%,transparent);
 }
 .plugin-manager .plugin-list { display:grid; gap:7px; margin-top:10px; }
-.plugin-manager .plugin-row-main { display:grid; grid-template-columns:auto minmax(160px,1fr) auto auto; align-items:center; gap:5px 10px; min-width:0; flex:1; }
+.plugin-manager { container-type:inline-size; }
+.plugin-manager .set-group-title[role="heading"] { cursor:default; }
+.plugin-manager [data-capability-consent-card] .plugin-row { flex-wrap:wrap; justify-content:flex-start; }
+.plugin-manager [data-capability-consent-card] .plugin-row-actions { margin-inline-start:auto; }
+.plugin-manager .plugin-row-main { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:5px 10px; min-width:0; flex:1; }
+.plugin-row-meta { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:5px; }
+.plugin-row-main > .set-hint { grid-column:2 / -1; overflow-wrap:anywhere; }
 .plugin-manager .plugin-row-copy { display:flex; min-width:0; flex-direction:column; gap:2px; }
 .plugin-manager .plugin-row-title { color:var(--text); font-size:var(--font-size-md); font-weight:650; }
 .plugin-manager .plugin-row-id { overflow:hidden; color:var(--text-dim); font-family:var(--font); font-size:var(--font-size-xs); text-overflow:ellipsis; white-space:nowrap; }
@@ -300,10 +307,11 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
 .plugin-manager .set-row-label { display:block; margin-top:8px; }
 .plugin-log-line { white-space:pre-wrap; word-break:break-all; }
 
-@media (max-width: 900px) {
-  .plugin-manager .plugin-row { align-items:flex-start; flex-direction:column; }
-  .plugin-manager .plugin-row-main { width:100%; grid-template-columns:auto minmax(120px,1fr) auto; }
-  .plugin-state-badge { display:none; }
+@container (max-width:600px) {
+  .plugin-manager .plugin-row { flex-wrap:wrap; justify-content:flex-start; gap:8px; }
+  .plugin-manager .plugin-row-main { flex-basis:100%; grid-template-columns:auto minmax(0,1fr); }
+  .plugin-row-meta { grid-column:2; justify-content:flex-start; }
+  .plugin-row-actions { flex-wrap:wrap; }
 }
 
 /* ── 右：实时预览面板 ── */
@@ -379,47 +387,56 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
    当前域的 section（settingsDomains 驱动）。原顶部 tier-nav 行与快速层视图
    （settings-quick/set-basic-fields）样式随之删除。 */
 
-/* W2-14：模板库（官方 6 + 自定义，预览局部 cssVars 不触全局） */
-.template-library { display: flex; flex-direction: column; gap: 16px; }
-.template-section { display: flex; flex-direction: column; gap: 8px; }
-.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+/* Template previews scale inside their local palette. All controls retain the application's palette. */
+.template-library { display:grid; gap:28px; }
+.template-section { display:grid; gap:12px; min-width:0; }
+.template-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(232px,100%),1fr)); align-items:start; gap:14px; }
 .template-card {
   border: 1px solid var(--stroke-subtle);
-  border-radius: 4px;
-  padding: 8px;
+  border-radius: var(--ui-radius-md);
+  padding: 12px;
   background: var(--surface-raised);
-  display: flex; flex-direction: column; gap: 8px;
+  display:grid; min-width:0; gap:10px;
 }
-.template-card:hover { border-color: var(--border-focus); }
-/* #116 子项 6：原先 `.template-preview` 自己用 transform: scale(0.35) + width:285%
-   缩略——transform 不参与布局，布局盒仍是未缩放尺寸（实测 offsetHeight 378 vs
-   视觉高 132，每卡白占 246px 垂直空间）。现改为不做外层缩放：内层 SettingsPreview
-   本来就会按容器宽度 scale-to-fit，视觉仍是同一张 ~16% 示意图，但布局盒等于视觉盒。
-   卡片里的说明由卡片自身的模板名 / 覆盖度承担，故隐藏预览自带的 caption。 */
+.template-card:hover { border-color:var(--stroke-default); }
+.template-card[aria-current] { border-color:var(--accent); }
+.template-card-heading { display:flex; min-width:0; gap:8px; align-items:center; justify-content:space-between; }
+.template-current { font-size:var(--font-size-xs); color:var(--accent); }
 .template-preview {
   border: 1px solid var(--border);
   border-radius: var(--ui-radius-sm);
   overflow: hidden;
 }
 .template-preview .set-preview-caption { display: none; }
-.template-actions { display: flex; gap: 6px; }
+.template-actions { display:flex; flex-wrap:wrap; gap:4px; }
 .template-apply, .template-restore {
   min-height:32px; padding:6px 10px; font-size:12px; font-family:var(--font);
   color:var(--text); background:transparent;
   border:1px solid var(--stroke-subtle); border-radius:2px; cursor:pointer;
 }
-.template-apply { color:var(--accent); background:var(--accent-soft); }
-.template-apply:focus-visible, .template-restore:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.template-apply { color:var(--text); border-color:var(--state-selected-stroke); background:var(--state-selected-bg); }
+.template-restore { color:var(--text-dim); border-color:transparent; }
+.template-apply:focus-visible, .template-restore:focus-visible, .template-coverage summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .template-apply:hover, .template-restore:hover { background: var(--bg-hover); border-color: var(--border-focus); }
-.template-label { font-size: var(--font-size-sm); color: var(--text); }
-.template-coverage { display:flex; flex-wrap:wrap; gap:4px 8px; color:var(--text-placeholder); font:var(--font-size-4xs)/1.2 var(--mono); }
-.template-coverage span { display:inline-flex; align-items:center; gap:4px; }
+.template-label { font-size:var(--font-size-md); line-height:1.4; color:var(--text); overflow-wrap:anywhere; }
+.template-coverage { padding-top:7px; border-top:1px solid var(--stroke-subtle); color:var(--text-dim); font:var(--font-size-xs)/1.55 var(--font); }
+.template-coverage summary { width:fit-content; max-width:100%; cursor:pointer; }
+.template-coverage span { display:flex; align-items:center; gap:5px; padding-block-start:2px; }
 .template-coverage i { width:5px; height:5px; border-radius:50%; background:var(--text-placeholder); }
 .template-coverage .is-explicit { color:var(--success); }
 .template-coverage .is-explicit i { background:var(--success); }
 .template-coverage .is-unavailable { color:var(--warning); }
 .template-coverage .is-unavailable i { background:var(--warning); }
-.template-coverage .is-missing { color:var(--text-placeholder); }
+.template-coverage .is-missing { color:var(--text-dim); }
+.app[data-interface-mode="terminal-like"] .template-grid { grid-template-columns:repeat(auto-fill,minmax(min(310px,100%),1fr)); gap:0 16px; }
+.app[data-interface-mode="terminal-like"] .template-card {
+  grid-template-columns:minmax(56px,24%) minmax(0,1fr); gap:4px 12px;
+  padding:12px 4px; border:0; border-top:1px solid var(--stroke-subtle); background:transparent;
+}
+.app[data-interface-mode="terminal-like"] .template-card[aria-current] { border-color:var(--accent); }
+.app[data-interface-mode="terminal-like"] .template-preview { grid-row:1 / 4; align-self:start; }
+.app[data-interface-mode="terminal-like"] .template-label { font-family:var(--mono); font-size:var(--font-size-sm); }
+.app[data-interface-mode="terminal-like"] .template-coverage { padding:0; border:0; }
 
 /* Interface Mode 卡片（设置页界面模式选择器）。 */
 .interface-mode-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
@@ -602,6 +619,7 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
 }
 .app[data-interface-mode="modern-gui"] .settings-tabs-root { gap:0; padding:0; }
 .app[data-interface-mode="modern-gui"] .settings-sheet-nav-domains { gap:var(--ui-space-1); }
+.app[data-interface-mode="modern-gui"] .settings-sheet-nav-domain.active .settings-sheet-nav-domain-glyph { background:var(--surface-raised); }
 .app[data-interface-mode="modern-gui"] :is(.settings-sheet-nav-domain,.set-nav-btn) { border-radius:var(--ui-radius-sm); }
 .app[data-interface-mode="modern-gui"] .set-nav-btn { padding:8px 11px; }
 .app[data-interface-mode="modern-gui"] :is(.settings-sheet-nav-domain,.set-nav-btn).active {
@@ -666,11 +684,10 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3, 12px);
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  border: 1px solid var(--ui-border, rgba(128, 128, 128, 0.25));
-  border-radius: var(--ui-radius-md, 8px);
-  background: color-mix(in srgb, var(--bg-panel, transparent) 60%, transparent);
+  flex-wrap:wrap;
+  padding:0 0 14px;
+  margin-bottom:18px;
+  border-bottom:1px solid var(--stroke-subtle);
 }
 
 .settings-owner-badge {
@@ -680,14 +697,10 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
   min-width: 0;
 }
 
-.settings-owner-diamond {
-  color: var(--accent, #6ea8fe);
-}
-
-.settings-owner-badge strong {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text, inherit);
+.settings-owner-badge h2 {
+  margin:0;
+  font:650 var(--font-size-2xl)/1.35 var(--font);
+  color:var(--text);
 }
 
 .settings-owner-id {
@@ -700,9 +713,7 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
 }
 
 .settings-owner-page {
-  padding: 0 6px;
-  border-radius: var(--ui-radius-sm, 4px);
-  border: 1px dashed var(--ui-border, rgba(128, 128, 128, 0.35));
+  margin-inline-start:2px;
 }
 
 .settings-density-label {
@@ -1022,7 +1033,7 @@ body[data-interface-mode="tactical-blue"] .agent-settings-overview { border-bott
   border-radius:0;
   background:transparent;
 }
-.app[data-interface-mode="terminal-like"] .settings-owner-diamond { font-family:var(--mono); }
+.app[data-interface-mode="terminal-like"] .settings-owner-badge h2 { font:600 var(--font-size-lg)/1.35 var(--mono); }
 .app[data-interface-mode="terminal-like"] .settings-owner-id,
 .app[data-interface-mode="terminal-like"] .settings-density-label { font-family:var(--mono); }
 .app[data-interface-mode="terminal-like"] .set-toolbar {

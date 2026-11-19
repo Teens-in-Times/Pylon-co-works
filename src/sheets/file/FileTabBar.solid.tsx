@@ -1,4 +1,5 @@
 /** @jsxImportSource solid-js */
+import { FileTypeIconSolid, WorkbenchIcon } from './fileIcons.solid.tsx'
 import { For, Show } from 'solid-js'
 import { navigateTabStrip } from '../tabNavigation.ts'
 import { fileTabKey, fileTabViewType, type FileTabRecord } from './fileSheetState.ts'
@@ -50,6 +51,7 @@ export default function FileTabBar(props: FileTabBarProps) {
               onClick={() => props.onSelect(key)}
               title={label}
             >
+              <FileTypeIconSolid path={tab.path} size={14} />
               <span class="file-tab-name">{tab.path.split('/').pop()}</span>
               <Show when={isDiff}><span class="file-tab-mode">{tab.staged ? 'staged' : 'unstaged'}</span></Show>
               <Show when={saving()} fallback={
@@ -66,7 +68,7 @@ export default function FileTabBar(props: FileTabBarProps) {
                 disabled={saving()}
                 onClick={event => { event.stopPropagation(); props.onClose(key) }}
               >
-                ✕
+                <WorkbenchIcon name="X" size={13} />
               </button>
             </span>
           )

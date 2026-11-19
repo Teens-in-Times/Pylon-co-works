@@ -68,7 +68,7 @@ export default function PluginCapabilityConsentCard(props: PluginCapabilityConse
   return (
     <Show when={props.pending.length > 0} fallback={null}>
       <div class="set-group" data-capability-consent-card aria-label="插件能力授权">
-        <div class="set-group-title">能力授权</div>
+        <div class="set-group-title" role="heading" aria-level="3">能力授权</div>
         <div class="set-hint">
           以下插件在 manifest 中声明了宿主能力（{PYLON_PLUGIN_CAPABILITIES.join('/')}），需要你批准后才能激活。
         </div>

@@ -299,7 +299,7 @@ export default function SessionsPanel(props: AgentSidebarContributionProps) {
     <>
       <div class="px-2 pb-2">
         <button type="button" aria-label="新会话" class="session-new-action flex min-h-9 w-full items-center gap-2 rounded-[3px] border border-border bg-bg-input px-3 text-left text-xs font-medium text-text hover:border-accent hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent" onClick={createSession} title={activeWorkspace() ? `在 ${activeWorkspace()!.name} 中新建会话` : '新建不绑定工作目录的会话'}>
-          <LucideIcon name="Plus" size={15} /><span>新会话</span><Show when={activeWorkspace()}><span class="ml-auto min-w-0 truncate text-[10px] font-normal text-text-dim">{activeWorkspace()!.name}</span></Show>
+          <LucideIcon name="Plus" size={15} /><span class="shrink-0 whitespace-nowrap">新会话</span><Show when={activeWorkspace()}><span class="ml-auto min-w-0 truncate text-[10px] font-normal text-text-dim">{activeWorkspace()!.name}</span></Show>
         </button>
       </div>
       <div class="session-list" role="tree" aria-label="工作区与会话">

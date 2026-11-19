@@ -71,8 +71,10 @@ export default function AgentFileResources(props: {
       <Show when={selectedPath()} fallback={
         <>
           <div class="px-1 pb-3">
-            <strong class="block truncate text-xs font-semibold text-text">{props.session?.name || '当前工作区'}</strong>
-            <p class="mt-1 truncate font-[family-name:var(--mono)] text-[11px] text-text-dim" title={props.rootPath}>{props.rootPath || (target() ? '当前会话工作目录' : '绑定工作目录后即可浏览文件')}</p>
+            <strong class="block truncate text-xs font-semibold text-text" title={props.session?.name}>{props.session?.name || '当前工作区'}</strong>
+            <Show when={props.rootPath || target()}>
+              <p class="mt-1 truncate font-[family-name:var(--mono)] text-[11px] text-text-dim" title={props.rootPath}>{props.rootPath || '当前会话工作目录'}</p>
+            </Show>
           </div>
           <Show when={target() && provider() && props.touchedFiles.length > 0}>
             <div class="mb-3 border-b border-border pb-2">
