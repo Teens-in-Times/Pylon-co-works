@@ -4,7 +4,8 @@ import { useCustomPresetStore } from '../../domains/theme/customPresetStore'
 import { GLOBAL_PRESETS } from '../../domains/theme/presets/index.ts'
 import { effectivePresetTheme } from '../../domains/theme/zones/index.ts'
 import { THEME_DEFAULTS } from '../../domains/theme/themeFieldDefs'
-import type { ThemeSettings } from '../../domains/theme/themeStore'
+import { useThemeStore, type ThemeSettings } from '../../domains/theme/themeStore'
+import { deriveGlobalStatus } from '../../domains/theme/presetReducer.ts'
 import { themeToCssVars } from './templateThemeVars.ts'
 import { createPresetBundle, presetCoverage, type PresetApplyResult } from '../../domains/theme/presetBundle.ts'
 import { normalizeCustomPresetId } from '../../domains/theme/customPresets.ts'
@@ -40,9 +41,8 @@ interface TemplateView {
 
 export default function TemplateLibrary(props: TemplateLibraryProps) {
   const customPresets = createZustandSignal(useCustomPresetStore, s => s.customPresets)
+  const currentPreset = createZustandSignal(useThemeStore, deriveGlobalStatus)
   const [applyingId, setApplyingId] = createSignal<string | null>(null)
-  // 组件体只跑一次，普通可变变量充当 ref（进行中模板的互斥标记）
-  let applying: string | null = null
   const [applyFeedback, setApplyFeedback] = createSignal<{ kind: 'success' | 'error'; message: string } | null>(null)
   // 刀3（#223）：预设不再自带 `theme` ⇒ 走有效值视图。
   // ★ 只算**一次**、两处共用：显示用的主题与 `createPresetBundle` 落盘的主题必须同源。
@@ -69,10 +69,9 @@ export default function TemplateLibrary(props: TemplateLibraryProps) {
     bundle: preset.bundle,
   })))
 
-  const applyTemplate = async (template: { id: string; name: string }) => {
-    if (applying) return
+  const applyTemplate = async (template: TemplateView, restore = false) => {
+    if (applyingId() !== null) return
     const isCustom = template.id.startsWith('custom:')
-    applying = template.id
     setApplyingId(template.id)
     setApplyFeedback(null)
     try {
@@ -91,50 +90,56 @@ export default function TemplateLibrary(props: TemplateLibraryProps) {
           setApplyFeedback({ kind: 'error', message: `自定义预设应用失败（${result.failedProvider}）：${result.message}` })
         }
       } else {
-        await props.onApply(template.name)
-        setApplyFeedback({ kind: 'success', message: '预设已应用' })
+        await (restore ? props.onRestore : props.onApply)(template.name)
+        setApplyFeedback({ kind: 'success', message: restore ? '模板默认值已恢复' : '预设已应用' })
       }
     } catch (error) {
       setApplyFeedback({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
     } finally {
-      applying = null
       setApplyingId(null)
     }
   }
 
-  const renderCard = (template: TemplateView) => (
-    <div class="template-card">
-      <div class="template-preview" style={themeToCssVars(template.theme)}>
-        {/* #515 W1：预览岛（TemplateLibraryPreviewIsland + SettingsPreview React 桥）
-            退役，实体直连——zone 固定 global，挂载后无 props 流。 */}
-        <SettingsPreviewSolid zone="global" />
-      </div>
-      <div class="template-actions">
-        <button type="button" class="template-apply" disabled={applyingId() !== null} aria-busy={applyingId() === template.id || undefined} onClick={() => { void applyTemplate(template) }}>
-          {applyingId() === template.id ? '应用中…' : '应用'}
-        </button>
-        <Show when={!template.id.startsWith('custom:')}>
-          <button type="button" class="template-restore" onClick={() => void props.onRestore(template.name)}>恢复此模板默认</button>
-        </Show>
-      </div>
-      <div class="template-label">{template.label}</div>
-      <div class="template-coverage" aria-label="预设覆盖范围">
-        <For each={presetCoverage(template.bundle)}>{item => <span
-          class={`is-${item.state}`}
-          title={item.policy ? `${item.policy === 'complete' ? '完整' : '局部'}覆盖：显式 ${item.explicit}，默认 ${item.defaulted}，不可用 ${item.unavailable}` : undefined}>
-          <i aria-hidden="true" />{item.label}{item.state === 'missing'
-            ? ' · 未记录'
-            : item.state === 'unavailable'
-              ? ` · 不可用 ${item.unavailable}`
-              : item.state === 'excluded'
-                ? ' · 不纳入预设'
-              : item.defaulted > 0
-                ? ` · ${item.explicit} 显式 / ${item.defaulted} 默认`
-                : ` · ${item.explicit} 显式`}{item.policy === 'partial' ? ' · 局部' : ''}
-        </span>}</For>
-      </div>
-    </div>
-  )
+  const renderCard = (template: TemplateView) => {
+    const isCustom = template.id.startsWith('custom:')
+    const presetId = isCustom ? normalizeCustomPresetId(template.name) : template.name
+    const selected = () => currentPreset() === presetId
+    return (
+      <article class="template-card" aria-label={template.label} aria-current={selected() ? 'true' : undefined}>
+        <div class="template-preview" style={themeToCssVars(template.theme)} inert>
+          <SettingsPreviewSolid zone="global" />
+        </div>
+        <div class="template-card-heading">
+          <strong class="template-label">{template.label}</strong>
+          <Show when={selected()}><span class="template-current">使用中</span></Show>
+        </div>
+        <div class="template-actions">
+          <button type="button" class="template-apply" disabled={applyingId() !== null} aria-busy={applyingId() === template.id || undefined} onClick={() => { void applyTemplate(template) }}>
+            {applyingId() === template.id ? '处理中…' : '应用'}
+          </button>
+          <Show when={!isCustom}>
+            <button type="button" class="template-restore" disabled={applyingId() !== null} onClick={() => void applyTemplate(template, true)}>恢复此模板默认</button>
+          </Show>
+        </div>
+        <details class="template-coverage">
+          <summary>预设覆盖范围</summary>
+          <For each={presetCoverage(template.bundle)}>{item => <span
+            class={`is-${item.state}`}
+            title={item.policy ? `${item.policy === 'complete' ? '完整' : '局部'}覆盖：显式 ${item.explicit}，默认 ${item.defaulted}，不可用 ${item.unavailable}` : undefined}>
+            <i aria-hidden="true" />{item.label}{item.state === 'missing'
+              ? ' · 未记录'
+              : item.state === 'unavailable'
+                ? ` · 不可用 ${item.unavailable}`
+                : item.state === 'excluded'
+                  ? ' · 不纳入预设'
+                : item.defaulted > 0
+                  ? ` · ${item.explicit} 显式 / ${item.defaulted} 默认`
+                  : ` · ${item.explicit} 显式`}{item.policy === 'partial' ? ' · 局部' : ''}
+          </span>}</For>
+        </details>
+      </article>
+    )
+  }
 
   return (
     <div class="template-library">

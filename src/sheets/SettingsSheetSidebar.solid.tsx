@@ -13,6 +13,7 @@ import {
   type SettingsSectionId,
 } from '../components/settings/settingsDomains.ts'
 import { GROUP_ORDER } from '../domains/theme/themeFieldDefs'
+import { LucideIcon } from '../components/LucideIcon.solid.tsx'
 import { useThemeStore } from '../domains/theme/themeStore'
 import { useWorkspaceStore } from '../domains/workspace/workspaceStore.ts'
 import { useSettingsChromeStore } from '../domains/appearance/settingsChromeStore.ts'
@@ -101,7 +102,7 @@ export default function SettingsSheetSidebar(props: WorkspaceViewProps<SettingsS
             aria-current={props.state.domain === domain.id ? 'true' : undefined}
             onClick={() => navigate({ domain: domain.id, section: domain.sections[0] ?? 'global', pluginPageId: null })}
           >
-            <span class="settings-sheet-nav-domain-glyph" aria-hidden="true">{SETTINGS_DOMAIN_MENU_META[domain.id].glyph}</span>
+            <span class="settings-sheet-nav-domain-glyph" aria-hidden="true"><LucideIcon name={SETTINGS_DOMAIN_MENU_META[domain.id].icon} size={16} /></span>
             <span class="settings-sheet-nav-domain-text">
               <strong>{domain.label}</strong>
               <small>{SETTINGS_DOMAIN_MENU_META[domain.id].description}</small>
@@ -136,6 +137,7 @@ export default function SettingsSheetSidebar(props: WorkspaceViewProps<SettingsS
                 <div class="settings-nav-section-row">
                   <button type="button"
                     class={`set-nav-btn ${props.state.pluginPageId == null && props.state.section === section ? 'active' : ''}${zone && custom()[zone] ? ' dirty' : ''}`}
+                    aria-current={props.state.pluginPageId == null && props.state.section === section ? 'page' : undefined}
                     aria-expanded={hasSub ? expanded() : undefined}
                     onClick={() => {
                       navigate({ section, pluginPageId: null })
@@ -182,6 +184,7 @@ export default function SettingsSheetSidebar(props: WorkspaceViewProps<SettingsS
             <button type="button"
               class={`set-nav-btn plugin-page ${props.state.pluginPageId === entry.contributionId ? 'active' : ''}`}
               onClick={() => navigate({ pluginPageId: entry.contributionId })}
+              aria-current={props.state.pluginPageId === entry.contributionId ? 'page' : undefined}
               title={entry.value.description}>
               <span>{entry.value.label}</span>
               <small>{entry.ownerPluginId}</small>

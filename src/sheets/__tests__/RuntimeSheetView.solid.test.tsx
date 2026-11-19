@@ -15,12 +15,17 @@ afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 it('retries failed loads, labels filters and exposes log detail expansion', async () => {
   subscribe.mockImplementation(() => ({ dispose }))
-  list.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([{ id: 1, timestamp: 1, level: 'warn', source: 'agent', message: 'retryable failure', code: 'E_RETRY' }])
+  list.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([
+    { id: 1, timestamp: 1, level: 'warn', source: 'agent', message: 'retryable failure', code: 'E_RETRY' },
+    { id: 2, timestamp: 2, level: 'info', source: 'agent', message: 'plain entry' },
+  ])
   const sheet: SheetRecord = { id: 'runtime', kind: 'runtime', title: '日志', createdAt: 0, lastFocusedAt: 0 }
   const view = render(() => <RuntimeSheetView sheet={sheet} ctx={{} as SheetContext} />)
   fireEvent.click(await screen.findByRole('button', { name: '重新读取日志' }))
   const row = await screen.findByRole('button', { name: /retryable failure/ })
   expect(row).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByText('plain entry')).toBeVisible()
+  expect(screen.queryByRole('button', { name: /plain entry/ })).toBeNull()
   fireEvent.click(row)
   expect(row).toHaveAttribute('aria-expanded', 'true')
   expect(screen.getByText('E_RETRY')).toBeTruthy()

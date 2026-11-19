@@ -274,11 +274,13 @@ export default function PluginManager(props: PluginManagerProps) {
             <span class="plugin-row-title">{displayName()}</span>
             <span class="plugin-row-id">{pluginId}</span>
           </span>
-          <span class={`plugin-type-badge ${builtin ? 'type-first-party' : 'type-package'}`}>
-            {builtin ? '内置' : (typeof manifest()?.kind === 'string' ? manifest()!.kind : '外置')}
-          </span>
-          <Show when={productRequired()}><span class="plugin-type-badge type-first-party">产品运行必需</span></Show>
-          <span class={`plugin-state-badge ${identity() ? 'is-active' : ''}`}>{stateBadge()}</span>
+          <div class="plugin-row-meta">
+            <span class={`plugin-type-badge ${builtin ? 'type-first-party' : 'type-package'}`}>
+              {builtin ? '内置' : (typeof manifest()?.kind === 'string' ? manifest()!.kind : '外置')}
+            </span>
+            <Show when={productRequired()}><span class="plugin-type-badge type-first-party">产品运行必需</span></Show>
+            <span class={`plugin-state-badge ${identity() ? 'is-active' : ''}`}>{stateBadge()}</span>
+          </div>
           <For each={cleanupFailures()}>{failure => (
             <span class="set-hint">
               {[failure.cleanup?.deactivateError, ...(failure.cleanup?.scope.errors ?? [])]
@@ -345,15 +347,12 @@ export default function PluginManager(props: PluginManagerProps) {
 
   return (
     <div class="plugin-manager">
-      <h3>插件</h3>
-      <div class="set-hint">
-        Pylon Plugin API {PYLON_PLUGIN_API_VERSION}；安装、停用、启用与热更新全部由统一 Runtime 执行。
-      </div>
-      <PluginCapabilityConsentCard pending={pendingConsent()} bootstrap={bootstrap()} />
       <div class="plugin-overview" aria-label="插件概览">
         <span><strong>{snapshot().active.length}</strong> 个运行中</span>
         <span><strong>{installed().length}</strong> 个用户插件</span>
+        <span>Pylon Plugin API {PYLON_PLUGIN_API_VERSION}</span>
       </div>
+      <PluginCapabilityConsentCard pending={pendingConsent()} bootstrap={bootstrap()} />
 
       <Show when={bootstrapSnapshot().kind === 'starting' || bootstrapSnapshot().kind === 'idle'}>
         <div class="set-hint" role="status">Kernel Plugin Host 正在启动…</div>
@@ -363,7 +362,7 @@ export default function PluginManager(props: PluginManagerProps) {
       </Show>
       <Show when={bootstrapSnapshot().kind === 'degraded'}>
         <div class="set-group" aria-label="插件启动故障">
-          <div class="set-group-title" aria-expanded="true">启动故障</div>
+          <div class="set-group-title" role="heading" aria-level="3">启动故障</div>
           <For each={degradedFailures()}>{failure => (
             <div class="plugin-row" role="status">
               <span class="plugin-row-id">{failure.pluginId}</span>
@@ -386,10 +385,7 @@ export default function PluginManager(props: PluginManagerProps) {
       </Show>
 
       <div class="set-group">
-        <div class="set-group-title" aria-expanded="true">
-          <span class="set-group-arrow">▾</span>
-          用户插件
-        </div>
+        <div class="set-group-title" role="heading" aria-level="3">用户插件</div>
         <div class="set-preset-row">
           <button type="button" class="ps-btn primary sm" disabled={busy() !== null || !nativePackagesAvailable} onClick={() => void installOrUpdate()}>
             {busy() === '安装/更新' ? '处理中…' : '安装/更新 api=1.0 包…'}
@@ -412,18 +408,12 @@ export default function PluginManager(props: PluginManagerProps) {
       </div>
 
       <div class="set-group">
-        <div class="set-group-title" aria-expanded="true">
-          <span class="set-group-arrow">▾</span>
-          内置组件
-        </div>
+        <div class="set-group-title" role="heading" aria-level="3">内置组件</div>
         <div class="plugin-list"><For each={[...builtinIds].sort()}>{pluginId => renderPlugin(pluginId, true)}</For></div>
       </div>
 
       <div class="set-group">
-        <div class="set-group-title" aria-expanded="true">
-          <span class="set-group-arrow">▾</span>
-          Shadow Update 诊断
-        </div>
+        <div class="set-group-title" role="heading" aria-level="3">Shadow Update 诊断</div>
         <Show when={snapshot().switches.length === 0}><div class="set-hint">本次运行尚无 Shadow Update。</div></Show>
         <For each={snapshot().switches}>{item => (
           <div class="plugin-row">
@@ -434,10 +424,7 @@ export default function PluginManager(props: PluginManagerProps) {
       </div>
 
       <div class="set-group">
-        <div class="set-group-title" aria-expanded="true">
-          <span class="set-group-arrow">▾</span>
-          最近日志
-        </div>
+        <div class="set-group-title" role="heading" aria-level="3">最近日志</div>
         <Show when={log().length === 0}><div class="set-hint">暂无操作日志。</div></Show>
         <For each={log()}>{line => <div class="set-hint plugin-log-line" role="log">{line}</div>}</For>
       </div>

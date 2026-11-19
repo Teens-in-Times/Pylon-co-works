@@ -42,7 +42,7 @@ const BOOTSTRAP_STATE_LABELS: Readonly<Record<PluginBootstrapOverview['state'], 
 const PANEL = 'flex flex-col gap-4 text-base leading-[1.6] text-content-text'
 const OVERVIEW = 'flex flex-wrap gap-x-4 gap-y-1 rounded-sm bg-surface-panel px-3 py-2.5 [.app[data-interface-mode=terminal-like]_&]:rounded-none [.app[data-interface-mode=terminal-like]_&]:border-b [.app[data-interface-mode=terminal-like]_&]:border-stroke-subtle [.app[data-interface-mode=terminal-like]_&]:bg-transparent [.app[data-interface-mode=terminal-like]_&]:font-mono'
 const GROUP = 'flex flex-col gap-3 border-t border-stroke-subtle py-4 [.app[data-interface-mode=terminal-like]_&]:py-3'
-const GROUP_TITLE = 'text-base font-semibold text-content-text'
+const GROUP_TITLE = 'text-lg font-semibold text-content-text [.app[data-interface-mode=terminal-like]_&]:font-mono [.app[data-interface-mode=terminal-like]_&]:text-base'
 const LIST = 'flex flex-col'
 const ROW = 'flex min-w-0 flex-wrap items-center gap-2.5 border-b border-stroke-subtle px-2 py-2 last:border-b-0 hover:bg-hover-bg [.app[data-interface-mode=terminal-like]_&]:py-1.5'
 const ROW_TITLE = 'min-w-0 break-words font-semibold'
@@ -52,7 +52,7 @@ const CONSENT_TEXT = 'text-content-muted'
 const ACTIONS = 'ml-auto flex flex-wrap gap-2'
 const BTN_INVARIANT = 'min-h-7 appearance-none cursor-pointer rounded-sm border bg-transparent px-2.5 py-0.75 text-sm enabled:hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [.app[data-interface-mode=terminal-like]_&]:rounded-none'
 const BTN = `${BTN_INVARIANT} border-border text-content-text`
-const BTN_PRIMARY = `${BTN_INVARIANT} border-accent text-accent`
+const BTN_PRIMARY = `${BTN_INVARIANT} border-accent-edge text-accent`
 const BTN_DANGER = `${BTN_INVARIANT} border-border text-danger`
 const HINT = MUTED_TEXT
 const LOG_LINE = MUTED_MONO
@@ -74,6 +74,8 @@ function button(label: string, className?: string): HTMLButtonElement {
 
 function groupTitle(text: string): HTMLElement {
   const node = el('div', GROUP_TITLE, text)
+  node.setAttribute('role', 'heading')
+  node.setAttribute('aria-level', '3')
   node.dataset.pypmGroupTitle = 'true'
   return node
 }
@@ -99,7 +101,7 @@ export function mountPluginManagerPanel(
   let disposed = false
   const log: string[] = []
   let pending = false
-  const operationStatus = el('p', MUTED_TEXT)
+  const operationStatus = el('p', `${MUTED_TEXT} empty:hidden`)
   operationStatus.setAttribute('role', 'status')
   operationStatus.setAttribute('aria-live', 'polite')
   const beginOperation = (label: string) => {
@@ -151,6 +153,7 @@ export function mountPluginManagerPanel(
 
   // 贡献清单区块可见性必须跨 render 重建存活（re-render 会重跑 renderManager）
   let contributionVisible = false
+  let diagnosticsOpen = false
 
   const renderConsentGuide = (parent: HTMLElement) => {
     const guide = el('div', CONSENT)
@@ -176,17 +179,14 @@ export function mountPluginManagerPanel(
 
   const renderManager = (parent: HTMLElement) => {
     const management = options.management!
-    const heading = el('header', 'flex flex-col gap-2 pb-3')
-    heading.append(el('h2', 'text-[24px] font-semibold text-content-text', '插件管理'), el('p', MUTED_TEXT, '安装扩展、管理启用状态，让工作台适合你的工作方式。'))
-    parent.append(heading)
-
     const overview = el('div', OVERVIEW)
     overview.setAttribute('aria-label', '插件概览')
     parent.append(overview)
 
     const userPlugins = el('div', GROUP)
-    userPlugins.append(groupTitle('用户插件'))
-    const userActions = el('div', ACTIONS)
+    const userHeading = el('div', 'flex flex-wrap items-center justify-between gap-2')
+    userHeading.append(groupTitle('用户插件'))
+    const userActions = el('div', 'flex flex-wrap gap-2')
     const installButton = button('安装/更新包…', BTN_PRIMARY)
     installButton.disabled = !options.pickDirectory
     installButton.addEventListener('click', () => { void runInstall(management) })
@@ -214,12 +214,14 @@ export function mountPluginManagerPanel(
     })
     const refreshButton = button('刷新')
     const contributionButton = button('贡献清单')
+    contributionButton.setAttribute('aria-expanded', String(contributionVisible))
     contributionButton.addEventListener('click', () => {
       contributionVisible = !contributionVisible
       render()
     })
     userActions.append(installButton, installZipButton, installUrlButton, refreshButton, contributionButton)
-    userPlugins.append(userActions)
+    userHeading.append(userActions)
+    userPlugins.append(userHeading)
     const userList = el('div', LIST)
     userPlugins.append(userList)
     parent.append(userPlugins)
@@ -231,6 +233,8 @@ export function mountPluginManagerPanel(
     parent.append(builtins)
 
     const advanced = document.createElement('details')
+    advanced.open = diagnosticsOpen
+    advanced.addEventListener('toggle', () => { if (parent.contains(advanced)) diagnosticsOpen = advanced.open })
     advanced.className = 'border-t border-border py-3'
     const advancedSummary = el('summary', 'cursor-pointer py-2 text-sm font-semibold text-content-muted focus-visible:outline-2 focus-visible:outline-accent', '运行诊断与高级管理')
     advanced.append(advancedSummary)
@@ -347,12 +351,10 @@ export function mountPluginManagerPanel(
           })
           const actions = el('div', ACTIONS)
           actions.append(toggle, reload, uninstall)
-          row.append(
-            el('span', ROW_TITLE, manifestName),
-            el('span', MUTED_MONO, pluginId),
-            el('span', MUTED_TEXT, item.enabled ? '已启用' : '已停用'),
-            actions,
-          )
+          const identity = el('div', 'grid min-w-0 flex-1 basis-44 gap-0.5')
+          identity.append(el('span', ROW_TITLE, manifestName))
+          if (manifestName !== pluginId) identity.append(el('span', MUTED_MONO, pluginId))
+          row.append(identity, el('span', MUTED_TEXT, item.enabled ? '已启用' : '已停用'), actions)
           userList.append(row)
         }
 
@@ -374,7 +376,7 @@ export function mountPluginManagerPanel(
             )
           })
           row.append(
-            el('span', ROW_TITLE, instance.pluginId),
+            el('span', `${ROW_TITLE} flex-1 basis-44`, instance.pluginId),
             el('span', MUTED_TEXT, instance.status === 'active' ? '运行中' : instance.status),
             toggle,
           )

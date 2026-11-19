@@ -191,7 +191,7 @@ export default function Settings(props: SettingsProps) {
 
   // 应用全局预设（templates 区与 GlobalPresetSection 各自经事务薄壳调用）
   const applyGlobalPresetByName = (name: string) => {
-    applyGlobalPresetTransaction(name)
+    if (!applyGlobalPresetTransaction(name)) throw new Error('当前模板不可用')
   }
   const applyCustomPresetTransaction = (requestedId: string): Promise<PresetApplyResult> =>
     useCustomPresetStore.getState().applyCustomPreset(normalizeCustomPresetId(requestedId))
@@ -258,9 +258,7 @@ export default function Settings(props: SettingsProps) {
     switch (section) {
       case 'templates':
         return (
-          <Group title="模板库">
-            <TemplateLibrarySolid onApply={applyGlobalPresetByName} onRestore={applyGlobalPresetByName} onCustomApply={applyCustomPresetTransaction} />
-          </Group>
+          <TemplateLibrarySolid onApply={applyGlobalPresetByName} onRestore={applyGlobalPresetByName} onCustomApply={applyCustomPresetTransaction} />
         )
       case 'window':
         return <WindowPanelSolid />

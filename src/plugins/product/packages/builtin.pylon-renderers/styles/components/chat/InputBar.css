@@ -45,7 +45,7 @@
 .cmd-name { min-width:0; flex:1 1 auto; overflow:hidden; font-weight:600; color:var(--text); font-family:var(--mono); text-overflow:ellipsis; white-space:nowrap; }
 .cmd-info { min-width:0; flex:0 1 auto; overflow:hidden; color:var(--text-dim); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
 .input-history-hint { position:absolute; bottom:100%; left:0; margin-bottom:8px; padding:5px 10px; color:var(--text-dim); background:var(--bg-panel); border:1px solid var(--border); border-radius: 0; font-size:12px; z-index:9; box-shadow:0 4px 12px rgba(0,0,0,0.12); }
-.queued-message-list { position:absolute; bottom:100%; left:0; right:0; margin-bottom:8px; padding:8px; background:var(--bg-panel); border:1px solid var(--border); border-radius: 0; z-index:9; box-shadow:0 4px 16px rgba(0,0,0,0.14); }
+.queued-message-list { max-height:min(36vh,280px); overflow:auto; overscroll-behavior:contain; position:absolute; bottom:100%; left:0; right:0; margin-bottom:8px; padding:8px; background:var(--bg-panel); border:1px solid var(--border); border-radius: 0; z-index:9; box-shadow:0 4px 16px rgba(0,0,0,0.14); }
 .queued-message-title { margin-bottom:5px; color:var(--text-dim); font-size:12px; }
 .queued-message { display:flex; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--border); }
 .queued-message-text { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); font-size:13px; }
@@ -80,9 +80,10 @@
 }
 .input-ghost-suggestion {
   position:absolute; inset:0; pointer-events:none; z-index:0;
-  padding:9px var(--cc-input-text-right-inset,var(--cc-input-text-inset-x,5%)) 9px var(--cc-input-text-inset-x,5%); white-space:pre-wrap; overflow:hidden;
+  padding:0 var(--cc-input-text-right-inset,var(--cc-input-text-inset-x,5%)) 0 var(--cc-input-text-inset-x,5%); white-space:pre-wrap; overflow:hidden;
   color:var(--text-placeholder,var(--text)); opacity:.48;
-  line-height:var(--cc-input-line-height,var(--msg-line-height,var(--chat-line-height,1.35))); font:inherit;
+  font-family:var(--cc-input-font-family,var(--msg-font,var(--chat-font,var(--mono))));
+  font-size:var(--cc-input-font-size,17px); line-height:1.4;
 }
 .input-ghost-prefix { visibility:hidden; }
 .input-editor-stack .input-textarea { position:relative; z-index:1; width:100%; background:transparent; }
@@ -115,6 +116,7 @@
   width:100%; flex:1; max-height:200px;
 }
 .input-bar.cli-mode .input-editor-stack { background:transparent; }
+.input-bar.cli-mode .input-ghost-suggestion { padding:0; }
 /* ★ #266 刀10：原按「多行输入行为」切的三族类已删除 ——
    多行输入只剩「随内容增高、3 倍静态高封顶、超出后内部滚动」一种形态，
    高度由 `InputBar.solid.tsx` 的 `resizeInput()` 写内联样式（底边不动、上边延伸）。 */
@@ -134,7 +136,7 @@
 
 /* #699：输入区附件。终端版式保持安静——chip 只用最细描边，按钮默认无底色，
    悬停才浮出；现代版式在 ChatView.modern.css 里提供对应密度。 */
-.input-attachments { display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding:2px 0 4px; }
+.input-attachments { max-height:min(20vh,120px); overflow:auto; overscroll-behavior:contain; display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding:2px 0 4px; }
 .input-attachment {
   display:inline-flex; align-items:center; gap:6px; max-width:min(100%,320px);
   padding:1px 2px 1px 8px;
@@ -142,6 +144,7 @@
   border:1px solid var(--border); border-radius:3px;
   font-size:12px; line-height:1.7;
 }
+.input-attachment > svg { flex:none; }
 .input-attachment-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
 .input-attachment-remove {
   display:inline-flex; align-items:center; justify-content:center;
@@ -177,7 +180,15 @@
   padding-inline:0;
   text-align:left;
 }
-/* Tactical composer and its creation options keep usable width with both rails open. */
+.app[data-interface-mode="terminal-like"] .cc-input-slot { --cc-attachment-strip-height:32px; }
+.app[data-interface-mode="terminal-like"] .cc-input-slot .input-bar:has(.input-attachments) {
+  display:flex; flex-direction:column; align-items:stretch;
+}
+.app[data-interface-mode="terminal-like"] .input-attachments {
+  flex:0 0 var(--cc-attachment-strip-height); flex-wrap:nowrap; padding:2px 0;
+}
+.app[data-interface-mode="terminal-like"] .input-attachment { flex-shrink:0; border-radius:0; }
+.app[data-interface-mode="terminal-like"] .input-row { min-height:0; }
 
 /* The same controls remain legible on narrow workbenches and keyboard navigation. */
 .input-attachment-remove { flex-shrink:0; min-width:24px; min-height:24px; }

@@ -21,12 +21,15 @@ describe('responsive rail budget', () => {
     expect(resolveRailLayout({ ...preferences, viewportWidth: 1280, priority: 'right' })).toMatchObject({ leftCollapsed: false, rightCollapsed: false })
   })
 
-  it('shrinks both rails above their minimum when both can fit', () => {
-    const result = resolveRailLayout({ ...preferences, viewportWidth: 900 })
-    expect(result.leftWidth).toBeGreaterThanOrEqual(160)
-    expect(result.rightWidth).toBeGreaterThanOrEqual(220)
-    expect(result.leftWidth + result.rightWidth + result.mainWidth + 32).toBe(900)
-    expect(result.mainWidth).toBeGreaterThanOrEqual(360)
+  it('preserves a reading column while both rails are open and restores the preferred widths on resize', () => {
+    expect(resolveRailLayout({ ...preferences, viewportWidth: 880 })).toMatchObject({
+      leftCollapsed:false, rightCollapsed:false, leftWidth:160, rightWidth:220, mainWidth:468,
+    })
+    const medium = resolveRailLayout({ ...preferences, viewportWidth: 960 })
+    expect(medium.leftWidth).toBeGreaterThan(160)
+    expect(medium.rightWidth).toBeGreaterThan(220)
+    expect(medium.mainWidth).toBeGreaterThanOrEqual(480)
+    expect(resolveRailLayout(preferences)).toMatchObject({ leftWidth:250, rightWidth:320 })
   })
 
   it('does not reserve space for unavailable or explicitly collapsed rails', () => {

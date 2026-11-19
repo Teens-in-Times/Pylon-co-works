@@ -272,10 +272,10 @@
    会给 `position:fixed` 的后代**建立包含块**（CSS Transforms 规范）⇒ 列会相对"中控那一条带"定位并被压扁。
    见 `.agents/records/266-cc-edit-column-and-drag-threshold.md`。 */
 .cc-edit-column {
-  position:fixed; left:0; top:32px; bottom:0; width:280px;
+  position:fixed; left:0; top:32px; bottom:0; width:min(280px,100%);
   display:flex; flex-direction:column;
   background:var(--bg-panel); border-right:1px solid var(--border);
-  z-index:80; box-shadow:4px 0 16px rgba(0,0,0,0.15);
+  z-index:80; box-shadow:var(--shadow-raised);
   font-family:var(--mono);
 }
 .cc-edit-column-header {
@@ -297,8 +297,12 @@
   color:var(--text); font-family:var(--mono);
 }
 .cc-edit-row-name:hover { border-color:var(--accent); color:var(--accent); }
-.cc-edit-row.active .cc-edit-row-name { background:var(--accent); color:#fff; border-color:var(--accent); }
-.cc-edit-row.dim .cc-edit-row-name { opacity:0.4; text-decoration:line-through; }
+.cc-edit-row.active .cc-edit-row-name { background:var(--state-selected-bg); color:var(--text); border-color:var(--state-selected-stroke); box-shadow:inset 2px 0 var(--accent); }
+.cc-edit-row.dim .cc-edit-row-name { color:var(--text-dim); text-decoration:line-through; }
+.cc-edit-column button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.app[data-interface-mode="modern-gui"] .cc-edit-column { font-family:var(--font); }
+.app[data-interface-mode="modern-gui"] .cc-edit-column-header { background:var(--surface-panel); color:var(--text); }
+.app[data-interface-mode="modern-gui"] .cc-edit-row-name { min-height:30px; border-radius:var(--ui-radius-sm); font-family:var(--font); }
 /* 行内展开区（顺序 / 水平微调 / 垂直微调 + 该元件自己的外观字段） */
 .cc-edit-row-props { padding:2px 10px 10px; }
 .cc-edit-column-footer { display:flex; flex-wrap:wrap; gap:6px; padding:10px 12px; border-top:1px solid var(--border); }

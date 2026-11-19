@@ -167,15 +167,20 @@ describe('CC-21 输入字体测高响应与生命周期', () => {
 describe('SolidInputBar', () => {
   it('编辑器主操作提交消息，生成中空草稿停止、有草稿入队，原命令仍走会话端口', async () => {
     const { services, textarea } = renderInput()
-    expect(screen.getByRole('button', { name: '提交消息' })).toBeDisabled()
+    const primary = screen.getByRole('button', { name: '提交消息' })
+    expect(primary).toBeDisabled()
+    expect(primary.querySelector('svg')).toHaveClass('lucide-arrow-up')
     fireEvent.input(textarea, { target: { value: '直接发送' } })
     fireEvent.click(screen.getByRole('button', { name: '提交消息' }))
     await waitFor(() => expect(services.commands.calls[0]?.args).toEqual(['session-a', { text: '直接发送', attachments: [] }]))
     services.runtime.update({ generating: true })
+    expect(primary.querySelector('svg')).toHaveClass('lucide-square')
     fireEvent.click(screen.getByRole('button', { name: '停止当前生成' }))
     await waitFor(() => expect(services.commands.calls[1]).toMatchObject({ command: 'cancel', args: ['session-a'] }))
     fireEvent.input(textarea, { target: { value: '下一条问题' } })
+    expect(primary.querySelector('svg')).toHaveClass('lucide-list-plus')
     fireEvent.click(screen.getByRole('button', { name: '加入发送队列' }))
+    expect(primary.querySelector('svg')).toHaveClass('lucide-square')
     expect(textarea.value).toBe('')
     expect(services.sessionUi.get('session-a', 'queued-messages', [])).toEqual([expect.objectContaining({ text: '下一条问题' })])
     expect(services.commands.calls).toHaveLength(2)
@@ -216,6 +221,21 @@ describe('SolidInputBar', () => {
     fireEvent.input(textarea, { target: { value: '保留一行' } })
     await waitFor(() => expect(slot?.style.height).toBe('40px'))
     expect(controlCenter?.style.getPropertyValue('--cc-input-extra-height')).toBe('')
+  })
+
+  it('reserves a single attachment strip above the fixed terminal editor and releases it on removal', async () => {
+    const { services, textarea, slot, controlCenter } = renderInput('session-a', undefined, true)
+    slot!.style.setProperty('--cc-attachment-strip-height', '32px')
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 100 })
+    fireEvent.input(textarea, { target: { value: '保留多行草稿' } })
+    services.commands.setHandler('attach', vi.fn(async () => [{ id: 'notes', path: 'notes.md' }]))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await waitFor(() => expect(slot!.style.height).toBe('132px'))
+    expect(controlCenter!.style.getPropertyValue('--cc-input-extra-height')).toBe('92px')
+
+    fireEvent.click(screen.getByRole('button', { name: '移除附件 notes.md' }))
+    await waitFor(() => expect(slot!.style.height).toBe('100px'))
+    expect(textarea.value).toBe('保留多行草稿')
   })
 
   it('Enter 发送，Shift+Enter 与 IME composition 不发送', async () => {

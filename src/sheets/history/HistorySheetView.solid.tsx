@@ -34,9 +34,9 @@ const HINT = 'text-[12px] text-text-dim'
 const PAGER_HINT = 'min-w-[56px] px-2 text-text-dim font-mono text-[11px] leading-[var(--ui-control-compact)] text-center'
 const RESULT_LIST = 'grid gap-0 border-t border-stroke-subtle m-0 p-0 list-none'
 const RESULT_ITEM = 'border-b border-stroke-subtle last:border-b-0 bg-transparent transition-colors duration-[120ms] hover:bg-bg-hover'
-const ROW = 'history-row flex flex-wrap items-center gap-3 min-h-[60px] px-4 py-3'
-const ROW_PATH = 'flex-1 min-w-0 overflow-hidden text-text text-[13px] font-semibold truncate max-[720px]:basis-[calc(100%-var(--ui-space-3))] max-[720px]:whitespace-normal max-[720px]:[overflow-wrap:anywhere]'
-const ROW_TEXT = 'shrink-0 max-w-[40%] text-text-dim font-mono text-[11px] whitespace-nowrap max-[720px]:mr-auto'
+const ROW = 'history-row flex items-center gap-3 min-h-[60px] px-4 py-3'
+const ROW_PATH = 'min-w-0 truncate text-text text-[14px] font-semibold'
+const ROW_TEXT = 'shrink-0 text-text-dim font-mono text-[11px] tabular-nums'
 const ROW_BTN_NEUTRAL = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 border border-stroke-subtle rounded-[3px] text-text-dim bg-transparent cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-bg-hover disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 const ROW_BTN_ACCENT = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 rounded-[3px] cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] border border-accent-edge text-accent bg-accent-soft enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 const PAGER_BTN = 'min-w-[56px] h-[var(--ui-control-compact)] px-3 border border-stroke-subtle rounded-[3px] text-text-dim bg-transparent cursor-pointer font-[family-name:var(--font)] text-[12px] transition-[background-color,border-color,color] duration-[120ms] enabled:hover:border-border-focus enabled:hover:text-text enabled:hover:bg-bg-hover disabled:opacity-[0.42] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
@@ -187,7 +187,7 @@ export default function HistorySheetView(props: HistorySheetViewProps) {
             <LucideIcon name="Search" size={15} class="shrink-0 text-text-dim" />
             <input type="search" aria-label="筛选存档" placeholder="按名称或来源筛选…" value={query()} onInput={event => { setQuery(event.currentTarget.value); setPage(1) }} class="w-full min-w-0 border-0 bg-transparent text-[13px] text-text outline-none" />
           </label>
-          <button type="button" class={PAGER_BTN} disabled={loading() || !agentId()} onClick={() => setRefresh(value => value + 1)} aria-label="刷新存档"><LucideIcon name="RefreshCw" size={15} /></button>
+          <button type="button" class="history-refresh grid size-9 shrink-0 cursor-pointer place-items-center border border-stroke-subtle bg-transparent text-text-dim hover:bg-bg-hover focus-visible:outline-accent disabled:opacity-40" title="刷新存档" disabled={loading() || !agentId()} onClick={() => setRefresh(value => value + 1)} aria-label="刷新存档"><LucideIcon name="RefreshCw" size={15} /></button>
         </div>
         <Show when={loading()}><p class={HINT} role="status">正在读取存档…</p></Show>
         <Show when={loadFailed()}><div class="mb-4 border border-border p-4" role="status"><p class={HINT}>读取存档失败，详情见右下角错误中心。</p><button type="button" class={`${PAGER_BTN} mt-3`} onClick={() => setRefresh(value => value + 1)}>重新加载存档</button></div></Show>
@@ -200,8 +200,10 @@ export default function HistorySheetView(props: HistorySheetViewProps) {
           <For each={paged().entries}>{entry => (
             <li class={RESULT_ITEM}>
               <div class={ROW}>
-                <span class={ROW_PATH}>{entry.title || entry.source || entry.id}</span>
-                <span class={ROW_TEXT}>{new Date(entry.updatedAt).toLocaleString()}</span>
+                <span class="history-entry flex min-w-0 flex-1 flex-col gap-1">
+                  <span class={ROW_PATH} title={entry.title || entry.source || entry.id}>{entry.title || entry.source || entry.id}</span>
+                  <span class={ROW_TEXT}>{new Date(entry.updatedAt).toLocaleString()}</span>
+                </span>
                 <button type="button" class={ROW_BTN_ACCENT} disabled={!entry.periId} title={entry.periId ? '只读回放，点击继续转 live' : '该存档无 periId，无法回放'} onClick={() => void openReplay(entry)}>回放</button>
                 <button type="button" class={ROW_BTN_NEUTRAL} onClick={() => void exportSession(entry.periId || entry.id)}>导出</button>
               </div>

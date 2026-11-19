@@ -25,15 +25,22 @@ export interface RailLayout {
 }
 
 const MAIN_MIN_WIDTH = 360
+// Once both rails fit, give the reading column space for a composer and a
+// wrapped conversation before distributing spare width between the rails.
+const MAIN_READING_WIDTH = 480
 // Covers modern-mode canvas padding, rail gaps and borders in CSS pixels.
 const SHELL_SPACE = 32
 
 export function resolveRailLayout(input: RailLayoutInput): RailLayout {
   const width = Number.isFinite(input.viewportWidth) ? Math.max(0, input.viewportWidth) : 0
   const contentWidth = Math.max(0, width - SHELL_SPACE)
-  const budget = Math.max(0, contentWidth - MAIN_MIN_WIDTH)
+  const availableForRails = Math.max(0, contentWidth - MAIN_MIN_WIDTH)
   const leftRequested = input.leftEnabled && !input.leftCollapsed
   const rightRequested = input.rightEnabled && !input.rightCollapsed
+  const bothRailMinimum = LEFT_RAIL_MIN_WIDTH + RIGHT_RAIL_MIN_WIDTH
+  const budget = leftRequested && rightRequested && availableForRails >= bothRailMinimum
+    ? Math.max(bothRailMinimum, contentWidth - MAIN_READING_WIDTH)
+    : availableForRails
   let leftWidth = leftRequested ? clampLeftRailWidth(input.leftWidth) : 0
   let rightWidth = rightRequested ? clampRightRailWidth(input.rightWidth) : 0
 
@@ -65,8 +72,8 @@ export function resolveRailLayout(input: RailLayoutInput): RailLayout {
     leftWidth, rightWidth,
     leftMaxWidth: Math.min(LEFT_RAIL_MAX_WIDTH, Math.max(LEFT_RAIL_MIN_WIDTH, budget - rightWidth)),
     rightMaxWidth: Math.min(RIGHT_RAIL_MAX_WIDTH, Math.max(RIGHT_RAIL_MIN_WIDTH, budget - leftWidth)),
-    canExpandLeft: input.leftEnabled && budget >= LEFT_RAIL_MIN_WIDTH,
-    canExpandRight: input.rightEnabled && budget >= RIGHT_RAIL_MIN_WIDTH,
+    canExpandLeft: input.leftEnabled && availableForRails >= LEFT_RAIL_MIN_WIDTH,
+    canExpandRight: input.rightEnabled && availableForRails >= RIGHT_RAIL_MIN_WIDTH,
     mainWidth: contentWidth - leftWidth - rightWidth,
   }
 }

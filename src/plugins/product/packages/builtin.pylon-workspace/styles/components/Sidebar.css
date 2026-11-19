@@ -513,14 +513,25 @@
   background:var(--surface-panel); box-shadow:none;
 }
 .app[data-interface-mode="modern-gui"] .sidebar::before { border-radius:inherit; }
+.app[data-interface-mode="modern-gui"] .agent-sidebar { container-type:inline-size; }
 .app[data-interface-mode="modern-gui"] .sidebar-modules { gap:var(--ui-space-3); padding:var(--ui-space-3) 0; }
-.app[data-interface-mode="modern-gui"] .sidebar-block { margin:0 8px; border:0; border-radius:0; overflow:hidden; }
+.app[data-interface-mode="modern-gui"] .sidebar-block { margin:0 8px; border:0; border-radius:var(--ui-radius-md); }
+.app[data-interface-mode="modern-gui"] .sidebar-block[data-always-open="true"] { padding-bottom:4px; }
 .app[data-interface-mode="modern-gui"] .sidebar-block-head { min-height:32px; padding:6px 8px; border-radius:0; background:transparent; font-size:12px; }
 .app[data-interface-mode="modern-gui"] .sidebar-block-action { border-radius:var(--ui-radius-xs); }
+.app[data-interface-mode="modern-gui"] .agent-sidebar .search-field {
+  min-height:32px; gap:7px; padding:0 8px; border-color:var(--stroke-subtle); background:var(--surface-raised);
+}
+.app[data-interface-mode="modern-gui"] .agent-sidebar .search-field:focus-within { border-color:var(--accent); }
+.app[data-interface-mode="modern-gui"] .agent-sidebar .search-hint { color:var(--text-dim); line-height:1.55; }
+.app[data-interface-mode="modern-gui"] .agent-sidebar .session-new-action {
+  border-color:var(--accent-edge); border-radius:var(--ui-radius-md); background:var(--surface-raised); color:var(--text);
+}
+.app[data-interface-mode="modern-gui"] .agent-sidebar .session-new-action:hover { background:var(--state-selected-bg); }
 .app[data-interface-mode="modern-gui"] .session-list { padding:0 var(--ui-space-1) var(--ui-space-2); }
 .app[data-interface-mode="modern-gui"] .session-item { min-height:32px; margin:1px 0; padding:4px 8px; border-radius:var(--ui-radius-sm); }
 .app[data-interface-mode="modern-gui"] .session-item:hover { transform:none; }
-.app[data-interface-mode="modern-gui"] .session-item.active { background:var(--state-selected-bg); box-shadow:none; }
+.app[data-interface-mode="modern-gui"] .session-item.active { background:var(--state-selected-bg); box-shadow:inset 2px 0 var(--accent); }
 .app[data-interface-mode="modern-gui"] .session-item.active::before { display:none; }
 .app[data-interface-mode="modern-gui"] .session-item.active .session-name { font-weight:650; color:var(--text); }
 .app[data-interface-mode="modern-gui"] .session-dot:not([data-running="true"]) { visibility:hidden; }
@@ -528,13 +539,26 @@
 .app[data-interface-mode="modern-gui"] .profile-edit,
 .app[data-interface-mode="modern-gui"] .sidebar-action { border-radius:var(--ui-radius-xs); }
 .app[data-interface-mode="modern-gui"] .profile-bar { margin:0 12px; padding:8px 0; border:0; border-top:1px solid var(--stroke-subtle); border-radius:0; background:transparent; }
-.app[data-interface-mode="modern-gui"] .profile-avatar { border-radius:var(--ui-radius-sm); }
+.app[data-interface-mode="modern-gui"] .profile-avatar { border:1px solid var(--stroke-faint); border-radius:var(--ui-radius-md); }
+.app[data-interface-mode="modern-gui"] .profile-avatar.active { color:var(--text); border-color:var(--accent-edge); background:var(--state-selected-bg); }
 .app[data-interface-mode="modern-gui"] .cwd-group { margin-bottom:var(--ui-space-1); border-radius:0; }
 .app[data-interface-mode="modern-gui"] .cwd-group-head { min-height:32px; }
 .app[data-interface-mode="modern-gui"] .cwd-group-toggle { border-radius:var(--ui-radius-xs); }
 .app[data-interface-mode="modern-gui"] .cwd-new,
 .app[data-interface-mode="modern-gui"] .cwd-settings-section,
 .app[data-interface-mode="modern-gui"] .workspace-empty { border-radius:var(--ui-radius-xs); }
+/* A manually narrowed rail and a budgeted rail have the same content width.
+   Stack the timestamp under the name so neither consumes the other's column. */
+@container (max-width:200px) {
+  .app[data-interface-mode="modern-gui"] .agent-sidebar .sidebar-block { margin-inline:4px; }
+  .app[data-interface-mode="modern-gui"] .agent-sidebar .cwd-group-sessions { margin-inline-start:0; }
+  .app[data-interface-mode="modern-gui"] .agent-sidebar .session-item {
+    display:grid; grid-template-columns:15px minmax(0,1fr) auto; gap:0 4px; padding:3px 4px;
+  }
+  .app[data-interface-mode="modern-gui"] .agent-sidebar .session-tail { grid-column:2 / -1; justify-items:start; }
+  .app[data-interface-mode="modern-gui"] .agent-sidebar .session-dot:not([data-running="true"]) { display:none; }
+  .app[data-interface-mode="modern-gui"] .agent-sidebar .session-actions { justify-self:end; }
+}
 /* 折叠态必须真正归零。上面的卡片装饰（描边/圆角/底色/投影）声明在
    `.layout[data-sidebar="collapsed"] .sidebar` 的归零规则之后，同特异性下后者胜——
    不复位就会留下 2px 描边占位（轨道宽 0 但盒子最小 = 两条边框）。flex gap 也会为
@@ -618,11 +642,6 @@
 }
 .app[data-interface-mode="terminal-like"] .session-meta {
   white-space:nowrap;
-}
-.app[data-interface-mode="terminal-like"] .session-actions > .session-action:hover {
-  color:var(--text);
-  border-color:var(--accent-edge);
-  background:var(--bg-hover);
 }
 .app[data-interface-mode="terminal-like"] .session-actions > .session-action:hover,
 .app[data-interface-mode="terminal-like"] .session-actions > .session-action:focus-visible {

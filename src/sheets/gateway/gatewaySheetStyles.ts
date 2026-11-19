@@ -13,8 +13,8 @@ export const HEADER = 'gateway-header flex items-end justify-between gap-4 flex-
 export const MAIN_TITLE = 'm-0 text-text text-[26px] font-semibold tracking-[-.025em]'
 export const SUMMARY = 'gateway-summary flex flex-wrap gap-4'
 export const SUMMARY_CHIP = 'gateway-summary-chip inline-flex items-center gap-1 text-text-dim text-[12px]'
-export const SUMMARY_CHIP_ONLINE = 'gateway-summary-chip gateway-summary-chip-online inline-flex items-center gap-1 text-text-dim text-[12px]'
-export const SUMMARY_NUM = 'text-text font-bold'
+export const SUMMARY_CHIP_ONLINE = `${SUMMARY_CHIP} gateway-summary-chip-online`
+export const SUMMARY_NUM = 'gateway-summary-value text-text font-bold tabular-nums'
 
 /** 左列（#154：左列几何归布局层的 .sidebar，见 SearchSheetView 同处说明；本组只管内容样式） */
 export const SIDEBAR = 'sidebar gateway-sidebar flex flex-col gap-3 py-6 px-3 bg-surface-panel'

@@ -92,10 +92,12 @@ describe('Skin DOM 投影（S5-C）', () => {
     expect(root.style.getPropertyValue('--accent')).toBe('#123456')
     expect(body.style.getPropertyValue('--accent')).toBe('#123456')
     expect(root.style.getPropertyValue('--global-bg-color')).not.toBe('')
+    expect(root.getAttribute('data-ui-scheme')).toBe(resolved.dataAttributes['data-ui-scheme'])
     expect(body.getAttribute('data-ui-scheme')).toBe(resolved.dataAttributes['data-ui-scheme'])
 
     dispose()
     expect(root.style.getPropertyValue('--accent')).toBe('#old')
+    expect(root).not.toHaveAttribute('data-ui-scheme')
     expect(body.style.getPropertyValue('--accent')).toBe('')
     expect(body.getAttribute('data-ui-scheme')).toBe('light')
   })

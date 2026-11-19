@@ -505,6 +505,8 @@
 @keyframes file-tab-saving-pulse { to { opacity: .35; } }
 
 .file-tab-close {
+  display: grid;
+  place-items: center;
   width: 24px;
   height: 24px;
   flex: 0 0 24px;
@@ -569,8 +571,10 @@
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 100%;
-  padding: var(--ui-space-7);
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: clamp(12px, 4%, 32px);
   background:var(--surface-raised);
   font-family:var(--font);
   font-size:13px;
@@ -582,7 +586,7 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 28px 32px;
+  padding: clamp(12px, 4%, 28px);
   border: 0;
   border-radius: 0;
   color: var(--text-dim);
@@ -595,6 +599,9 @@
   font-family: var(--font);
   font-size: 14px;
 }
+.app[data-interface-mode="modern-gui"] .file-empty-mark { border-radius: var(--ui-radius-md); border-color: var(--stroke-subtle); }
+.app[data-interface-mode="terminal-like"] .file-empty-card { align-items: flex-start; text-align: left; border-inline-start: 2px solid var(--accent); }
+.app[data-interface-mode="terminal-like"] .file-empty-mark { width: 26px; height: 26px; border: 0; background: transparent; }
 .file-empty-card p { margin:0; line-height:1.7; color:var(--text-dim); }
 
 .file-empty-mark {

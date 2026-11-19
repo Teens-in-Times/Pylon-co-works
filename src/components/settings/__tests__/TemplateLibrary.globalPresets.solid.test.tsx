@@ -23,10 +23,11 @@ describe('TemplateLibrary global presets', () => {
       id: 'custom-42', name: '我的同名模板', theme: { chatFontSize: 19 }, createdAt: 1, updatedAt: 1,
     }] })
     render(() => <TemplateLibrary onApply={vi.fn()} onRestore={vi.fn()} />)
-    const card = screen.getByText('我的同名模板').closest('.template-card') as HTMLElement
+    const card = screen.getByRole('article', { name: '我的同名模板' })
     fireEvent.click(within(card).getByRole('button', { name: '应用' }))
     await expect(screen.findByRole('status')).resolves.toHaveTextContent('自定义预设已应用')
     expect(useThemeStore.getState().chatFontSize).toBe(19)
+    expect(card).toHaveAttribute('aria-current', 'true')
     expect(useThemeStore.getState().appliedPreset.global).toBe('custom-42')
   })
 
@@ -38,7 +39,7 @@ describe('TemplateLibrary global presets', () => {
       status: 'applied' as const, id: 'custom-legacy-42', providers: ['builtin.theme'], revision: 1,
     }))
     render(() => <TemplateLibrary onApply={vi.fn()} onRestore={vi.fn()} onCustomApply={onCustomApply} />)
-    const card = screen.getByText('旧版模板').closest('.template-card') as HTMLElement
+    const card = screen.getByRole('article', { name: '旧版模板' })
     fireEvent.click(within(card).getByRole('button', { name: '应用' }))
     await expect(screen.findByRole('status')).resolves.toHaveTextContent('自定义预设已应用')
     expect(onCustomApply).toHaveBeenCalledWith('custom-legacy-42')
@@ -53,7 +54,7 @@ describe('TemplateLibrary global presets', () => {
       message: 'renderer unavailable', rolledBack: true, revision: 3,
     }))
     render(() => <TemplateLibrary onApply={vi.fn()} onRestore={vi.fn()} onCustomApply={onCustomApply} />)
-    const card = screen.getByText('失败模板').closest('.template-card') as HTMLElement
+    const card = screen.getByRole('article', { name: '失败模板' })
     fireEvent.click(within(card).getByRole('button', { name: '应用' }))
 
     await expect(screen.findByRole('alert')).resolves.toHaveTextContent('builtin.renderer-settings')
@@ -68,9 +69,25 @@ describe('TemplateLibrary global presets', () => {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
 
-    const commandCard = screen.getByText('Agent 指挥台').closest('.template-card')
-    expect(commandCard).not.toBeNull()
-    fireEvent.click(within(commandCard as HTMLElement).getByRole('button', { name: '应用' }))
+    const commandCard = screen.getByRole('article', { name: 'Agent 指挥台' })
+    fireEvent.click(within(commandCard).getByRole('button', { name: '应用' }))
     expect(onApply).toHaveBeenCalledWith('agent-command')
+  })
+
+  it('恢复期间锁定其他模板，失败时显示原因并重新开放应用', async () => {
+    let rejectRestore!: (reason: Error) => void
+    const onRestore = vi.fn(() => new Promise<void>((_, reject) => { rejectRestore = reject }))
+    render(() => <TemplateLibrary onApply={vi.fn()} onRestore={onRestore} />)
+    const selected = screen.getByRole('article', { name: 'Agent 指挥台' })
+    const other = screen.getByRole('article', { name: '专注流程' })
+
+    fireEvent.click(within(selected).getByRole('button', { name: '恢复此模板默认' }))
+    expect(onRestore).toHaveBeenCalledWith('agent-command')
+    expect(within(other).getByRole('button', { name: '应用' })).toBeDisabled()
+    expect(within(other).getByRole('button', { name: '恢复此模板默认' })).toBeDisabled()
+    rejectRestore(new Error('恢复失败'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('恢复失败')
+    expect(within(other).getByRole('button', { name: '应用' })).toBeEnabled()
   })
 })

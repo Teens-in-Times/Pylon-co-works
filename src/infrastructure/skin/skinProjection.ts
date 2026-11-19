@@ -78,6 +78,11 @@ export function projectSkinDocumentRoot(
     body.style.setProperty(variable, value)
   }
 
+  // Root-derived colors resolve their palette references on html, before
+  // inheritance. Its mode and scheme must select the same palette as body.
+  const previousRootScheme = root.getAttribute('data-ui-scheme')
+  const scheme = resolved.dataAttributes['data-ui-scheme']
+  if (scheme !== undefined) root.setAttribute('data-ui-scheme', scheme)
   const previousAttributes = new Map<string, string | null>()
   for (const [attribute, value] of Object.entries(resolved.dataAttributes)) {
     previousAttributes.set(attribute, body.getAttribute(attribute))
@@ -95,6 +100,10 @@ export function projectSkinDocumentRoot(
     for (const [variable, previous] of previousBodyVariables) {
       if (previous) body.style.setProperty(variable, previous)
       else body.style.removeProperty(variable)
+    }
+    if (scheme !== undefined) {
+      if (previousRootScheme === null) root.removeAttribute('data-ui-scheme')
+      else root.setAttribute('data-ui-scheme', previousRootScheme)
     }
     for (const [attribute, previous] of previousAttributes) {
       if (previous === null) body.removeAttribute(attribute)

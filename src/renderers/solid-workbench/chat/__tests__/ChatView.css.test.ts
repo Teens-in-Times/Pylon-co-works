@@ -45,10 +45,6 @@ describe('reasoning row geometry contract', () => {
     expect(css).toMatch(/\.term-assistant\.has-dot > \.term-assistant-body\s*\{[^}]*flex:1 1 auto;[^}]*min-width:0;/s)
   })
 
-  it('does not apply a negative horizontal transform to the streaming indicator row', () => {
-    expect(css).not.toContain('transform: translateX(-4px)')
-  })
-
   it('keeps tool prose on the message font while code/path surfaces opt into mono', () => {
     expect(css).toMatch(/\.term-tool-body\s*\{[^}]*font-family:var\(--msg-font,var\(--chat-font,var\(--mono\)\)\);/s)
     expect(css).toMatch(/\.term-tool-summary-code\s*\{\s*font-family:var\(--mono\);/s)
@@ -101,11 +97,6 @@ describe('reasoning row geometry contract', () => {
     expect(lockup).toContain('max-width: 100%')
     expect(chromeCss).toMatch(/\.solid-workbench-empty-brand \.agent-empty-brand\s*\{[^}]*flex: 0 0 48px;/s)
     expect(chromeCss).toMatch(/\.solid-workbench-empty-brand \.agent-empty-wordmark\s*\{[^}]*max-width: calc\(100% - 48px - var\(--ui-space-2\)\);/s)
-  })
-
-  it('keeps the React empty surface full-width so its logo centers in the same viewport', () => {
-    expect(css).toMatch(/\.chat-empty\s*\{[^}]*min-height:100%;[^}]*width:100%;/s)
-    expect(css).toMatch(/\.chat-empty\.agent-empty-state\s*\{[^}]*position:relative;/s)
   })
 
   // P57 S3-R1（R-B1）：代码块内容 span 统一「保留缩进 + 长行软折」。

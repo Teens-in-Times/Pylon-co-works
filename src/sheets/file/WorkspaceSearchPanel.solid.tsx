@@ -1,5 +1,6 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createMemo, createSignal, For, Show, type JSX } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
+import { HighlightedText } from '../../components/HighlightedText.solid.tsx'
 import { WorkbenchIcon, FileTypeIconSolid } from './fileIcons.solid.tsx'
 import { reportRuntimeError } from '../../app/runtimeError'
 import { classifyWorkspaceSearchError, normalizeWorkspaceSearchResults, type WorkspaceSearchResult, type WorkspaceSearchSaveStatus } from '../../infrastructure/tauri/workspaceSearchContracts.ts'
@@ -7,32 +8,10 @@ import { advanceSourceContext, beginSourceRequest, isCurrentSourceRequest, type 
 import { workspaceTargetKey, type WorkspaceTarget } from '../../domains/workspace/workspaceTarget.ts'
 import type { FileProvider } from '../../plugin-runtime/file-workbench/fileWorkbenchTypes.ts'
 
-/**
- * WorkspaceSearchPanelProps — 名字承自历史 React 契约（WorkspaceSearchPanel.tsx，
- * 已退役）；本实体即唯一真源。
- */
 interface WorkspaceSearchPanelProps {
   target: WorkspaceTarget | null
   provider: FileProvider | null
   onOpenResult: (path: string, line: number) => void
-}
-
-function highlightedText(text: string, query: string): JSX.Element[] {
-  const keyword = query.trim()
-  if (!keyword) return [text]
-  const lower = text.toLowerCase()
-  const needle = keyword.toLowerCase()
-  const parts: JSX.Element[] = []
-  let cursor = 0
-  let index = lower.indexOf(needle)
-  while (index >= 0) {
-    if (index > cursor) parts.push(text.slice(cursor, index))
-    parts.push(<mark>{text.slice(index, index + keyword.length)}</mark>)
-    cursor = index + keyword.length
-    index = lower.indexOf(needle, cursor)
-  }
-  if (cursor < text.length) parts.push(text.slice(cursor))
-  return parts
 }
 
 /** WorkspaceSearchPanel — 工作区全文搜索与横向结果列表（#515 Solid 实体）。 */
@@ -118,7 +97,7 @@ export default function WorkspaceSearchPanel(props: WorkspaceSearchPanelProps) {
                     <small>L{result.line}</small>
                   </span>
                 </span>
-                <span class="search-result-text">{highlightedText(result.lineText, query())}</span>
+                <span class="search-result-text"><HighlightedText text={result.lineText} query={query()} /></span>
               </button>
             </li>
           )

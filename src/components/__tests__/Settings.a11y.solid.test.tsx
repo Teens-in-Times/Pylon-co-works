@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 /** @jsxImportSource solid-js */
-// #515 改写点登记（迁移自 Settings.a11y.test.tsx，React RTL → Solid）：
-// - RTL 导入改 @solidjs/testing-library（screen 经其再导出）；显式 afterEach(cleanup)。
-// - AgentRuntimePanel 的 vi.mock 工厂改 Solid JSX（#515 W1 起实体直连，mock 须产 Solid 元素），
-//   本文件 JSX 经 solid 编译，不能进岛）；DOM 契约逐字段不变。
-// - 点击后的 aria-expanded 断言包 vi.waitFor：solid 的 DOM 更新是微任务异步
-//   （原 React act 同步提交），断言语义不变。
-import { cleanup, fireEvent } from '@solidjs/testing-library'
+import { cleanup, fireEvent, screen, within } from '@solidjs/testing-library'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountSettingsSheet } from '../../test/settingsSheetHarness.solid'
 
@@ -18,46 +12,36 @@ vi.mock('@tauri-apps/api/core', async () => {
   return tauriCoreMock(async () => null)
 })
 
-// 下沉自 scripts/test-accessibility.mts（P91 A2）：宿主设置分区标题必须是真按钮
-// （div + onClick 读屏不可达）。原契约只限 Settings.tsx 宿主文件——插件包页面
-// （PluginManager/ConsentCard）的静态 div 标题不在该契约内，故渲染宿主外观域断言。
 describe('Settings 宿主分区标题与导航的可访问性', () => {
-  afterEach(async () => {
-    cleanup()
+  afterEach(cleanup)
+
+  it('侧栏模块标题通过按钮折叠和展开模块组', async () => {
+    const { kernelBootstrap } = await import('../../kernel/kernelBootstrapServices.ts')
+    await kernelBootstrap.startNormal()
+    mountSettingsSheet({ domain: 'appearance', section: 'sidebar' })
+    const body = within(screen.getByRole('region', { name: '设置内容' }))
+    const title = await body.findByRole('button', { name: /模块$/, expanded: true })
+    expect(body.getByRole('group', { name: '侧栏模块显隐' })).toBeVisible()
+    fireEvent.click(title)
+    expect(title).toHaveAttribute('aria-expanded', 'false')
+    expect(body.queryByRole('group', { name: '侧栏模块显隐' })).toBeNull()
+    fireEvent.click(title)
+    expect(body.getByRole('group', { name: '侧栏模块显隐' })).toBeVisible()
   })
 
-  it('外观域的 set-group-title 全部是 button 且点击可切换折叠', async () => {
+  it('设置域与分区导航可聚焦，选择分区后更新当前位置', async () => {
     const { kernelBootstrap } = await import('../../kernel/kernelBootstrapServices.ts')
     await kernelBootstrap.startNormal()
     mountSettingsSheet({ domain: 'appearance' })
-    await vi.waitFor(() => {
-      const titles = document.querySelectorAll<HTMLButtonElement>('.set-group-title')
-      expect(titles.length).toBeGreaterThan(0)
-      for (const title of titles) {
-        expect(title.tagName).toBe('BUTTON')
-        expect(title.getAttribute('aria-expanded')).not.toBeNull()
-      }
-    })
-    // 行为锁：真按钮点击才切换折叠（div 假交互在此会红）
-    const first = document.querySelector<HTMLButtonElement>('.set-group-title')!
-    const before = first.getAttribute('aria-expanded')
-    fireEvent.click(first)
-    await vi.waitFor(() => {
-      expect(first.getAttribute('aria-expanded')).toBe(before === 'true' ? 'false' : 'true')
-    })
-  })
-
-  it('设置分区导航是可聚焦的 button', async () => {
-    const { kernelBootstrap } = await import('../../kernel/kernelBootstrapServices.ts')
-    await kernelBootstrap.startNormal()
-    mountSettingsSheet({ domain: 'appearance' })
-    await vi.waitFor(() => {
-      const navButtons = document.querySelectorAll<HTMLElement>('[class*="set-nav-btn"]')
-      expect(navButtons.length).toBeGreaterThan(0)
-      for (const button of navButtons) {
-        expect(button.tagName).toBe('BUTTON')
-        expect(button.tabIndex).toBeGreaterThanOrEqual(0)
-      }
-    })
+    const navigation = within(screen.getByRole('navigation', { name: '设置域' }))
+    for (const button of navigation.getAllByRole('button')) {
+      button.focus()
+      expect(button).toHaveFocus()
+    }
+    const sidebar = screen.getByRole('button', { name: '侧栏' })
+    sidebar.focus()
+    expect(sidebar).toHaveFocus()
+    fireEvent.click(sidebar)
+    expect(sidebar).toHaveAttribute('aria-current', 'page')
   })
 })
