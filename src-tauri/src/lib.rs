@@ -965,6 +965,7 @@ pub(crate) fn run_setup_pipeline(app: &tauri::App) -> Result<(), Box<dyn std::er
     // CC-14：DataDirs 必须先于建窗——主窗口创建要挂 webview_user_data_dir（跟包存储）。
     let dirs = setup_install_data_dirs(app)?; // 〔致命〕数据目录解析/安装失败——消费者禁止各自回退
     let window = setup_open_main_window(app, &dirs)?; // 〔致命〕主窗口创建失败
+    crate::startup_timing::mark("windows_created");
     setup_hydrate_workspaces(app)?; // 〔致命〕workspace 注册表恢复失败
     setup_register_browser_host(app, &window, &dirs); // 无失败路径
     setup_register_docs_sheet_host(app, &window); // 无失败路径
@@ -1807,7 +1808,6 @@ pub fn run() {
             // AcpClient → ManagedChild::drop → kill_and_wait（同步 std 操作，不依赖 tokio）。
             .build(tauri::generate_context!())
             .expect("error while building tauri application");
-        crate::startup_timing::mark("windows_created");
         app.run(|app_handle: &tauri::AppHandle, event: tauri::RunEvent| {
             if let tauri::RunEvent::Exit = event {
                 // R17：coalescing 有界 drain——清 dirty 防后台任务重复写盘，
