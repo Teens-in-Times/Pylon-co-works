@@ -21,3 +21,4 @@
 - [Miyaki Kumo] #702~#707 后端审查修复批次（隔离工作树 `G:/Project/prism-team-workdir/prism-backend-review`，分支 `fix/backend-review-702-707`）：文件域 `src-tauri/src/{lib.rs,runtime.rs,permission.rs,lifecycle/mcp.rs,session/**}`、`src-tauri/pylon-acp/src/engine/inbound.rs`、`src-tauri/pet` 无涉；ADR-0039、`docs/说明书` 对应表述、本 record。避让 #602（ci.yml/pylon-foundations/test_utils 不碰）、#593/#600、共享树 #699/#708（前端）。
 
 - [Codex] #747 双模式前端打磨。聊天渲染与输入、工作台导航与首页、设置与插件管理分别并行；内置工具页面、验收和记录由主 agent 负责。
+- [Codex] #753 / #611 工作页启动器与跨会话搜索、MsgRepo 保留清理、ACP 与前端测试（命令首发、主题迁移、FakeInvoke）、启动相位、对应说明书和记录；三线并行，协调提交由 Codex 负责。
