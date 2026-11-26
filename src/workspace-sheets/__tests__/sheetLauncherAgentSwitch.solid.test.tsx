@@ -13,6 +13,7 @@
  *   并关闭 launcher）。
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
+import { createSignal } from 'solid-js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SheetLauncher from '../SheetLauncher.solid.tsx'
 import type { SheetLauncherProps } from '../SheetLauncher.solid.tsx'
@@ -100,6 +101,21 @@ describe('SheetLauncher Agent 激活事务', () => {
     pending.resolve(null)
     await waitFor(() => expect(props.onOpenSheet).toHaveBeenCalledWith('agent', 'UI验收Agent', 'qa-ui'))
     expect(props.onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('关闭启动器后完成的连接不会再打开工作页', async () => {
+    const pending = deferred<unknown>()
+    invoke.mockImplementation(command => command === 'switch_agent' ? pending.promise : Promise.resolve({ agent: 'hermes', status: 'connected' }))
+    const [open, setOpen] = createSignal(true)
+    const props = launcherProps({ agents: [{ id: 'hermes', name: 'Hermes' }], onOpenChange: setOpen })
+    render(() => <SheetLauncher latest={() => ({ ...props, open: open() })} />)
+    fireEvent.click(screen.getByRole('option', { name: /Hermes/ }))
+    fireEvent.click(screen.getByRole('button', { name: '关闭启动器' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const activated = activateAgentSheet('hermes', 'Hermes', () => {})
+    pending.resolve(null)
+    expect(await activated).toBe(true)
+    expect(props.onOpenSheet).not.toHaveBeenCalled()
   })
 
   it('同 Agent 激活失败时保留 launcher，不能以配置选中冒充成功', async () => {

@@ -3,8 +3,6 @@ import os from 'node:os'
 import { defineConfig } from 'vitest/config'
 import solid from 'vite-plugin-solid'
 
-// Production and tests share the same Solid JSX compiler.
-
 // #175：非 watch 模式 vitest 默认吃满 availableParallelism（20 核开发机 = 19 worker）。
 // 实测满载下全量必红：worker 内存峰值把 16GB 级开发机推进分页，事件循环整段冻结，
 // waitFor 的定时器连同其自身 1s 预算都无法触发（30s 测试看门狗收尸），失败集合
@@ -25,6 +23,7 @@ function testGroup(file: string): 'node' | 'node-shared' | 'jsdom-mock' | 'jsdom
   if (file.endsWith('.solid.test.tsx')) return 'solid-dom'
   return /\bvi\.(?:mock|doMock|unmock|doUnmock)\s*\(/.test(source) ? 'jsdom-mock' : 'jsdom-shared'
 }
+const filesByGroup = Map.groupBy(testFiles, testGroup)
 
 // 前端测试：
 // - scripts/*.test.mts：node 环境（#228 批次F 起全部为 vitest describe/it +
@@ -41,12 +40,9 @@ export default defineConfig({
     // 只读几个文件。缺 wasm 工具链时**直接失败**，不静默跳过——跳过等于弱化 parity 门禁。
     globalSetup: ['scripts/vitest-wasm-setup.mts'],
     projects: (['node', 'node-shared', 'jsdom-mock', 'jsdom-shared', 'solid-dom'] as const).map(name => ({
-      plugins: [
-        solid({ hot: false }),
-      ],
       test: {
         name,
-        include: testFiles.filter(file => testGroup(file) === name),
+        include: filesByGroup.get(name) ?? [],
         environment: name.startsWith('node') ? 'node' : 'jsdom',
         setupFiles: ['vitest.setup.ts'],
         // Node suites include source-contract tests that intentionally replace

@@ -141,6 +141,8 @@ describe('FileSheetView 版本化 tab 集成（D-02/D-04）', () => {
     const view = renderHarness()
 
     fireEvent.click(screen.getByLabelText('会话：切换工作区会话'))
+    // Wait for the actual lazy first-party activity before querying its session list.
+    await vi.dynamicImportSettled()
     fireEvent.click(await screen.findByText('Pylon Workspace'))
 
     await screen.findByRole('button', { name: '刷新文件树' })
@@ -175,6 +177,7 @@ describe('FileSheetView 版本化 tab 集成（D-02/D-04）', () => {
     seedSheet({})
     renderHarness()
 
+    await vi.dynamicImportSettled()
     expect(await screen.findByTitle('src')).toBeTruthy()
     expect(screen.getByTitle('package.json')).toBeTruthy()
     expect(screen.queryByText('工作区为空')).toBeNull()

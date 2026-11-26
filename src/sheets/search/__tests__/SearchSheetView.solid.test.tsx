@@ -52,16 +52,19 @@ describe('SearchSheetView.solid', () => {
     view.unmount()
   })
 
-  it('点击结果创建持久定位意图并 owner-aware 打开会话', async () => {
+  it('长消息中的命中片段可见，已移除的会话保留片段并停用导航', async () => {
     seedLocalSnapshot()
+    localStorage.setItem('pylon-msgs-s1', JSON.stringify([
+      { id: 'm1', content: '前文'.repeat(100) + '需要定位的消息 hello world' },
+    ]))
     const ctx = setupCtx()
     const view = render(() => <SearchSheetView sheet={sheet} ctx={ctx} />)
     fireEvent.input(screen.getByLabelText('跨会话搜索'), { target: { value: '定位' } })
-    fireEvent.click(await screen.findByRole('button', { name: /会话一.*hello world/ }))
-    await vi.waitFor(() => {
-      expect(ctx.selectSession).toHaveBeenCalledWith('s1')
-      expect(ctx.openSheet).toHaveBeenCalledWith(expect.objectContaining({ kind: 'agent', agentId: 'peri' }))
-    })
+    const hit = await screen.findByRole('button', { name: /会话一.*hello world/ })
+    expect(hit.querySelector('mark')).toHaveTextContent('定位')
+    expect(hit).toBeEnabled()
+    useIdentityStore.setState({ sessions: [] })
+    expect(await screen.findByRole('button', { name: /会话不可用.*hello world/ })).toBeDisabled()
     view.unmount()
   })
 })

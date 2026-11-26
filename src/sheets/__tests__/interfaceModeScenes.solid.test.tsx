@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
-// #515：自 interfaceModeScenes.test.tsx 迁移（断言集原样保留，渲染改走 Solid 实体）。
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, waitFor } from '@solidjs/testing-library'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render } from '@solidjs/testing-library'
 import {
   BUILTIN_INTERFACE_MODES,
   BUILTIN_TACTICAL_SCENE_SURFACE_ID,
@@ -31,12 +30,8 @@ describe('InterfaceModeScenes（A-V9 声明位 ↔ 宿主场景注册表）', ()
 
   it('宿主为已登记 surfaceId 挂载装饰场景（懒加载 resolve 后出现）', async () => {
     const { container } = render(() => <InterfaceModeSceneHost surfaceId={BUILTIN_TACTICAL_SCENE_SURFACE_ID} />)
-    await waitFor(() => {
-      // TacticalScene 根节点 class=tactical-scene、纯装饰平面（aria-hidden）
-      const scene = container.querySelector('.tactical-scene')
-      expect(scene).not.toBeNull()
-      expect(scene?.getAttribute('aria-hidden')).toBe('true')
-    })
+    await vi.dynamicImportSettled()
+    expect(container.querySelector('.tactical-scene')?.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('未登记 surfaceId 静默不渲染', () => {

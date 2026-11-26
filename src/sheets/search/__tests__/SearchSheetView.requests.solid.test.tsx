@@ -23,7 +23,7 @@ describe('search request ownership', () => {
     resolve({ results: [{ sessionId: 'old', messageId: 'old', snippet: 'stale result' }], truncated: true })
     await Promise.resolve()
     expect(screen.queryByText('stale result')).toBeNull()
-    expect(screen.queryByText(/结果过多已截断/)).toBeNull()
+    expect(screen.queryByText(/搜索范围已达上限/)).toBeNull()
     expect(screen.getByText('搜索本地会话消息')).toBeTruthy()
   })
 
@@ -33,6 +33,7 @@ describe('search request ownership', () => {
     fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'hello' } })
     fireEvent.click(await screen.findByRole('button', { name: '重试搜索' }))
     await screen.findByText('recovered')
+    expect(screen.getByRole('button', { name: /会话不可用.*recovered/ })).toBeDisabled()
     expect(searchAllMessages).toHaveBeenCalledTimes(2)
   })
 })

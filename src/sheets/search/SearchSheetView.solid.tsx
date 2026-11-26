@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { createEffect, createSignal, onCleanup, For, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup, For, Show } from 'solid-js'
 import { LucideIcon } from '../../components/LucideIcon.solid.tsx'
 import { createZustandSignal } from '../../infrastructure/state/solidStoreBridge.ts'
 import { useIdentityStore } from '../../domains/identity/identityStore'
@@ -27,16 +27,15 @@ const SUMMARY_STRONG = 'text-text font-semibold text-[16px]'
 const SUMMARY_SPAN = 'text-[12px]'
 const MAIN = 'search-sheet-main flex-1 min-w-0 max-w-[1120px] mx-auto py-[var(--ui-space-6)] px-[clamp(var(--ui-space-5),4vw,var(--ui-space-7))] overflow-y-auto max-[720px]:py-[var(--ui-space-5)] max-[720px]:px-4'
 const MAIN_TITLE = 'mt-1 mb-2 text-text text-[26px] font-semibold tracking-[-.025em]'
-const DESCRIPTION = 'm-0 mb-6 text-text-dim text-[13px] leading-[1.5] [overflow-wrap:anywhere]'
 const INPUT = 'search-sheet-input w-full min-w-0 border-0 bg-transparent text-text text-[13px] outline-none placeholder:text-text-placeholder'
 const HINT = 'w-[min(100%,640px)] m-0 mb-4 px-4 py-3 border-0 rounded-none text-text-dim text-[12px] leading-[1.5]'
 const EMPTY = 'search-empty-state sheet-empty-state w-[min(100%,960px)] mt-4 flex flex-col items-start gap-2 py-6 px-0 border-t border-stroke-subtle rounded-none text-text-dim bg-transparent text-left'
 const EMPTY_STRONG = 'text-text text-[14px]'
 const EMPTY_SPAN = 'max-w-[520px] text-[12px] leading-[1.5]'
 const EMPTY_MARK = 'sheet-empty-mark grid w-[32px] h-[32px] place-items-center mb-1 text-accent bg-transparent font-bold text-[22px] font-[family-name:var(--mono)] [&>svg]:block'
-const RESULTS = 'search-sheet-results grid gap-0 border-t border-stroke-subtle w-[min(100%,960px)] m-0 p-0 list-none'
-const RESULTS_LI = 'border-b border-stroke-subtle last:border-b-0 bg-transparent transition-colors duration-[120ms] hover:bg-bg-hover'
-const ROW = 'grid grid-cols-[minmax(120px,180px)_minmax(0,1fr)] max-[720px]:grid-cols-1 max-[720px]:gap-1 gap-4 items-center w-full min-h-[60px] px-4 py-3 border-0 border-l-[3px] border-l-transparent rounded-none text-text bg-transparent text-left cursor-pointer font-[family-name:var(--font)] transition-[background-color,border-color] duration-[120ms] hover:border-l-accent hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+const RESULTS = 'search-sheet-results @container grid gap-0 border-t border-stroke-subtle w-[min(100%,960px)] m-0 p-0 list-none'
+const RESULTS_LI = 'border-b border-stroke-subtle last:border-b-0'
+const ROW = 'grid grid-cols-1 gap-1 @min-[520px]:grid-cols-[minmax(120px,180px)_minmax(0,1fr)] @min-[520px]:gap-4 items-center w-full min-h-[60px] px-4 py-3 border-0 border-l-[3px] border-l-transparent rounded-none text-text bg-transparent text-left enabled:cursor-pointer font-[family-name:var(--font)] transition-[background-color,border-color] duration-[120ms] enabled:hover:border-l-accent enabled:hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 const ROW_PATH = 'min-w-0 text-text font-medium text-[13px] leading-[1.5] line-clamp-2'
 const ROW_TEXT = 'min-w-0 text-text-dim text-[13px] leading-[1.6] line-clamp-2'
 
@@ -53,6 +52,7 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
   const [searchError, setSearchError] = createSignal<string | null>(null)
   const [retry, setRetry] = createSignal(0)
   const sessions = createZustandSignal(useIdentityStore, state => state.sessions)
+  const sessionsById = createMemo(() => new Map(sessions().map(session => [session.id, session])))
   // I14-W4：request generation——旧响应不覆盖新 query
   let generation = 0
   let inputElement: HTMLInputElement | undefined
@@ -89,7 +89,7 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
   })
 
   const openResult = async (result: SearchHitUi) => {
-    const session = sessions().find(item => item.id === result.sessionId)
+    const session = sessionsById().get(result.sessionId)
     if (!session) return
     // The workbench and resource panel both consume these per-session values,
     // including when the conversation is mounted after navigation.
@@ -130,7 +130,6 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
         </aside>
       <main class={MAIN} aria-busy={loading()}>
         <h2 class={MAIN_TITLE}>跨会话搜索</h2>
-        <p class={DESCRIPTION}>查找已保存在本机的消息，在会话中查看和切换匹配项。</p>
         <label class="search-sheet-query mb-4 flex h-[var(--ui-control-emphasis)] w-[min(100%,960px)] items-center gap-2 border border-stroke-subtle bg-bg-input px-3 focus-within:border-accent">
           <LucideIcon name="Search" size={16} class="shrink-0 text-text-dim" />
           <input
@@ -145,13 +144,15 @@ export default function SearchSheetView(props: SearchSheetViewProps) {
         </label>
         <Show when={loading()}><p class={HINT} role="status">搜索中…</p></Show>
         <Show when={searchError()}><div class={HINT} role="status"><p class="search-error-reference">搜索失败，详情见右下角错误中心</p><button type="button" class="mt-2 cursor-pointer border border-border px-3 py-1 text-text hover:bg-bg-hover" onClick={() => setRetry(value => value + 1)}>重试搜索</button></div></Show>
-        <Show when={truncated()}><p class={HINT} role="status">结果过多已截断（上限 {50} 条）</p></Show>
+        <Show when={truncated()}><p class={HINT} role="status">搜索范围已达上限，仅显示部分结果。</p></Show>
         <Show when={results().length > 0}>
           <ul class={RESULTS}>
             <For each={results()}>{result => (
               <li class={RESULTS_LI}>
-                <button type="button" class={`search-sheet-result ${ROW}`} onClick={() => void openResult(result)}>
-                  <span class={ROW_PATH}>{sessions().find(session => session.id === result.sessionId)?.name || result.sessionId}</span>
+                <button type="button" class={`search-sheet-result ${ROW}`} disabled={!sessionsById().has(result.sessionId)} onClick={() => void openResult(result)}>
+                  <span class={ROW_PATH}>{sessionsById().get(result.sessionId)?.name || result.sessionId}
+                    <Show when={!sessionsById().has(result.sessionId)}><small class="block text-text-dim">会话不可用</small></Show>
+                  </span>
                   <span class={ROW_TEXT}><HighlightedText text={result.snippet} query={query()} /></span>
                 </button>
               </li>

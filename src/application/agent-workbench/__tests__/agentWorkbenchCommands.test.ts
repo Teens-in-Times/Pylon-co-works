@@ -3,7 +3,6 @@ import type { Session } from '../../../domains/identity/identityStore.ts'
 import { useRuntimeStore } from '../../../domains/runtime/runtimeStore.ts'
 import { createAgentWorkbenchCommandFacade } from '../agentWorkbenchCommands.ts'
 import type { InteractionResponseIdentity } from '../../../domains/agent/agentContracts.ts'
-import { flushTask } from '../../../test/solidTestHelpers.ts'
 
 const session: Session = {
   id: 'session-a', source: 'local:a', agentId: 'peri', profileId: 'profile-a', name: 'A',
@@ -23,23 +22,17 @@ describe('Agent Workbench production commands', () => {
       selectSession,
     })
 
-    const creating = commands.createSession({ initialPrompt: { text: 'hello' } })
-    await Promise.resolve()
+    const created = await commands.createSession({ initialPrompt: { text: 'hello' } })
+    expect(created.sessionId).toBe(session.id)
+    expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(selectSession).toHaveBeenCalledWith(session.id)
     expect(selectSession).toHaveBeenCalledTimes(1)
-    const early = await Promise.race([
-      creating.then(value => ({ settled: true, value })),
-      new Promise<{ settled: false }>(resolve => setTimeout(() => resolve({ settled: false }), 25)),
-    ])
-    expect(early).toMatchObject({ settled: true, value: { sessionId: session.id } })
-    if (!early.settled) throw new Error('createSession did not settle at the session-selected boundary')
     expect(commands.sessionCreation?.getSnapshot()).toMatchObject({
       phase: 'prompt-running', sessionId: session.id,
     })
 
     resolveSend()
-    await flushTask()
-    await early.value.initialPromptOutcome
+    await expect(created.initialPromptOutcome).resolves.toMatchObject({ status: 'sent' })
     expect(commands.sessionCreation?.getSnapshot()).toMatchObject({
       phase: 'prompt-terminal', sessionId: session.id,
     })

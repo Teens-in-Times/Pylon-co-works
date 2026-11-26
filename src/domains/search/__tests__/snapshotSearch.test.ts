@@ -28,7 +28,14 @@ describe('snapshotSearch 纯搜索（原 test-snapshot-search.mts §1，W3-03）
   })
 })
 
-describe('snapshotSearch 扫描上限（原 test-snapshot-search.mts §2）', () => {
+describe('snapshotSearch 命中片段与扫描上限', () => {
+  it('在原文命中处截取片段，前文的大小写展开和两端的 emoji 不会截断命中', () => {
+    const content = 'İ'.repeat(160) + '🎵' + 'a'.repeat(39) + 'NEEDLE' + 'b'.repeat(39) + '🎵tail'
+    const storage = { getItem: () => JSON.stringify([{ id: 'm', content }]) }
+    const { results } = snapshotSearch(storage, 'needle', ['pylon-msgs-s1'])
+    expect(results[0]?.snippet).toBe('…🎵' + 'a'.repeat(39) + 'NEEDLE' + 'b'.repeat(39) + '🎵…')
+  })
+
   it('超限截断并标记 truncated；SNAPSHOT_SCAN_LIMIT 纯常量', () => {
     const keys = Array.from({ length: 5 }, (_, i) => `pylon-msgs-s${i}`)
     const raw: Record<string, string> = {}

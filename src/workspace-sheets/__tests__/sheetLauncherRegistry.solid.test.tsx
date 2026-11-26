@@ -98,15 +98,18 @@ describe('SheetLauncher Registry 卡片', () => {
     expect(screen.queryByText(/list_agents/)).toBeNull()
   })
 
-  it('有 Agent 但查询无命中时给出换词提示，不谎报「没有可用 Agent」', () => {
+  it('搜索无命中时只有一个空态，清空后恢复可选结果', () => {
     renderLauncher(launcherProps({ agents: [{ id: 'peri', name: 'Peri' }] }))
-    fireEvent.input(screen.getByRole('combobox', { name: '搜索 Sheet、Agent 或管理入口' }), { target: { value: 'zzz-无此条目' } })
-
-    expect(screen.getByText('没有匹配的 Agent')).toBeInTheDocument()
-    expect(screen.queryByText('还没有可用的 Agent')).toBeNull()
+    const input = screen.getByRole('combobox')
+    fireEvent.input(input, { target: { value: 'zzz-无此条目' } })
+    expect(screen.getByRole('status')).toHaveTextContent('没有匹配项')
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+    expect(input).not.toHaveAttribute('aria-activedescendant')
+    fireEvent.input(input, { target: { value: '' } })
+    expect(screen.getByRole('option', { name: /Peri/, selected: true })).toHaveAttribute('id', input.getAttribute('aria-activedescendant'))
   })
 
-  it('不可启动的条目显示中文徽标而非内部状态词', () => {
+  it('鼠标和键盘使用同一选区，向下循环越过不可用项后 Enter 打开高亮条目', () => {
     const registration = registerWorkspace(createPluginIdentity('test.launcher-disabled', 'disabled-card'), {
       kind: 'test.disabled',
       label: 'Disabled',
@@ -120,9 +123,32 @@ describe('SheetLauncher Registry 卡片', () => {
       deserialize: state => state,
     })
     try {
-      renderLauncher(launcherProps())
-      expect(screen.getByText('暂不可用')).toBeInTheDocument()
-      expect(screen.queryByText('unavailable')).toBeNull()
+      const props = launcherProps()
+      renderLauncher(props)
+      const input = screen.getByRole('combobox')
+      const options = screen.getAllByRole('option')
+      const disabled = screen.getByRole('option', { name: /Disabled Sheet.*暂不可用/ })
+      expect(disabled).toHaveAttribute('aria-disabled', 'true')
+      const index = options.indexOf(disabled)
+      const previous = options.slice(0, index).reverse().find(option => option.getAttribute('aria-disabled') !== 'true')!
+      fireEvent.pointerMove(previous)
+      expect(previous).toHaveAttribute('aria-selected', 'true')
+      fireEvent.pointerMove(disabled)
+      fireEvent.click(disabled)
+      expect(props.onOpenChange).not.toHaveBeenCalled()
+      expect(previous).toHaveAttribute('aria-selected', 'true')
+      fireEvent.keyDown(input, { key: 'ArrowDown' })
+      const next = options.slice(index + 1).find(option => option.getAttribute('aria-disabled') !== 'true')!
+      expect(screen.getByRole('option', { selected: true })).toBe(next)
+      fireEvent.input(input, { target: { value: 'Disabled Sheet' } })
+      expect(input).not.toHaveAttribute('aria-activedescendant')
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(props.onOpenChange).not.toHaveBeenCalled()
+      fireEvent.input(input, { target: { value: '' } })
+      fireEvent.keyDown(input, { key: 'ArrowUp' })
+      expect(screen.getByRole('option', { selected: true, name: /当前身份/ })).toHaveAttribute('id', input.getAttribute('aria-activedescendant'))
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(props.onOpenProfiles).toHaveBeenCalledOnce()
     } finally {
       registration.dispose()
     }
