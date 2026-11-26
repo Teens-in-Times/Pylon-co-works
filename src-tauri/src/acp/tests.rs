@@ -2,7 +2,6 @@ use super::*;
 #[cfg(test)]
 use crate::agent_config::McpServersMode;
 use crate::agent_config::{DEFAULT_MAX_ATTACHMENTS, DEFAULT_MAX_ATTACHMENT_BYTES};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
@@ -1654,8 +1653,7 @@ async fn fake_acp_prompt_cancel_returns_final_cancelled_response() {
 
 #[tokio::test]
 async fn send_response_writes_result_with_matching_id() {
-    let trace_path =
-        std::env::temp_dir().join(format!("pylon-acp-response-{}.jsonl", std::process::id()));
+    let trace_path = crate::test_utils::unique_temp("acp-response").with_extension("jsonl");
     let agent = crate::test_utils::fake_acp_agent(
         "fake-acp-response",
         &[
@@ -1696,138 +1694,90 @@ async fn send_response_writes_result_with_matching_id() {
             .await,
         "responder must write the response"
     );
-    // 等待写通道 flush（fake 脚本逐行写 trace）
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let trace = std::fs::read_to_string(&trace_path).expect("read trace");
-    std::fs::remove_file(&trace_path).ok();
-    let lines: Vec<serde_json::Value> = trace
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect();
-    let response = lines
-        .iter()
-        .find(|line| line.get("id").and_then(|v| v.as_u64()) == Some(42))
-        .expect("response line must exist");
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert_eq!(response["result"]["outcome"]["outcome"], "selected");
-    assert_eq!(response["result"]["outcome"]["optionId"], "allow_once");
+    let received = crate::test_utils::wait_for_trace_line(&trace_path, |line| {
+        line["jsonrpc"] == "2.0" && line["id"] == 42 && line["result"] == result
+    })
+    .await;
+    assert!(
+        received,
+        "fake agent must receive the response with its original id and result"
+    );
     client.kill().expect("cleanup");
+    std::fs::remove_file(trace_path).unwrap();
+}
+
+/// 启动探针写入 initialize 参数后才应答；握手成功即可读取。
+async fn capture_initialize_params(
+    name: &str,
+    provider: Option<&str>,
+    acp: Option<crate::agent_config::AcpProtocolConfig>,
+) -> serde_json::Value {
+    let trace_path = crate::test_utils::unique_temp(name).with_extension("json");
+    let mut agent = crate::test_utils::fake_acp_agent(
+        name,
+        &[
+            "--scenario",
+            "init-params-probe",
+            "--trace-file",
+            &trace_path.to_string_lossy(),
+        ],
+    );
+    agent.provider = provider.map(str::to_owned);
+    agent.acp = acp;
+    let client = AcpClient::connect_with_logs(&agent, None)
+        .await
+        .expect("fake agent must initialize");
+    client.kill().expect("cleanup");
+    let trace = std::fs::read(&trace_path).expect("read initialize params");
+    std::fs::remove_file(trace_path).unwrap();
+    serde_json::from_slice(&trace).expect("initialize params must be JSON")
 }
 
 #[tokio::test]
 async fn fake_acp_initialize_uses_configured_client_capabilities() {
-    let trace_path =
-        std::env::temp_dir().join(format!("pylon-acp-caps-{}.jsonl", std::process::id()));
-    let agent = crate::agent_config::AgentDef {
-        name: "fake-acp-caps".to_string(),
-        provider: None,
-        transport: "subprocess".to_string(),
-        exe: crate::test_utils::fake_agent_bin()
-            .to_string_lossy()
-            .into_owned(),
-        args: vec![
-            "--scenario".to_string(),
-            "trace-all".to_string(),
-            "--trace-file".to_string(),
-            trace_path.to_string_lossy().into_owned(),
-            "--trace-mode".to_string(),
-            "all".to_string(),
-        ],
-        cwd: None,
-        env: HashMap::new(),
-        default: false,
-        set_model_api: false,
-        model: None,
-        hermes_profile: None,
-        acp_args: Vec::new(),
-        acp: Some(crate::agent_config::AcpProtocolConfig {
+    let params = capture_initialize_params(
+        "fake-acp-caps",
+        None,
+        Some(crate::agent_config::AcpProtocolConfig {
             initialize_caps: Some(serde_json::json!({
-                "fs": {},
-                "auth": {},
-                "_meta": {"peri.skillNames": true}
+                "fs": {}, "auth": {}, "_meta": {"peri.skillNames": true}
             })),
             ..Default::default()
         }),
-    };
-    let client = AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP with configured caps must initialize");
-    client.kill().expect("cleanup");
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let trace = std::fs::read_to_string(&trace_path).expect("read trace");
-    std::fs::remove_file(&trace_path).ok();
-    let request: serde_json::Value = trace
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("trace line"))
-        .find(|value: &serde_json::Value| {
-            value.get("method").and_then(|m| m.as_str()) == Some(METHOD_INITIALIZE)
-        })
-        .expect("initialize must be traced");
+    )
+    .await;
+    assert_eq!(params["clientCapabilities"]["fs"], serde_json::json!({}));
     assert_eq!(
-        request["params"]["clientCapabilities"]["fs"],
-        serde_json::json!({})
-    );
-    assert_eq!(
-        request["params"]["clientCapabilities"]["_meta"]["peri.skillNames"],
+        params["clientCapabilities"]["_meta"]["peri.skillNames"],
         serde_json::json!(true)
     );
     assert!(
-        request["params"]["clientCapabilities"]
-            .get("tokenStats")
-            .is_none(),
+        params["clientCapabilities"].get("tokenStats").is_none(),
         "覆盖后不再带统一默认 caps"
     );
     // G1-03：未配置的 protocolVersion/clientInfo 保持默认现值（wire 不变）
-    assert_eq!(request["params"]["protocolVersion"], serde_json::json!(1));
+    assert_eq!(params["protocolVersion"], serde_json::json!(1));
     assert_eq!(
-        request["params"]["clientInfo"],
+        params["clientInfo"],
         serde_json::json!({"name": "Pylon", "version": "1.0.0"})
     );
 }
 
 #[tokio::test]
 async fn fake_acp_initialize_defaults_to_unified_capabilities() {
-    let trace_path = std::env::temp_dir().join(format!(
-        "pylon-acp-caps-default-{}.jsonl",
-        std::process::id()
-    ));
-    let agent = crate::test_utils::fake_acp_agent(
-        "fake-acp-caps-default",
-        &[
-            "--scenario",
-            "trace-all",
-            "--trace-file",
-            &trace_path.to_string_lossy(),
-            "--trace-mode",
-            "all",
-        ],
-    );
-    let client = AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP with default caps must initialize");
-    client.kill().expect("cleanup");
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let trace = std::fs::read_to_string(&trace_path).expect("read trace");
-    std::fs::remove_file(&trace_path).ok();
-    let request: serde_json::Value = trace
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("trace line"))
-        .find(|value: &serde_json::Value| {
-            value.get("method").and_then(|m| m.as_str()) == Some(METHOD_INITIALIZE)
-        })
-        .expect("initialize must be traced");
+    let params = capture_initialize_params("fake-acp-caps-default", None, None).await;
     assert_eq!(
-        request["params"]["clientCapabilities"]["tokenStats"],
+        params["clientCapabilities"]["tokenStats"],
         serde_json::json!(true)
     );
     assert_eq!(
-        request["params"]["clientCapabilities"]["_meta"]["peri.replay"],
+        params["clientCapabilities"]["_meta"]["peri.replay"],
         serde_json::json!(true)
     );
     // G1-03：默认路径 protocolVersion/clientInfo 为现状现值（wire 逐字节不变）
-    assert_eq!(request["params"]["protocolVersion"], serde_json::json!(1));
+    assert_eq!(params["protocolVersion"], serde_json::json!(1));
     assert_eq!(
-        request["params"]["clientInfo"],
+        params["clientInfo"],
         serde_json::json!({"name": "Pylon", "version": "1.0.0"})
     );
 }
@@ -1838,64 +1788,30 @@ async fn fake_acp_initialize_defaults_to_unified_capabilities() {
 /// 是 client_info（9.9.9）。集合外值（如 2）的拒绝见下一条 connect 级用例。
 #[tokio::test]
 async fn custom_protocol_version_and_client_info_reach_wire() {
-    let trace_path =
-        std::env::temp_dir().join(format!("pylon-acp-handshake-{}.jsonl", std::process::id()));
-    let agent = crate::agent_config::AgentDef {
-        name: "fake-acp-handshake".to_string(),
-        provider: None,
-        transport: "subprocess".to_string(),
-        exe: crate::test_utils::fake_agent_bin()
-            .to_string_lossy()
-            .into_owned(),
-        args: vec![
-            "--scenario".to_string(),
-            "trace-all".to_string(),
-            "--trace-file".to_string(),
-            trace_path.to_string_lossy().into_owned(),
-            "--trace-mode".to_string(),
-            "all".to_string(),
-        ],
-        cwd: None,
-        env: HashMap::new(),
-        default: false,
-        set_model_api: false,
-        model: None,
-        hermes_profile: None,
-        acp_args: Vec::new(),
-        acp: Some(crate::agent_config::AcpProtocolConfig {
+    let params = capture_initialize_params(
+        "fake-acp-handshake",
+        None,
+        Some(crate::agent_config::AcpProtocolConfig {
             protocol_version: Some(1),
             client_info: Some(serde_json::json!({"name": "Pylon", "version": "9.9.9"})),
             ..Default::default()
         }),
-    };
-    let client = AcpClient::connect_with_logs(&agent, None)
-        .await
-        .expect("fake ACP with custom handshake must initialize");
-    client.kill().expect("cleanup");
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let trace = std::fs::read_to_string(&trace_path).expect("read trace");
-    std::fs::remove_file(&trace_path).ok();
-    let request: serde_json::Value = trace
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("trace line"))
-        .find(|value: &serde_json::Value| {
-            value.get("method").and_then(|m| m.as_str()) == Some(METHOD_INITIALIZE)
-        })
-        .expect("initialize must be traced");
+    )
+    .await;
     // 与缺省同值（白名单内仅 1），此断言只守「声明值原样进 wire」的通路。
     assert_eq!(
-        request["params"]["protocolVersion"],
+        params["protocolVersion"],
         serde_json::json!(1),
         "声明的 protocol_version 必须进 wire"
     );
     assert_eq!(
-        request["params"]["clientInfo"],
+        params["clientInfo"],
         serde_json::json!({"name": "Pylon", "version": "9.9.9"}),
         "声明的 client_info 必须进 wire"
     );
     // caps 未声明 → 默认统一 caps 不受影响
     assert_eq!(
-        request["params"]["clientCapabilities"]["tokenStats"],
+        params["clientCapabilities"]["tokenStats"],
         serde_json::json!(true)
     );
 }
@@ -1906,35 +1822,23 @@ async fn custom_protocol_version_and_client_info_reach_wire() {
 /// `initialize` 行（声明值未落 wire）。
 #[tokio::test]
 async fn unsupported_protocol_version_fails_connect_before_wire() {
-    let trace_path =
-        std::env::temp_dir().join(format!("pylon-acp-pv2-reject-{}.jsonl", std::process::id()));
-    let agent = crate::agent_config::AgentDef {
-        name: "fake-acp-pv2-reject".to_string(),
-        provider: None,
-        transport: "subprocess".to_string(),
-        exe: crate::test_utils::fake_agent_bin()
-            .to_string_lossy()
-            .into_owned(),
-        args: vec![
-            "--scenario".to_string(),
-            "trace-all".to_string(),
-            "--trace-file".to_string(),
-            trace_path.to_string_lossy().into_owned(),
-            "--trace-mode".to_string(),
-            "all".to_string(),
+    let trace_path = crate::test_utils::unique_temp("acp-pv2-reject").with_extension("jsonl");
+    std::fs::write(&trace_path, b"").expect("create empty trace");
+    let mut agent = crate::test_utils::fake_acp_agent(
+        "fake-acp-pv2-reject",
+        &[
+            "--scenario",
+            "trace-all",
+            "--trace-file",
+            &trace_path.to_string_lossy(),
+            "--trace-mode",
+            "all",
         ],
-        cwd: None,
-        env: HashMap::new(),
-        default: false,
-        set_model_api: false,
-        model: None,
-        hermes_profile: None,
-        acp_args: Vec::new(),
-        acp: Some(crate::agent_config::AcpProtocolConfig {
-            protocol_version: Some(2),
-            ..Default::default()
-        }),
-    };
+    );
+    agent.acp = Some(crate::agent_config::AcpProtocolConfig {
+        protocol_version: Some(2),
+        ..Default::default()
+    });
     let error = AcpClient::connect_with_logs(&agent, None)
         .await
         .err()
@@ -1944,74 +1848,42 @@ async fn unsupported_protocol_version_fails_connect_before_wire() {
     };
     assert_eq!(failure.code, "agent_client_capabilities_invalid");
     assert!(!failure.retryable);
-    // fake agent 启动即创建 trace 文件；给子进程留出落盘时间。
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    let initialize_reached_wire = std::fs::read_to_string(&trace_path)
-        .map(|trace| {
-            trace.lines().any(|line| {
-                serde_json::from_str::<serde_json::Value>(line)
-                    .ok()
-                    .and_then(|value| {
-                        value
-                            .get("method")
-                            .and_then(|m| m.as_str())
-                            .map(str::to_string)
-                    })
-                    .as_deref()
-                    == Some(METHOD_INITIALIZE)
-            })
-        })
-        // 文件不存在同样证明 initialize 未发出（fake agent 未收到任何帧）。
-        .unwrap_or(false);
+    // The failed connection drops and reaps its child before returning.
+    let trace = std::fs::read(&trace_path).expect("read final wire trace");
+    std::fs::remove_file(trace_path).unwrap();
     assert!(
-        !initialize_reached_wire,
-        "被拒绝的 initialize 不得出现在 wire trace 中"
+        trace.is_empty(),
+        "invalid handshake must not write any request"
     );
-    std::fs::remove_file(&trace_path).ok();
 }
 
 /// 方案 G 演进：hermes_profile 绝对路径 → 子进程 HERMES_HOME 注入。
-/// fake 脚本把 HERMES_HOME 写入 trace 文件，回读断言注入生效。
+/// 启动探针在应答 initialize 前记录 HERMES_HOME。
 #[tokio::test]
 async fn hermes_profile_injects_hermes_home_env() {
-    let profile_dir = std::env::temp_dir().join(format!("pylon-profile-{}", std::process::id()));
-    std::fs::create_dir_all(&profile_dir).unwrap();
-    let trace_path =
-        std::env::temp_dir().join(format!("pylon-hermes-env-{}.jsonl", std::process::id()));
-    let mut agent = crate::agent_config::AgentDef {
-        name: "fake-hermes".to_string(),
-        provider: None,
-        transport: "subprocess".to_string(),
-        exe: crate::test_utils::fake_agent_bin()
-            .to_string_lossy()
-            .into_owned(),
-        args: vec![
-            "--scenario".to_string(),
-            "env-probe".to_string(),
-            "--env-var".to_string(),
-            "HERMES_HOME".to_string(),
-            "--trace-file".to_string(),
-            trace_path.to_string_lossy().into_owned(),
+    let profile_dir = crate::test_utils::unique_temp("hermes-profile");
+    std::fs::create_dir(&profile_dir).unwrap();
+    let trace_path = crate::test_utils::unique_temp("hermes-env");
+    let mut agent = crate::test_utils::fake_acp_agent(
+        "fake-hermes",
+        &[
+            "--scenario",
+            "env-probe",
+            "--env-var",
+            "HERMES_HOME",
+            "--trace-file",
+            &trace_path.to_string_lossy(),
         ],
-        cwd: None,
-        env: HashMap::new(),
-        default: false,
-        set_model_api: true,
-        model: None,
-        hermes_profile: Some(profile_dir.to_string_lossy().into_owned()),
-        acp_args: Vec::new(),
-        acp: None,
-    };
-    // 绝对路径形态不需要 Hermes home 探测，测试不依赖本机环境。
+    );
+    agent.set_model_api = true;
     agent.hermes_profile = Some(profile_dir.to_string_lossy().into_owned());
     let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake hermes must initialize");
     client.kill().expect("cleanup");
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let trace = std::fs::read_to_string(&trace_path).expect("read env trace");
-    std::fs::remove_file(&trace_path).ok();
-    std::fs::remove_dir_all(&profile_dir).ok();
+    std::fs::remove_file(&trace_path).unwrap();
+    std::fs::remove_dir(&profile_dir).unwrap();
     assert_eq!(
         trace.trim(),
         profile_dir.to_string_lossy(),
@@ -2022,51 +1894,30 @@ async fn hermes_profile_injects_hermes_home_env() {
 /// 方案 G 演进：未配置 hermes_profile 时不注入 HERMES_HOME（现状行为不回归）。
 #[tokio::test]
 async fn unset_hermes_profile_does_not_inject_env() {
-    let trace_path =
-        std::env::temp_dir().join(format!("pylon-hermes-noenv-{}.jsonl", std::process::id()));
-    let agent = crate::agent_config::AgentDef {
-        name: "fake-hermes-plain".to_string(),
-        provider: None,
-        transport: "subprocess".to_string(),
-        exe: crate::test_utils::fake_agent_bin()
-            .to_string_lossy()
-            .into_owned(),
-        args: vec![
-            "--scenario".to_string(),
-            "env-probe".to_string(),
-            "--env-var".to_string(),
-            "HERMES_HOME".to_string(),
-            "--trace-file".to_string(),
-            trace_path.to_string_lossy().into_owned(),
+    let trace_path = crate::test_utils::unique_temp("hermes-noenv");
+    let mut agent = crate::test_utils::fake_acp_agent(
+        "fake-hermes-plain",
+        &[
+            "--scenario",
+            "env-probe",
+            "--env-var",
+            "HERMES_HOME",
+            "--trace-file",
+            &trace_path.to_string_lossy(),
         ],
-        cwd: None,
-        env: HashMap::new(),
-        default: false,
-        set_model_api: true,
-        model: None,
-        hermes_profile: None,
-        acp_args: Vec::new(),
-        acp: None,
-    };
+    );
+    agent.set_model_api = true;
+    let inherited = std::env::var("HERMES_HOME").unwrap_or_else(|_| "<absent>".into());
     let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("fake hermes must initialize");
     client.kill().expect("cleanup");
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let trace = std::fs::read_to_string(&trace_path).expect("read env trace");
-    std::fs::remove_file(&trace_path).ok();
-    // 子进程默认继承 Pylon 进程环境——测试进程若本身有 HERMES_HOME 则透传。
-    // 断言只能区分"显式注入的 profile 路径"与"未注入"两种：未配置时子进程
-    // 读到的是进程环境原值（非注入产物），不可能等于临时 profile 目录。
-    assert_ne!(
-        trace.trim(),
-        format!(
-            "{}",
-            std::env::temp_dir()
-                .join(format!("pylon-profile-{}", std::process::id()))
-                .to_string_lossy()
-        ),
-        "未配置 hermes_profile 时不得注入临时 profile 路径"
+    std::fs::remove_file(&trace_path).unwrap();
+    assert_eq!(
+        trace,
+        format!("{inherited}\n"),
+        "子进程应保留宿主的 HERMES_HOME"
     );
 }
 
@@ -2086,45 +1937,28 @@ fn process_exists(pid: u32) -> bool {
 /// argv 与标记 env 写进文件，再完成一次 initialize。
 #[tokio::test]
 async fn codex_wrapper_connects_through_the_adapter_not_the_vendor_cli() {
-    let trace_path =
-        std::env::temp_dir().join(format!("pylon-codex-wrapper-{}.jsonl", std::process::id()));
-    let mut env = HashMap::new();
-    env.insert(
-        "PYLON_WRAPPER_MARKER".to_string(),
-        "adapter-side".to_string(),
-    );
-    let agent = crate::agent_config::AgentDef {
-        name: "codex".to_string(),
-        // provider 决定 catalog profile：codex 是 wrapper（adapterRelation.nativeCmd = codex）。
-        provider: Some("codex".to_string()),
-        transport: "subprocess".to_string(),
-        exe: crate::test_utils::fake_agent_bin()
-            .to_string_lossy()
-            .into_owned(),
-        args: vec![
-            "--scenario".to_string(),
-            "argv-probe".to_string(),
-            "--env-var".to_string(),
-            "PYLON_WRAPPER_MARKER".to_string(),
-            "--trace-file".to_string(),
-            trace_path.to_string_lossy().into_owned(),
+    let trace_path = crate::test_utils::unique_temp("codex-wrapper");
+    let mut agent = crate::test_utils::fake_acp_agent(
+        "codex",
+        &[
+            "--scenario",
+            "argv-probe",
+            "--env-var",
+            "PYLON_WRAPPER_MARKER",
+            "--trace-file",
+            &trace_path.to_string_lossy(),
         ],
-        cwd: None,
-        env,
-        default: false,
-        set_model_api: false,
-        model: None,
-        hermes_profile: None,
-        acp_args: Vec::new(),
-        acp: None,
-    };
+    );
+    agent.provider = Some("codex".into());
+    agent
+        .env
+        .insert("PYLON_WRAPPER_MARKER".into(), "adapter-side".into());
     let client = AcpClient::connect_with_logs(&agent, None)
         .await
         .expect("wrapper 适配器必须能完成 initialize");
     client.kill().expect("cleanup");
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let trace = std::fs::read_to_string(&trace_path).expect("read argv trace");
-    std::fs::remove_file(&trace_path).ok();
+    std::fs::remove_file(&trace_path).unwrap();
     let observed: serde_json::Value = serde_json::from_str(trace.trim()).expect("trace 是 JSON");
     let argv: Vec<String> = observed["argv"]
         .as_array()
@@ -2163,43 +1997,7 @@ async fn codex_wrapper_connects_through_the_adapter_not_the_vendor_cli() {
 /// 只拿到 Pylon 默认 caps。
 #[tokio::test]
 async fn claude_wrapper_puts_declared_client_capabilities_on_the_wire() {
-    /// 用给定 provider 连接一次 fake 适配器，返回它真实收到的 `initialize` params。
-    async fn capture_initialize_params(provider: &str, tag: &str) -> serde_json::Value {
-        let trace_path =
-            std::env::temp_dir().join(format!("pylon-{tag}-init-{}.jsonl", std::process::id()));
-        let agent = crate::agent_config::AgentDef {
-            name: tag.to_string(),
-            provider: Some(provider.to_string()),
-            transport: "subprocess".to_string(),
-            exe: crate::test_utils::fake_agent_bin()
-                .to_string_lossy()
-                .into_owned(),
-            args: vec![
-                "--scenario".to_string(),
-                "init-params-probe".to_string(),
-                "--trace-file".to_string(),
-                trace_path.to_string_lossy().into_owned(),
-            ],
-            cwd: None,
-            env: HashMap::new(),
-            default: false,
-            set_model_api: false,
-            model: None,
-            hermes_profile: None,
-            acp_args: Vec::new(),
-            acp: None,
-        };
-        let client = AcpClient::connect_with_logs(&agent, None)
-            .await
-            .expect("fake 适配器必须完成 initialize");
-        client.kill().expect("cleanup");
-        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        let raw = std::fs::read_to_string(&trace_path).expect("read initialize params");
-        std::fs::remove_file(&trace_path).ok();
-        serde_json::from_str(raw.trim()).expect("initialize params 是 JSON")
-    }
-
-    let claude = capture_initialize_params("claude-code", "claude-caps").await;
+    let claude = capture_initialize_params("claude-caps", Some("claude-code"), None).await;
     let caps = &claude["clientCapabilities"];
     // Pylon 默认 caps 仍在（声明是合并，不是替换）。
     assert_eq!(caps["tokenStats"], serde_json::json!(true));
@@ -2218,7 +2016,7 @@ async fn claude_wrapper_puts_declared_client_capabilities_on_the_wire() {
     assert!(claude["protocolVersion"].is_u64());
 
     // provider 作用域：未声明 caps 的 provider 拿到的只有默认 `_meta` 键。
-    let hermes = capture_initialize_params("hermes", "hermes-caps").await;
+    let hermes = capture_initialize_params("hermes-caps", Some("hermes"), None).await;
     let hermes_meta = hermes["clientCapabilities"]["_meta"]
         .as_object()
         .expect("_meta 是对象");

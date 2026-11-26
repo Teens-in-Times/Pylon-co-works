@@ -2,7 +2,7 @@
  * 测试夹具自检（阶段 0）：MemoryStorage / FakeInvoke 行为验证。
  * 夹具是后续行为回归测试的基础，先钉死其契约。
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryStorage } from './memoryStorage'
 import { FakeInvoke } from './fakeInvoke'
 
@@ -40,6 +40,8 @@ describe('MemoryStorage', () => {
 })
 
 describe('FakeInvoke', () => {
+  afterEach(() => { vi.useRealTimers() })
+
   it('注册 handler 并记录调用', async () => {
     const invoke = new FakeInvoke().register('echo', args => args.value)
     expect(await invoke.invoke('echo', { value: 42 })).toBe(42)
@@ -61,19 +63,26 @@ describe('FakeInvoke', () => {
     await expect(invoke.invoke('echo', { value: 1 })).rejects.toThrowError('down')
   })
 
-  it('delay 延迟 settle', async () => {
-    const invoke = new FakeInvoke().register('slow', () => 'ok').setDelay('slow', 20)
-    const start = Date.now()
-    await expect(invoke.invoke('slow')).resolves.toBe('ok')
-    expect(Date.now() - start).toBeGreaterThanOrEqual(15)
+  it('delay 在配置的延迟到期后执行 handler 并返回它的结果', async () => {
+    vi.useFakeTimers()
+    const handler = vi.fn(() => 'ok')
+    const invoke = new FakeInvoke().register('slow', handler).setDelay('slow', 20)
+    const pending = invoke.invoke('slow')
+    await vi.advanceTimersByTimeAsync(19)
+    expect(handler).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(handler).toHaveBeenCalledTimes(1)
+    await expect(pending).resolves.toBe('ok')
   })
 
-  it('never 永不 settle', async () => {
-    const invoke = new FakeInvoke().register('hang', () => 'x').never('hang')
-    const settled = await Promise.race([
-      invoke.invoke('hang').then(() => true, () => true),
-      new Promise<boolean>(resolve => setTimeout(() => resolve(false), 30)),
-    ])
-    expect(settled).toBe(false)
+  it('never 在所有待执行定时器跑完后仍挂起', async () => {
+    vi.useFakeTimers()
+    const handler = vi.fn(() => 'x')
+    const settled = vi.fn()
+    const invoke = new FakeInvoke({ defaultDelay: 20 }).register('hang', handler).never('hang')
+    void invoke.invoke('hang').then(settled, settled)
+    await vi.runAllTimersAsync()
+    expect(handler).not.toHaveBeenCalled()
+    expect(settled).not.toHaveBeenCalled()
   })
 })

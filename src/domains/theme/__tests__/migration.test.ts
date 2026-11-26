@@ -1,15 +1,9 @@
-// 迁移自 scripts/test-theme-migration.mts（P91 A1）
-// ★ #266 刀9：`themeDomainMigrate` 的 `inputVariant↔inputMode` 联动用例已随字段删除退场。
-//   #448 PR5 起该函数重新入列（钉住「预设字段不进最终 migrate 输出」的拆分契约）。
 import { describe, expect, it } from 'vitest'
 import { alignThemeStructure, normalizeThemeMigrationState, themeDomainMigrate } from '../migration.ts'
 import { DEFAULT_CC_LAYOUT } from '../../cc/ccLayoutState.ts'
 import { GLOBAL_PRESETS } from '../presets/index.ts'
 import { effectivePresetTheme } from '../zones/index.ts'
-import { PROFILE_SCHEMA_VERSION } from '../../identity/profilePersistence.ts'
-import { readFileSync } from 'node:fs'
 import { DEFAULTS } from '../themeDefaults.ts'
-import { CC_LAYOUT_SCHEMA_VERSION } from '../../cc/ccLayoutState.ts'
 
 describe('CC-21 input font read-time alignment', () => {
   it('old themes receive follow-message and existing plugin selections survive normalization', () => {
@@ -23,8 +17,6 @@ describe('CC-21 input font read-time alignment', () => {
     expect(plugin.msgFont).toBe('mono')
   })
 })
-
-const migrationSource = readFileSync('src/domains/theme/migration.ts', 'utf8')
 
 // A1 迁移映射矩阵：旧键映射 + custom 值 + id 命名空间
 
@@ -41,30 +33,15 @@ const defaults = {
 describe('normalizeThemeMigrationState A1 映射矩阵（迁移自 scripts/test-theme-migration.mts，P91 A1）', () => {
   const migrated = normalizeThemeMigrationState({
     transparency: 0.5,
-    ccSizes: { stale: true },
     // 旧模型输入：activePreset/dirty 键 + 'custom' 值（基准丢失）+ 非法值 + 越界 zone 键
     activePreset: { global: 'custom', sidebar: 42, unknown: 'leak' },
     dirty: { global: true, chat: 'yes' },
-    ccPositions: { ekg: { x: 12, y: 18, w: 999 }, bogus: { x: 1, y: 2 } },
-    ccCliCustomized: true,
-    ccLayoutVersion: 2,
     ccLayout: { version: 99, placements: {} },
-    customPresets: [
-      { id: 'ok', name: ' Valid ', theme: { transparency: 0.7 }, createdAt: 10, updatedAt: 11 },
-      null,
-      { id: '', name: 'bad', theme: {} },
-      { id: 'missing-theme', name: 'bad' },
-    ],
-    sessions: [{ id: 'must remain outside theme conclusion' }],
   }, defaults)
-  const view = migrated as { appliedPreset: Record<string, unknown>; custom: Record<string, unknown>; ccLayout: unknown; customPresets: unknown }
+  const view = migrated as { appliedPreset: Record<string, unknown>; custom: Record<string, unknown>; ccLayout: unknown }
 
-  it('透明度保留；旧键（ccSizes/ccPositions/ccCliCustomized/ccLayoutVersion）不得保留', () => {
+  it('透明度保留', () => {
     expect(migrated.transparency).toBe(0.5)
-    expect('ccSizes' in migrated).toBe(false)
-    expect('ccPositions' in migrated).toBe(false) // 迁移结果不得保留 ccPositions
-    expect('ccCliCustomized' in migrated).toBe(false) // 迁移结果不得保留 ccCliCustomized
-    expect('ccLayoutVersion' in migrated).toBe(false) // 迁移结果不得保留 ccLayoutVersion
   })
 
   it('A1 映射：旧 activePreset.global=custom → appliedPreset.global=\'\' + custom.global=true', () => {
@@ -77,17 +54,21 @@ describe('normalizeThemeMigrationState A1 映射矩阵（迁移自 scripts/test-
     expect(view.ccLayout).toEqual(DEFAULT_CC_LAYOUT)
   })
 
-  it('A1 命名空间：migrate 函数输出无损透传预设字段（#448 PR5——写回由 partialize 洗、搬家由 stash 保）', () => {
-    // 契约分工：themeDomainMigrate 的输出（normalizeThemeValues 是 Object.assign
-    // 原地合并，非白名单重建）无损透传 customPresets；「pylon-theme 不再持久化预设」
-    // 由 themeStore 的 partialize 白名单保证；搬家数据源由 migrate 钩子暂存
-    // （legacyPresetStash——写回发生在读取之后时现场值已被洗，暂存兜底）。
+  it('跨版本迁移保留待搬移的预设和独立会话数据', () => {
+    const customPresets = [
+      { id: 'ok', name: ' Valid ', theme: { transparency: 0.7 }, createdAt: 10, updatedAt: 11 },
+      null,
+      { id: '', name: 'bad', theme: {} },
+      { id: 'missing-theme', name: 'bad' },
+    ]
+    const sessions = [{ id: 'existing-session' }]
     const finalOutput = themeDomainMigrate({
       transparency: 0.5,
-      customPresets: [{ id: 'ok', name: 'Valid', theme: { transparency: 0.7 }, createdAt: 10, updatedAt: 11 }],
-    }, { ...defaults, ccLayout: DEFAULT_CC_LAYOUT } as never, 0)
-    expect(Array.isArray(finalOutput.customPresets)).toBe(true)
-    expect(migrated.sessions).toEqual([{ id: 'must remain outside theme conclusion' }])
+      customPresets,
+      sessions,
+    }, defaults, 0)
+    expect(finalOutput.customPresets).toEqual(customPresets)
+    expect(finalOutput.sessions).toEqual(sessions)
   })
 
   it('空状态：全默认 + 无 ccPositions + 规范 ccLayout', () => {
@@ -110,34 +91,29 @@ describe('废弃坐标字段已清除（v3 以 slot layout 为真值）', () => 
       }
     }
   })
-
-  it('迁移不再调用 normalizeCcPositions；profile schema 停在 v4', () => {
-    expect(migrationSource).not.toContain('normalizeCcPositions(')
-    expect(PROFILE_SCHEMA_VERSION).toBe(4)
-  })
 })
 
-// 下沉自 scripts/test-legacy-cc-layout.mts（P91 A2）：legacy cc 布局状态迁移行为。
-describe('legacy cc 布局状态迁移（废弃键删除 + v3 归一）', () => {
-  it('迁移删除 ccSizes/ccPositions/ccCliCustomized/ccLayoutVersion 并保留归一布局', () => {
-    const legacyState: Record<string, unknown> = {
+describe('旧中控布局', () => {
+  it.each([
+    ['同版本读盘', alignThemeStructure],
+    ['跨版本升级', themeDomainMigrate],
+  ] as const)('%s 清除废弃坐标，保留已保存的控件位置', (_name, migrate) => {
+    const placement = { order: 3, offsetX: 7, offsetY: -2 }
+    const migrated = migrate({
       ccSizes: { ekg: 42 },
       ccPositions: { ekg: { x: 1, y: 2 } },
       ccCliCustomized: true,
       ccLayoutVersion: 2,
-      ccLayout: { version: 2, placements: {} },
-    }
-    const migrated = normalizeThemeMigrationState(legacyState, {
-      base: {},
-      appliedPreset: defaults.appliedPreset,
-      custom: defaults.custom,
-      ccLayout: DEFAULT_CC_LAYOUT,
-    })
+      ccLayout: { version: 2, placements: { send: placement } },
+    }, defaults)
     expect(migrated).not.toHaveProperty('ccSizes')
     expect(migrated).not.toHaveProperty('ccPositions')
     expect(migrated).not.toHaveProperty('ccCliCustomized')
     expect(migrated).not.toHaveProperty('ccLayoutVersion')
-    expect((migrated.ccLayout as { version: number }).version).toBe(CC_LAYOUT_SCHEMA_VERSION)
+    expect(migrated.ccLayout).toMatchObject({
+      version: DEFAULT_CC_LAYOUT.version,
+      placements: { 'cc-send-button': placement },
+    })
   })
 })
 
