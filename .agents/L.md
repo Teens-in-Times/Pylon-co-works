@@ -22,3 +22,4 @@
 
 - [Codex] #747 双模式前端打磨。聊天渲染与输入、工作台导航与首页、设置与插件管理分别并行；内置工具页面、验收和记录由主 agent 负责。
 - [Codex] #753 / #611 工作页启动器与跨会话搜索、MsgRepo 保留清理、ACP 与前端测试（命令首发、主题迁移、FakeInvoke）、启动相位、对应说明书和记录；三线并行，协调提交由 Codex 负责。
+- [Codex] #753 全量复验追加：Vitest 项目分类、interfaceModeScenes 与 FileSheetView 集成用例，及搜索片段使用的 messageSearchIndex。
