@@ -762,26 +762,77 @@ fn retention_preview_by_count_keeps_newest_n_events_per_owner() {
 }
 
 #[test]
-fn retention_prune_deletes_and_is_idempotent() {
+fn retention_prune_keeps_newest_sequences_per_owner_and_is_idempotent() {
     let repo = MsgRepo::open_in_memory().expect("open");
-    let now = now_millis();
-    let owner = owner_key_of("s1");
-    for seq in 1..=5 {
-        insert_event_at(&repo, &owner, seq, now);
+    let first = owner_key_of("a");
+    let second = owner_key_of("b");
+    let at_limit = owner_key_of("c");
+    let below_limit = owner_key_of("d");
+    let histories: [(&str, &[i64]); 4] = [
+        (&first, &[90, 2, 40, 7, 11]),
+        (&second, &[2, 11, 7, 5]),
+        (&at_limit, &[90, 2, 5]),
+        (&below_limit, &[2]),
+    ];
+    for (owner, sequences) in histories {
+        for &seq in sequences {
+            insert_event_at(&repo, owner, seq, 100 - seq);
+        }
     }
-    let pruned = repo
-        .prune_by_policy(&by_count_policy(3), None)
-        .expect("prune");
-    assert_eq!(pruned.total_candidates, 2);
-    assert_eq!(pruned.affected_sessions, 1, "I13-W4 单 owner 受影响");
-    assert_eq!(pruned.oldest_deleted_at, None, "I13-W4 by_count 无 cutoff");
-    assert_eq!(canonical_event_count(&repo), 3);
-    // 重复 prune：无新候选（幂等）
-    let again = repo
-        .prune_by_policy(&by_count_policy(3), None)
-        .expect("prune again");
-    assert_eq!(again.total_candidates, 0, "重复 prune 幂等，二次无删除");
-    assert_eq!(canonical_event_count(&repo), 3);
+    let policy = by_count_policy(3);
+    let preview = repo.retention_candidates(&policy).expect("preview");
+    let pruned = repo.prune_by_policy(&policy, None).expect("prune");
+    assert_eq!(pruned, preview);
+    assert_eq!(pruned.total_candidates, 3);
+    assert_eq!(pruned.affected_sessions, 2);
+    assert_eq!(pruned.oldest_deleted_at, None);
+    assert_eq!(
+        repo.prune_by_policy(&policy, None)
+            .unwrap()
+            .total_candidates,
+        0
+    );
+
+    let conn = repo.conn.lock().unwrap();
+    let mut stmt = conn
+        .prepare("SELECT sequence FROM canonical_events WHERE owner_key = ?1 ORDER BY sequence")
+        .unwrap();
+    for (owner, expected) in [
+        (&first, vec![11, 40, 90]),
+        (&second, vec![5, 7, 11]),
+        (&at_limit, vec![2, 5, 90]),
+        (&below_limit, vec![2]),
+    ] {
+        let remaining: Vec<i64> = stmt
+            .query_map([owner], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(remaining, expected, "owner {owner}");
+    }
+}
+
+#[test]
+fn retention_count_prune_rolls_back_all_owners_if_a_later_delete_fails() {
+    let repo = MsgRepo::open_in_memory().expect("open");
+    for owner in ["first", "second"] {
+        for seq in 1..=2 {
+            insert_event_at(&repo, &owner_key_of(owner), seq, 0);
+        }
+    }
+    repo.conn
+        .lock()
+        .unwrap()
+        .execute_batch(
+            "CREATE TEMP TRIGGER fail_second_deletion BEFORE DELETE ON canonical_events
+         WHEN (SELECT COUNT(*) FROM canonical_events) = 3
+         BEGIN SELECT RAISE(ABORT, 'injected failure on second deletion'); END;",
+        )
+        .unwrap();
+
+    let result = repo.prune_by_policy(&by_count_policy(1), None);
+    assert!(result.unwrap_err().to_string().contains("injected failure"));
+    assert_eq!(canonical_event_count(&repo), 4);
 }
 
 #[test]

@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
 
 use crate::error::SessionError;
 
@@ -198,35 +197,6 @@ pub struct TombstonePurgeOutcome {
     pub events_deleted: i64,
 }
 
-/// I14-W9：保留策略行（单行；version + revision + payload JSON；wire camelCase）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RetentionPolicyRow {
-    pub version: i64,
-    pub revision: i64,
-    pub payload: String,
-}
-
-/// I14-W9：保留候选（preview）与执行结果（prune）的每会话计数。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionCandidateCount {
-    pub session_id: String,
-    pub count: i64,
-}
-
-/// I14-W9：保留 preview/prune 结果（preview 不删除；prune 返回实际删除计数）。
-/// I13-W4：增 affected_sessions / oldest_deleted_at（by_time 为 cutoff，其余 None）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RetentionPreview {
-    pub total_candidates: i64,
-    pub affected_sessions: i64,
-    /// by_time：最早将被删除的 cutoff（毫秒）；by_count/permanent：None。
-    pub oldest_deleted_at: Option<i64>,
-    pub per_session: Vec<SessionCandidateCount>,
-}
-
 /// MessageService 结构化错误（B1.2：前端按 code 分支，message 展示用）。
 /// ISSUE-20 W4：rusqlite 错误不再全部折叠为 unavailable——按 SQLite 错误码区分
 /// corrupt（库损坏/非库文件）/ constraint（约束冲突）/ conflict（并发锁）/
@@ -396,10 +366,12 @@ fn lock_err<E>(_: E) -> SessionError {
 /// - 复合索引 INDEX(state, deleted_at) 不在本脚本（升版库在 ALTER 后由
 ///   DEL_02_TOMBSTONE_INDEX_SQL 统一补建——见 migrate()）。
 mod migrations;
+mod retention;
 #[cfg(test)]
 mod tests;
 
 pub use migrations::connect;
+pub use retention::{RetentionPolicyRow, RetentionPreview, SessionCandidateCount};
 
 impl MsgRepo {
     /// 打开（或创建）仓库并迁移到最新 schema（D-02 版本化迁移）。
@@ -679,228 +651,6 @@ impl MsgRepo {
         let conn = self.conn.lock().map_err(lock_err)?;
         conn.execute_batch("PRAGMA incremental_vacuum")
             .map_err(repo_err)
-    }
-
-    // ── I14-W9：保留策略执行（policy 读写 + preview/prune 同一筛选） ──
-
-    /// 读取保留策略行（单行；无 → None）。
-    pub fn retention_policy_get(&self) -> Result<Option<RetentionPolicyRow>, SessionError> {
-        let conn = self.conn.lock().map_err(lock_err)?;
-        conn.query_row(
-            "SELECT version, revision, payload FROM retention_policy WHERE singleton = 1",
-            [],
-            |row| {
-                Ok(RetentionPolicyRow {
-                    version: row.get(0)?,
-                    revision: row.get(1)?,
-                    payload: row.get(2)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(repo_err)
-    }
-
-    /// 写入保留策略（upsert 单行，revision+1）。校验（档位契约）由调用方经
-    /// RetentionPolicy::parse + is_valid 完成；本方法只负责原子落盘。
-    /// I13-W3：expected_revision Some(e) 且与当前 revision 不匹配（无行 = 0）→
-    /// RevisionConflict（旧写不覆盖新写，事务回滚）；None → 盲写（首写/import 用）。
-    pub fn retention_policy_set(
-        &self,
-        version: i64,
-        payload: &str,
-        expected_revision: Option<i64>,
-    ) -> Result<i64, SessionError> {
-        let mut conn = self.conn.lock().map_err(lock_err)?;
-        let tx = conn.transaction().map_err(repo_err)?;
-        let current: i64 = tx
-            .query_row(
-                "SELECT COALESCE(MAX(revision), 0) FROM retention_policy WHERE singleton = 1",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(repo_err)?;
-        if let Some(expected) = expected_revision {
-            if expected != current {
-                return Err(SessionError::RevisionConflict {
-                    expected,
-                    actual: current,
-                });
-            }
-        }
-        let new_revision = current + 1;
-        tx.execute(
-            "INSERT INTO retention_policy (singleton, version, revision, payload, updated_at)
-             VALUES (1, ?1, ?2, ?3, ?4)
-             ON CONFLICT(singleton) DO UPDATE SET
-                 version = excluded.version,
-                 revision = excluded.revision,
-                 payload = excluded.payload,
-                 updated_at = excluded.updated_at",
-            params![version, new_revision, payload, now_millis()],
-        )
-        .map_err(repo_err)?;
-        tx.commit().map_err(repo_err)?;
-        Ok(new_revision)
-    }
-
-    /// 每 owner 候选计数（preview 与 prune 共用同一筛选，D-11 语义）。
-    /// A1-c/B5：执行目标 = canonical_events（canonical 事件流为唯一会话数据源）——
-    /// - ByTime：created_at < cutoff（now - days 天，毫秒严格小于）；
-    /// - ByCount：每 owner 按 sequence DESC 保留最新 count 条事件，其余为候选；
-    /// - Permanent：无候选。
-    ///
-    /// per_session.session_id 使用 owner_key（canonical 事件流按 owner 键控）。
-    ///
-    /// CR-003：now 由调用方单次取时传入——统计与删除共用同一 cutoff，避免边界事件
-    /// 计数与实际删除不一致。
-    fn retention_candidate_counts(
-        conn: &Connection,
-        policy: &crate::retention::RetentionPolicy,
-        now: i64,
-    ) -> Result<Vec<SessionCandidateCount>, SessionError> {
-        match policy.mode {
-            super::retention::RetentionMode::Permanent => Ok(Vec::new()),
-            super::retention::RetentionMode::ByTime => {
-                let cutoff = now - policy.days.unwrap_or(0) as i64 * 86_400_000;
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT owner_key, COUNT(*) FROM canonical_events
-                         WHERE created_at < ?1 GROUP BY owner_key",
-                    )
-                    .map_err(repo_err)?;
-                let rows = stmt
-                    .query_map([cutoff], |row| {
-                        Ok(SessionCandidateCount {
-                            session_id: row.get(0)?,
-                            count: row.get(1)?,
-                        })
-                    })
-                    .map_err(repo_err)?;
-                let mut out = Vec::new();
-                for row in rows {
-                    out.push(row.map_err(repo_err)?);
-                }
-                Ok(out)
-            }
-            super::retention::RetentionMode::ByCount => {
-                let limit = policy.count.unwrap_or(0) as i64;
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT owner_key, COUNT(*) - ?1 FROM canonical_events
-                         GROUP BY owner_key HAVING COUNT(*) > ?1",
-                    )
-                    .map_err(repo_err)?;
-                let rows = stmt
-                    .query_map([limit], |row| {
-                        Ok(SessionCandidateCount {
-                            session_id: row.get(0)?,
-                            count: row.get(1)?,
-                        })
-                    })
-                    .map_err(repo_err)?;
-                let mut out = Vec::new();
-                for row in rows {
-                    out.push(row.map_err(repo_err)?);
-                }
-                Ok(out)
-            }
-        }
-    }
-
-    /// preview：统计将删除的候选（不执行删除）。
-    pub fn retention_candidates(
-        &self,
-        policy: &crate::retention::RetentionPolicy,
-    ) -> Result<RetentionPreview, SessionError> {
-        let conn = self.conn.lock().map_err(lock_err)?;
-        let now = now_millis();
-        let per_session = Self::retention_candidate_counts(&conn, policy, now)?;
-        Ok(preview_result(policy, now, per_session))
-    }
-
-    /// prune：事务内统计候选 + 执行删除（与 preview 同一筛选）；返回删除结果。
-    /// CR-003：now 单次取时——统计与删除共用同一 cutoff，边界计数一致。
-    /// I13-W4：expected_policy_revision Some(e) 且与策略行当前 revision（无行 = 0）不匹配 →
-    /// StalePreview（用户预览后策略被改，拒绝按旧统计执行清理，回滚不删）。
-    pub fn prune_by_policy(
-        &self,
-        policy: &crate::retention::RetentionPolicy,
-        expected_policy_revision: Option<i64>,
-    ) -> Result<RetentionPreview, SessionError> {
-        let mut conn = self.conn.lock().map_err(lock_err)?;
-        let tx = conn.transaction().map_err(repo_err)?;
-        let policy_revision: i64 = tx
-            .query_row(
-                "SELECT COALESCE(MAX(revision), 0) FROM retention_policy WHERE singleton = 1",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(repo_err)?;
-        if let Some(expected) = expected_policy_revision {
-            if expected != policy_revision {
-                return Err(SessionError::StalePreview {
-                    expected,
-                    actual: policy_revision,
-                });
-            }
-        }
-        let now = now_millis();
-        let per_session = Self::retention_candidate_counts(&tx, policy, now)?;
-        match policy.mode {
-            super::retention::RetentionMode::Permanent => {}
-            super::retention::RetentionMode::ByTime => {
-                let cutoff = now - policy.days.unwrap_or(0) as i64 * 86_400_000;
-                tx.execute(
-                    "DELETE FROM canonical_events WHERE created_at < ?1",
-                    [cutoff],
-                )
-                .map_err(repo_err)?;
-                tx.execute(
-                    "DELETE FROM canonical_draft_fragments WHERE created_at < ?1",
-                    [cutoff],
-                )
-                .map_err(repo_err)?;
-            }
-            super::retention::RetentionMode::ByCount => {
-                let limit = policy.count.unwrap_or(0) as i64;
-                // canonical_events 按 owner 键控：保留每 owner 最新 limit 条事件
-                // （sequence DESC）。sequence 在 owner 范围内唯一（主键），相关子查询按
-                // owner_key 圈定后 NOT IN sequence 与按行元组删除等价。
-                tx.execute(
-                    "DELETE FROM canonical_events WHERE sequence NOT IN (
-                         SELECT sequence FROM canonical_events c2
-                         WHERE c2.owner_key = canonical_events.owner_key
-                         ORDER BY sequence DESC LIMIT ?1
-                     )",
-                    [limit],
-                )
-                .map_err(repo_err)?;
-            }
-        }
-        tx.commit().map_err(repo_err)?;
-        Ok(preview_result(policy, now, per_session))
-    }
-}
-
-/// I13-W4：由候选计数构造 preview/prune 结果（affected_sessions + oldest_deleted_at）。
-fn preview_result(
-    policy: &crate::retention::RetentionPolicy,
-    now: i64,
-    per_session: Vec<SessionCandidateCount>,
-) -> RetentionPreview {
-    let total_candidates: i64 = per_session.iter().map(|c| c.count).sum();
-    let oldest_deleted_at = match policy.mode {
-        crate::retention::RetentionMode::ByTime => {
-            Some(now - policy.days.unwrap_or(0) as i64 * 86_400_000)
-        }
-        _ => None,
-    };
-    RetentionPreview {
-        total_candidates,
-        affected_sessions: per_session.len() as i64,
-        oldest_deleted_at,
-        per_session,
     }
 }
 
