@@ -24,17 +24,15 @@ export function searchValuesMatchQuery(values: readonly unknown[], query: string
     .includes(normalizedQuery)
 }
 
-export function getMessageSearchText(message: Message): string {
-  const cached = searchTextCache.get(message)
-  if (cached !== undefined) return cached
-
+/** Original spelling for search excerpts; tool renderers contribute searchable fields here. */
+export function getMessageSearchSource(message: Message): string {
   const toolText = message.role === 'tool'
     ? resolveToolRenderer(message.toolName || '').getSearchText?.(message.toolOutput) || ''
     : ''
   const semanticParts = 'semanticParts' in message
     ? stringifySearchValue((message as Message & { semanticParts?: unknown }).semanticParts)
     : ''
-  const text = [
+  return [
     // #253：不索引 message.sender——投影层的 sender 可能是内部键（local:{id}）或
     // 角色标签，进搜索文本会让「local:」全命中、内部标识泄进片段。
     message.content,
@@ -46,8 +44,12 @@ export function getMessageSearchText(message: Message): string {
   ]
     .filter(Boolean)
     .join('\n')
-    .toLocaleLowerCase()
+}
 
+export function getMessageSearchText(message: Message): string {
+  const cached = searchTextCache.get(message)
+  if (cached !== undefined) return cached
+  const text = getMessageSearchSource(message).toLocaleLowerCase()
   searchTextCache.set(message, text)
   return text
 }

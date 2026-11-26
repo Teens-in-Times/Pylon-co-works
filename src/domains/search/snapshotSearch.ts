@@ -7,6 +7,8 @@
  * 未拍板前不猜平台策略）。
  */
 
+import { createSearchSnippetMatcher } from './searchSnippet.ts'
+
 export interface SnapshotSearchResult {
   sessionId: string
   messageId: string
@@ -53,8 +55,9 @@ export function snapshotSearch(
   keys: readonly string[],
   options: SnapshotSearchOptions = {},
 ): { results: SnapshotSearchResult[]; truncated: boolean } {
-  const needle = query.trim().toLocaleLowerCase()
+  const needle = query.trim()
   if (!needle) return { results: [], truncated: false }
+  const snippetFor = createSearchSnippetMatcher(needle)
   const limit = options.limit ?? SNAPSHOT_SCAN_LIMIT
   const results: SnapshotSearchResult[] = []
   let scanned = 0
@@ -67,11 +70,12 @@ export function snapshotSearch(
       if (scanned >= limit) { truncated = true; break }
       scanned += 1
       const content = typeof message.content === 'string' ? message.content : ''
-      if (!content.toLocaleLowerCase().includes(needle)) continue
+      const snippet = snippetFor(content)
+      if (snippet === undefined) continue
       results.push({
         sessionId,
         messageId: typeof message.id === 'string' ? message.id : `msg-${results.length}`,
-        snippet: content.slice(0, 120),
+        snippet,
         ...(typeof message.time === 'string' ? { time: message.time } : {}),
       })
     }

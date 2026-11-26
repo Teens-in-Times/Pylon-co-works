@@ -9,7 +9,7 @@
  */
 import { IS_TAURI } from '../../infrastructure/tauri/env.ts'
 import { useIdentityStore, type Session } from '../identity/identityStore.ts'
-import { getMessageSearchText } from '../chat/messageSearchIndex.ts'
+import { getMessageSearchSource } from '../chat/messageSearchIndex.ts'
 import { toCanonicalOwnerKey } from '../events/eventSchema.ts'
 import { projectMessagesFromCanonical } from '../events/messageProjection.ts'
 import type { CanonicalEventRow } from '../events/canonicalEventRow.ts'
@@ -18,6 +18,7 @@ import {
   type CanonicalEventSearchHit,
 } from '../../infrastructure/events/canonicalEventRepository.ts'
 import { collectSnapshotKeys, snapshotSearch, type SnapshotSearchResult } from './snapshotSearch.ts'
+import { createSearchSnippetMatcher } from './searchSnippet.ts'
 import type { SearchProvider } from '../../contracts/searchProvider.ts'
 import { getPluginServiceRegistry } from '../../plugin-runtime/runtimeServices.ts'
 
@@ -26,17 +27,6 @@ export const BACKEND_SEARCH_LIMIT = 50
 
 /** UI 搜索命中：统一形状（含 owner agentId 供 owner-aware 导航）。 */
 export type SearchHitUi = SnapshotSearchResult & { agentId?: string; snippet: string }
-
-/** Unicode 安全 snippet：命中处前后 40 字符（不劈代理对/组合字符）。 */
-function snippetAround(text: string, needle: string): string {
-  const lower = text.toLocaleLowerCase()
-  const index = lower.indexOf(needle.toLocaleLowerCase())
-  if (index < 0) return text.slice(0, 120)
-  const radius = 40
-  const start = Math.max(0, index - radius)
-  const end = Math.min(text.length, index + needle.length + radius)
-  return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`
-}
 
 /** Tauri 模式：命中行两阶段搜索（内置实现，core.search.tauri 包装）。 */
 export async function searchAllMessagesTauri(query: string): Promise<{ results: SearchHitUi[]; truncated: boolean }> {
@@ -64,6 +54,7 @@ export async function searchAllMessagesTauri(query: string): Promise<{ results: 
     sequencesByOwner.set(ownerKey, sequences)
   }
   const results: SearchHitUi[] = []
+  const snippetFor = createSearchSnippetMatcher(needle)
   for (const [ownerKey, sequences] of sequencesByOwner) {
     const session = sessionByOwner.get(ownerKey)
     if (!session) continue
@@ -80,14 +71,14 @@ export async function searchAllMessagesTauri(query: string): Promise<{ results: 
     // #81 L2：投影读走 compact 语义（单元展开在 effectiveCanonicalProjectionEvents 内完成）。
     const messages = projectMessagesFromCanonical(rows)
     for (const message of messages) {
-      const searchable = getMessageSearchText(message)
-      if (!searchable.toLocaleLowerCase().includes(needle.toLocaleLowerCase())) continue
+      const snippet = snippetFor(getMessageSearchSource(message))
+      if (snippet === undefined) continue
       // IDs belong to this partial projection. Navigation passes the query to
       // the full conversation search instead of treating these IDs as anchors.
       results.push({
         sessionId: session.id,
         messageId: message.id,
-        snippet: snippetAround(searchable, needle),
+        snippet,
         time: message.time,
         agentId: session.agentId,
       })

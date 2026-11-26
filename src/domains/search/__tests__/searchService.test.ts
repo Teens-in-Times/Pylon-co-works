@@ -85,7 +85,7 @@ describe('searchAllMessagesTauri（#445 命中行两阶段）', () => {
   it('命中行走定向单行 compact 读，不触发全量 loadAllPreferUnits', async () => {
     repoRef.current.searchHits.mockResolvedValue([hit(3)])
     repoRef.current.listCompact.mockResolvedValue(
-      singlePage(row(3, 'user.message', { text: 'hello needle world' }, { text: 'hello needle world' })),
+      singlePage(row(3, 'user.message', { text: 'Hello Needle World' }, { text: 'Hello Needle World' })),
     )
 
     const { results, truncated } = await searchAllMessagesTauri('needle')
@@ -99,7 +99,7 @@ describe('searchAllMessagesTauri（#445 命中行两阶段）', () => {
       sessionId: 's1',
       messageId: 'user-1',
       agentId: 'peri',
-      snippet: 'hello needle world',
+      snippet: 'Hello Needle World',
       // timeOf = toLocaleTimeString()（locale/时区敏感），期望按同一变换动态推导。
       time: new Date('2026-08-14T00:00:00.000Z').toLocaleTimeString(),
     })
